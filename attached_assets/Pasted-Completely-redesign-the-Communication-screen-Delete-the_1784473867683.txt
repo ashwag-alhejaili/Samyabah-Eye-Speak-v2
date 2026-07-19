@@ -1,0 +1,153 @@
+Completely redesign the Communication screen.
+
+Delete the current layout.
+
+Do NOT use large rectangular image cards.
+
+Do NOT create a dashboard.
+
+Think like you are designing for Apple Vision Pro or an accessibility product.
+
+The user is an elderly Saudi stroke survivor who communicates only by eye gaze.
+
+========================
+DESIGN GOAL
+========================
+
+The screen must be extremely simple.
+
+Very calming.
+
+Very premium.
+
+Easy to understand within one second.
+
+No clutter.
+
+Large empty space.
+
+========================
+LAYOUT
+========================
+
+White background with a very soft warm gradient.
+
+Center the interface.
+
+Create ONLY four floating circular cards.
+
+Arrange them in a 2x2 grid.
+
+Each card should be about 220px.
+
+Large spacing between cards.
+
+Cards should look like floating glass objects.
+
+Rounded.
+
+Soft shadows.
+
+Apple-quality animations.
+
+========================
+CARD CONTENT
+========================
+
+Do NOT use photos.
+
+Instead use beautiful premium 3D illustrations.
+
+Card 1
+
+احتياجاتي
+
+Illustration:
+A tray containing:
+Arabic coffee
+Glass of water
+Healthy meal
+
+Card 2
+
+صحتي
+
+Illustration:
+A modern adjustable hospital bed with a pillow and side controls.
+
+Do NOT use heartbeat icons.
+
+Card 3
+
+عبادتي
+
+Illustration:
+Prayer rug + Quran + water jug.
+
+Card 4
+
+مشاعري
+
+Illustration:
+Three small faces together:
+🙂
+😐
+☹️
+
+Draw them as premium 3D characters, not emojis.
+
+========================
+INTERACTION
+========================
+
+When the user's gaze focuses on a card:
+
+The card slowly enlarges.
+
+A blue circular progress ring appears around it.
+
+After two seconds it opens.
+
+No clicking.
+
+Everything is controlled by eye gaze.
+
+========================
+HEADER
+========================
+
+Top center
+
+ماذا تحتاج؟
+
+Below
+
+انظر إلى الخيار لمدة ثانيتين للاختيار
+
+Top left
+
+Circular Back button
+
+Top right
+
+Large floating Emergency button
+
+🚨 طوارئ
+
+Always visible.
+
+========================
+STYLE
+========================
+
+No dashboards.
+
+No stock images.
+
+No medical software appearance.
+
+No website appearance.
+
+This must feel like a futuristic accessibility product built by Apple.
+
+Everything must be in Arabic.

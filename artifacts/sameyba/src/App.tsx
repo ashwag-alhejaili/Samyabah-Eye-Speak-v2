@@ -1,3 +1,4 @@
+import { useState, useRef, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
@@ -123,65 +124,157 @@ function Home() {
   );
 }
 
-const commContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
-  }
-};
-
-const commCardVariants = {
-  hidden: { scale: 0.94, opacity: 0, y: 12 },
-  visible: { scale: 1, opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.16, 1, 0.3, 1] } }
-};
+// ─── Gaze-card sizing — adapts to the shorter viewport dimension ───
+// Circle: min(220px, 27vh). SVG ring wraps 10px outside the circle on each side.
+const CARD_PX = 220; // nominal; CSS clamp handles actual render size
+const RING_R = 112;
+const RING_CX = 120;
+const RING_CY = 120;
 
 const CARDS = [
   {
     id: 'needs',
     label: 'احتياجاتي',
     subtitle: 'ماء • قهوة • طعام',
-    image: 'scene-needs.jpg',
-    bg: 'linear-gradient(160deg, #FFFAF0 0%, #FFF3DC 60%, #FFE8B4 100%)',
-    imgBg: 'rgba(255, 220, 140, 0.25)',
-    glow: 'rgba(255, 180, 50, 0.50)',
-    titleColor: '#6B3A00',
-    subtitleColor: '#A0620A',
+    image: 'illus-needs.png',
+    bg: 'linear-gradient(145deg, rgba(255,251,240,0.96) 0%, rgba(255,244,220,0.92) 100%)',
+    ringColor: '#FF9F0A',
   },
   {
     id: 'health',
     label: 'صحتي',
     subtitle: 'سرير • دواء • مساعدة',
-    image: 'scene-health.jpg',
-    bg: 'linear-gradient(160deg, #F0F8FF 0%, #DCF0FF 60%, #C0E2FF 100%)',
-    imgBg: 'rgba(150, 210, 255, 0.25)',
-    glow: 'rgba(30, 140, 255, 0.45)',
-    titleColor: '#003A6B',
-    subtitleColor: '#1060A0',
+    image: 'illus-health.png',
+    bg: 'linear-gradient(145deg, rgba(240,248,255,0.96) 0%, rgba(220,238,255,0.92) 100%)',
+    ringColor: '#0A84FF',
   },
   {
     id: 'worship',
     label: 'عبادتي',
     subtitle: 'صلاة • وضوء • قرآن',
-    image: 'scene-worship.jpg',
-    bg: 'linear-gradient(160deg, #FFFBF0 0%, #F5ECD7 60%, #EDD9B0 100%)',
-    imgBg: 'rgba(220, 175, 90, 0.20)',
-    glow: 'rgba(180, 130, 40, 0.50)',
-    titleColor: '#4A2E00',
-    subtitleColor: '#7A5010',
+    image: 'illus-worship.png',
+    bg: 'linear-gradient(145deg, rgba(242,255,245,0.96) 0%, rgba(220,248,230,0.92) 100%)',
+    ringColor: '#34C759',
   },
   {
     id: 'feelings',
     label: 'مشاعري',
-    subtitle: 'سعيد • متعب • متألم',
-    image: 'scene-feelings.jpg',
-    bg: 'linear-gradient(160deg, #FFF5F5 0%, #FFE4E4 60%, #FFD0D0 100%)',
-    imgBg: 'rgba(255, 160, 160, 0.20)',
-    glow: 'rgba(220, 60, 60, 0.42)',
-    titleColor: '#6B0000',
-    subtitleColor: '#A02020',
+    subtitle: 'سعيد • هادئ • متألم',
+    image: 'illus-feelings.png',
+    bg: 'linear-gradient(145deg, rgba(255,244,248,0.96) 0%, rgba(255,228,238,0.92) 100%)',
+    ringColor: '#FF375F',
   },
 ];
+
+// Animated circular card with gaze-progress ring.
+// Size is fully responsive: the circle is min(220px, 24.5vh) so two rows + labels
+// always fit within the viewport without scrolling.
+function GazeCard({ card, delay }: { card: typeof CARDS[0]; delay: number }) {
+  const [gazing, setGazing] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startGaze = useCallback(() => {
+    setGazing(true);
+    timerRef.current = setTimeout(() => {
+      // placeholder — real eye-tracking fires this after 2 s dwell
+    }, 2000);
+  }, []);
+
+  const stopGaze = useCallback(() => {
+    setGazing(false);
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  // The circle is driven by CSS min() — the SVG uses a fixed viewBox and
+  // width="100%" so it scales identically to the wrapper.
+  // viewBox: 240×240, circle at (120,120) r=112, ring wrapper = 240×240
+  // circle card = 220×220 centred in the viewBox
+  return (
+    <motion.div
+      className="flex flex-col items-center"
+      style={{ gap: 'clamp(12px, 1.8vh, 20px)' }}
+      initial={{ opacity: 0, scale: 0.88, y: 22 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.65, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {/* Ring + bubble — sized via CSS min() */}
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: 'min(220px, 24.5vh)', aspectRatio: '1' }}
+      >
+        {/* SVG ring sits 4.5% outside the circle on each side, same CSS size */}
+        <svg
+          viewBox="0 0 240 240"
+          className="absolute pointer-events-none"
+          style={{
+            inset: '-4.5%',
+            width: '109%',
+            height: '109%',
+            transform: 'rotate(-90deg)',
+          }}
+        >
+          <circle cx={120} cy={120} r={112} fill="none" stroke={card.ringColor}
+            strokeWidth={3.5} opacity={gazing ? 0.14 : 0}
+            style={{ transition: 'opacity 0.2s' }} />
+          <motion.circle cx={120} cy={120} r={112} fill="none"
+            stroke={card.ringColor} strokeWidth={3.5} strokeLinecap="round"
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={gazing ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
+            transition={{ pathLength: { duration: 2, ease: 'linear' }, opacity: { duration: 0.15 } }}
+          />
+        </svg>
+
+        {/* Circular bubble */}
+        <motion.div
+          className="relative flex items-center justify-center overflow-hidden"
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '50%',
+            background: card.bg,
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            border: '1.5px solid rgba(255,255,255,0.85)',
+            boxShadow: '0 16px 44px rgba(0,0,0,0.09), 0 3px 10px rgba(0,0,0,0.06), inset 0 1.5px 0 rgba(255,255,255,0.70)',
+            cursor: 'none',
+          }}
+          animate={gazing ? { scale: 1.08 } : { scale: 1 }}
+          transition={{ type: 'spring', stiffness: 180, damping: 18 }}
+          onMouseEnter={startGaze}
+          onMouseLeave={stopGaze}
+          onFocus={startGaze}
+          onBlur={stopGaze}
+          data-gaze-target="true"
+          data-gaze-id={card.id}
+          data-gaze-label={card.label}
+          id={`gaze-card-${card.id}`}
+          role="button"
+          tabIndex={0}
+          aria-label={card.label}
+        >
+          <img
+            src={import.meta.env.BASE_URL + card.image}
+            alt={card.label}
+            style={{ width: '76%', height: '76%', objectFit: 'contain' }}
+            draggable={false}
+          />
+        </motion.div>
+      </div>
+
+      {/* Label beneath bubble */}
+      <div className="flex flex-col items-center text-center" style={{ gap: '4px' }}>
+        <span className="font-bold text-[#1C1C1E]"
+          style={{ fontSize: 'clamp(0.95rem, 1.4vw, 1.3rem)', letterSpacing: '0.01em' }}>
+          {card.label}
+        </span>
+        <span className="font-normal text-[#AEAEB2]"
+          style={{ fontSize: 'clamp(0.68rem, 0.9vw, 0.82rem)' }}>
+          {card.subtitle}
+        </span>
+      </div>
+    </motion.div>
+  );
+}
 
 function CommunicationScreen() {
   const [, navigate] = useLocation();
@@ -192,148 +285,82 @@ function CommunicationScreen() {
       dir="rtl"
       style={{
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(160deg, #F2F2F7 0%, #E8E8EF 100%)',
+        background: 'radial-gradient(ellipse at 50% 20%, #FFF8EE 0%, #F5F5FA 55%, #EEEEF6 100%)',
       }}
     >
       {/* ── HEADER ── */}
       <motion.div
-        className="flex-none grid items-center px-5 pt-5 pb-2"
-        style={{ gridTemplateColumns: '1fr auto 1fr' }}
-        initial={{ opacity: 0, y: -14 }}
+        className="flex-none relative flex items-center justify-center px-6 pt-6 pb-3"
+        initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       >
-        {/* Emergency — right side (first col in RTL grid) */}
-        <div className="flex justify-start">
-          <motion.button
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.93 }}
-            className="text-white font-bold text-[1rem] rounded-full flex items-center gap-2 shrink-0"
-            style={{
-              background: 'linear-gradient(135deg, #FF3B30 0%, #FF6B35 100%)',
-              padding: '12px 24px',
-              boxShadow: '0 4px 20px rgba(255,59,48,0.48), 0 1px 4px rgba(255,59,48,0.28)',
-            }}
-            aria-label="طوارئ"
-          >
-            <span role="img" aria-hidden>🚨</span>
-            <span>طوارئ</span>
-          </motion.button>
-        </div>
+        {/* Emergency — absolute top-right */}
+        <motion.button
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.92 }}
+          className="absolute text-white font-bold text-[1rem] rounded-full flex items-center gap-2"
+          style={{
+            insetInlineStart: '24px', // RTL: left → right side visually
+            background: 'linear-gradient(135deg, #FF3B30 0%, #FF6B35 100%)',
+            padding: '12px 22px',
+            boxShadow: '0 4px 20px rgba(255,59,48,0.48), 0 1px 4px rgba(255,59,48,0.25)',
+          }}
+          aria-label="طوارئ"
+        >
+          <span role="img" aria-hidden>🚨</span>
+          <span>طوارئ</span>
+        </motion.button>
 
         {/* Title — center */}
-        <div className="flex flex-col items-center text-center gap-[3px]">
-          <h1 className="text-[1.65rem] font-bold text-[#0A0A0A] leading-tight tracking-tight">
+        <div className="flex flex-col items-center text-center gap-1 pointer-events-none">
+          <h1
+            className="font-bold text-[#0A0A0A] leading-tight tracking-tight"
+            style={{ fontSize: 'clamp(1.5rem, 2.2vw, 2rem)' }}
+          >
             ماذا تحتاج؟
           </h1>
-          <p className="text-[0.76rem] font-normal text-[#8E8E93] flex items-center gap-[5px]">
+          <p className="text-[0.78rem] font-normal text-[#AEAEB2] flex items-center gap-[5px]">
             <Eye className="w-[10px] h-[10px] shrink-0" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
             انظر إلى الخيار لمدة ثانيتين للاختيار
           </p>
         </div>
 
-        {/* Back button — left side (last col in RTL grid) */}
-        <div className="flex justify-end">
-          <motion.button
-            onClick={() => navigate('/')}
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.92 }}
-            transition={{ type: 'spring', stiffness: 350, damping: 20 }}
-            className="w-11 h-11 rounded-full flex items-center justify-center"
-            style={{
-              background: 'rgba(255,255,255,0.72)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
-              border: '1px solid rgba(255,255,255,0.90)',
-            }}
-            aria-label="رجوع"
-          >
-            {/* ChevronRight points left visually in RTL = back */}
-            <ChevronRight className="w-5 h-5 text-[#3C3C43]" strokeWidth={2} />
-          </motion.button>
+        {/* Back — absolute top-left */}
+        <motion.button
+          onClick={() => navigate('/')}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.92 }}
+          transition={{ type: 'spring', stiffness: 360, damping: 20 }}
+          className="absolute flex items-center justify-center"
+          style={{
+            insetInlineEnd: '24px', // RTL: right → left side visually
+            width: '46px',
+            height: '46px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.78)',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.09)',
+            border: '1px solid rgba(255,255,255,0.92)',
+          }}
+          aria-label="رجوع"
+        >
+          <ChevronRight className="w-5 h-5 text-[#3C3C43]" strokeWidth={2} />
+        </motion.button>
+      </motion.div>
+
+      {/* ── CARDS — centered 2×2 grid of floating circles ── */}
+      <div className="flex-1 flex items-center justify-center px-6 pb-6">
+        <div
+          className="grid grid-cols-2"
+          style={{ gap: 'clamp(28px, 4vw, 52px)' }}
+        >
+          {CARDS.map((card, i) => (
+            <GazeCard key={card.id} card={card} delay={i * 0.1} />
+          ))}
         </div>
-      </motion.div>
-
-      {/* ── CARDS GRID ── */}
-      <motion.div
-        className="flex-1 grid grid-cols-2 grid-rows-2 gap-4 px-4 pb-4 min-h-0"
-        variants={commContainerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        {CARDS.map((card) => (
-          <motion.div
-            key={card.id}
-            variants={commCardVariants}
-            whileHover={{
-              scale: 1.022,
-              boxShadow: `0 0 0 2.5px ${card.glow}, 0 14px 40px rgba(0,0,0,0.14)`,
-            }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-            className="flex flex-col overflow-hidden cursor-pointer"
-            style={{
-              borderRadius: '32px',
-              background: card.bg,
-              boxShadow: '0 6px 24px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05)',
-            }}
-            data-gaze-target="true"
-            data-gaze-id={card.id}
-            data-gaze-label={card.label}
-            id={`gaze-card-${card.id}`}
-            aria-label={card.label}
-            role="button"
-            tabIndex={0}
-          >
-            {/* Image area — top 55%, with inner padding so it floats inside the card */}
-            <div
-              className="flex-none flex items-center justify-center overflow-hidden"
-              style={{
-                height: '55%',
-                padding: '16px 16px 8px',
-              }}
-            >
-              <div
-                className="w-full h-full rounded-[22px] overflow-hidden"
-                style={{ background: card.imgBg }}
-              >
-                <img
-                  src={import.meta.env.BASE_URL + card.image}
-                  alt={card.label}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            </div>
-
-            {/* Text area — bottom 45%, generous white-ish space */}
-            <div
-              className="flex-1 flex flex-col items-center justify-center text-center gap-1 px-4 pb-5"
-            >
-              <span
-                className="font-bold leading-tight"
-                style={{
-                  fontSize: 'clamp(1.15rem, 2vw, 1.55rem)',
-                  color: card.titleColor,
-                  letterSpacing: '0.01em',
-                }}
-              >
-                {card.label}
-              </span>
-              <span
-                className="font-normal leading-snug"
-                style={{
-                  fontSize: 'clamp(0.72rem, 1.1vw, 0.88rem)',
-                  color: card.subtitleColor,
-                  opacity: 0.85,
-                }}
-              >
-                {card.subtitle}
-              </span>
-            </div>
-          </motion.div>
-        ))}
-      </motion.div>
+      </div>
     </div>
   );
 }
