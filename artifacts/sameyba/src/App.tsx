@@ -109,13 +109,13 @@ const CATEGORIES: Category[] = [
     label: 'البيئة والغرفة',
     emoji: '🛏️',
     path: '/communicate/room',
-    image: null,
+    image: 'care-health-v2.png',
     bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(245,245,255,0.86) 60%, rgba(230,225,255,0.75) 100%)',
     ringColor: '#AF52DE',
     glowColor: 'rgba(175,82,222,0.40)',
     floatDuration: 4.5,
-    imgScale: 1,
-    imgPosition: 'center center',
+    imgScale: 1.45,
+    imgPosition: 'center 35%',
     Icon: HomeIcon,
     items: [
       { id: 'curtains_open',  label: 'افتح الستائر',      emoji: '🌤️' },
@@ -153,13 +153,13 @@ const CATEGORIES: Category[] = [
     label: 'التواصل',
     emoji: '👨‍👩‍👧‍👦',
     path: '/communicate/social',
-    image: null,
+    image: 'care-feelings-v2.png',
     bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,248,242,0.86) 60%, rgba(255,232,215,0.75) 100%)',
     ringColor: '#FF6B35',
     glowColor: 'rgba(255,107,53,0.40)',
     floatDuration: 3.6,
-    imgScale: 1,
-    imgPosition: 'center center',
+    imgScale: 1.45,
+    imgPosition: 'center 30%',
     Icon: Users,
     items: [
       { id: 'family',      label: 'اتصل بأسرتي',              emoji: '👨‍👩‍👧‍👦' },
@@ -297,7 +297,7 @@ function GazeCard({ card, index, onClick }: {
         {/* Ring + bubble */}
         <div
           className="relative flex items-center justify-center"
-          style={{ width: 'min(172px, 19vh)', aspectRatio: '1' }}
+          style={{ width: 'min(160px, 17.5vh)', aspectRatio: '1' }}
         >
           {/* SVG gaze-progress ring (hover indicator — eye tracking not active yet) */}
           <svg
@@ -642,11 +642,14 @@ function CommunicationScreen() {
         <BackButton onClick={() => navigate('/')} />
       </motion.div>
 
-      {/* 3 × 2 category grid */}
+      {/* 2 × 3 category grid */}
       <div className="relative z-10 flex-1 flex items-center justify-center px-6 pb-6">
         <div
-          className="grid grid-cols-3"
-          style={{ gap: 'clamp(18px, 3vw, 42px)' }}
+          className="grid grid-cols-2"
+          style={{
+            columnGap: 'clamp(28px, 6vw, 80px)',
+            rowGap: 'clamp(8px, 1.6vh, 20px)',
+          }}
         >
           {CATEGORIES.map((cat, i) => (
             <GazeCard
