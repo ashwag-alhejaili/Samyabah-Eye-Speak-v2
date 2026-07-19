@@ -1,13 +1,124 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
   Eye, Volume2, Smartphone, ChevronRight,
   HeartPulse, Utensils, Heart, Sparkles, Home as HomeIcon, Users,
 } from 'lucide-react';
 
 const queryClient = new QueryClient();
+
+// ── useDwell — shared 2-second gaze-dwell hook ───────────────────────────────
+// Drives a Framer Motion AnimationControls that any SVG circle can bind to.
+// • start(): ring fills from current progress → 1 over 2 s (linear)
+// • stop():  ring resets smoothly → 0 over 0.4 s (ease-out)
+// • onUpdate: call this on the motion.circle so completion triggers onComplete
+function useDwell(onComplete: () => void) {
+  const controls  = useAnimation();
+  const activeRef = useRef(false);
+  const cbRef     = useRef(onComplete);
+  cbRef.current   = onComplete;
+
+  useEffect(() => () => { controls.stop(); }, [controls]);
+
+  const start = useCallback(() => {
+    activeRef.current = true;
+    controls.start({
+      pathLength: 1,
+      opacity: 1,
+      transition: {
+        pathLength: { duration: 2, ease: 'linear' },
+        opacity:    { duration: 0.15 },
+      },
+    });
+  }, [controls]);
+
+  const stop = useCallback(() => {
+    activeRef.current = false;
+    controls.start({
+      pathLength: 0,
+      opacity: 0,
+      transition: {
+        pathLength: { duration: 0.4, ease: 'easeOut' },
+        opacity:    { duration: 0.2 },
+      },
+    });
+  }, [controls]);
+
+  // Attach to motion.circle via onUpdate to fire onComplete at the right moment
+  const onUpdate = useCallback((latest: Record<string, number>) => {
+    if (activeRef.current && (latest.pathLength ?? 0) >= 0.999) {
+      activeRef.current = false; // prevent double-fire
+      cbRef.current();
+    }
+  }, []);
+
+  const handlers = {
+    onMouseEnter: start,
+    onMouseLeave: stop,
+    onFocus:      start,
+    onBlur:       stop,
+  };
+
+  return { controls, handlers, activeRef };
+}
+
+// ── DwellRingCircle — shared circular progress ring ──────────────────────────
+// Always circular. Parent positions it via className/style.
+// `active` shows/hides the faint track circle.
+function DwellRingCircle({
+  ringColor,
+  glowColor,
+  active,
+  controls,
+  onUpdate,
+}: {
+  ringColor: string;
+  glowColor: string;
+  active: boolean;
+  controls: ReturnType<typeof useAnimation>;
+  onUpdate: (latest: Record<string, number>) => void;
+}) {
+  return (
+    <svg
+      viewBox="0 0 240 240"
+      aria-hidden
+      style={{
+        position: 'absolute', inset: 0, width: '100%', height: '100%',
+        transform: 'rotate(-90deg)',
+        overflow: 'visible',
+        pointerEvents: 'none',
+        zIndex: 10,
+        filter: active ? `drop-shadow(0 0 6px ${glowColor})` : 'none',
+        transition: 'filter 0.18s ease-out',
+      }}
+    >
+      {/* Faint track — shows full circle path */}
+      <circle
+        cx={120} cy={120} r={112}
+        fill="none"
+        stroke={ringColor}
+        strokeWidth={2.5}
+        style={{
+          opacity: active ? 0.18 : 0,
+          transition: 'opacity 0.18s ease-out',
+        }}
+      />
+      {/* Animated fill arc */}
+      <motion.circle
+        cx={120} cy={120} r={112}
+        fill="none"
+        stroke={ringColor}
+        strokeWidth={4}
+        strokeLinecap="round"
+        initial={{ pathLength: 0, opacity: 0 }}
+        animate={controls}
+        onUpdate={onUpdate}
+      />
+    </svg>
+  );
+}
 
 // ── Animation variants ───────────────────────────────────────────────────────
 const containerVariants = {
@@ -264,14 +375,20 @@ function BackButton({ onClick }: { onClick: () => void }) {
 }
 
 // ── GazeCard ─────────────────────────────────────────────────────────────────
-// Completely static at rest. Only scale + shadow + glow on focus (180ms ease-out).
-// No looping, floating, breathing, or entrance animations.
 function GazeCard({ card, onClick }: {
   card: Category;
   index: number;
   onClick: () => void;
 }) {
-  const [focused, setFocused] = useState(false);
+  const [active, setActive] = useState(false);
+  const { controls, handlers, activeRef } = useDwell(onClick);
+
+  const augmented = {
+    onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
+    onMouseLeave: () => { setActive(false); handlers.onMouseLeave(); },
+    onFocus:      () => { setActive(true);  handlers.onFocus(); },
+    onBlur:       () => { setActive(false); handlers.onBlur(); },
+  };
 
   const restShadow = [
     '0 0 0 0px rgba(0,0,0,0)',
@@ -290,31 +407,34 @@ function GazeCard({ card, onClick }: {
     'inset 0 0 48px rgba(255,255,255,0.65)',
   ].join(', ');
 
+  // Keep activeRef in sync so useDwell's onUpdate fires correctly
+  activeRef.current = active;
+
   return (
-    <div
-      className="flex flex-col items-center"
-      style={{ gap: 'clamp(10px, 1.5vh, 18px)' }}
-    >
+    <div className="flex flex-col items-center" style={{ gap: 'clamp(10px, 1.5vh, 18px)' }}>
+
       {/* Ring + bubble */}
       <div
         className="relative flex items-center justify-center"
         style={{ width: 'min(160px, 17.5vh)', aspectRatio: '1' }}
       >
-        {/* Focus ring — CSS opacity only, no loop */}
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: '-5%', width: '110%', height: '110%',
-            borderRadius: '50%',
-            border: `2px solid ${card.ringColor}`,
-            opacity: focused ? 0.5 : 0,
-            transition: 'opacity 0.18s ease-out',
-            pointerEvents: 'none',
-          }}
-        />
+        {/* Dwell ring — sits just outside the bubble (110%) */}
+        <div style={{ position: 'absolute', inset: '-5%', width: '110%', height: '110%', pointerEvents: 'none' }}>
+          <DwellRingCircle
+            ringColor={card.ringColor}
+            glowColor={card.glowColor}
+            active={active}
+            controls={controls}
+            onUpdate={(latest) => {
+              if (activeRef.current && (latest.pathLength ?? 0) >= 0.999) {
+                activeRef.current = false;
+                onClick();
+              }
+            }}
+          />
+        </div>
 
-        {/* Apple-glass circular bubble — only this element transitions on focus */}
+        {/* Apple-glass circular bubble */}
         <motion.div
           className="relative overflow-hidden flex items-center justify-center"
           style={{
@@ -328,15 +448,11 @@ function GazeCard({ card, onClick }: {
             zIndex: 1,
           }}
           animate={{
-            scale: focused ? 1.03 : 1,
-            boxShadow: focused ? focusShadow : restShadow,
+            scale:     active ? 1.03 : 1,
+            boxShadow: active ? focusShadow : restShadow,
           }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          onClick={onClick}
-          onMouseEnter={() => setFocused(true)}
-          onMouseLeave={() => setFocused(false)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          {...augmented}
           data-gaze-target="true"
           data-gaze-id={card.id}
           data-gaze-label={card.label}
@@ -345,7 +461,7 @@ function GazeCard({ card, onClick }: {
           tabIndex={0}
           aria-label={card.label}
         >
-          {/* Specular highlight — top arc */}
+          {/* Specular highlight */}
           <div aria-hidden style={{
             position: 'absolute', top: 0, left: 0, right: 0,
             height: '42%',
@@ -380,7 +496,7 @@ function GazeCard({ card, onClick }: {
         </motion.div>
       </div>
 
-      {/* Label pill — fully static, CSS shadow transition only */}
+      {/* Label pill */}
       <div
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -390,7 +506,7 @@ function GazeCard({ card, onClick }: {
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
           border: '1px solid rgba(255,255,255,0.95)',
-          boxShadow: focused
+          boxShadow: active
             ? `0 6px 22px ${card.glowColor}, 0 2px 6px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)`
             : '0 4px 18px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)',
           transition: 'box-shadow 0.18s ease-out',
@@ -409,8 +525,7 @@ function GazeCard({ card, onClick }: {
   );
 }
 
-// ── ItemCard — tappable glass card for category items ─────────────────────────
-// ── ItemCard — completely static at rest; glow + dwell ring on focus only ──────
+// ── ItemCard — static at rest; identical dwell ring + glow on focus ───────────
 function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   item: CategoryItem;
   ringColor: string;
@@ -419,7 +534,18 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   selected: boolean;
   index: number;
 }) {
-  const [focused, setFocused] = useState(false);
+  const [active, setActive] = useState(false);
+  const { controls, handlers, activeRef } = useDwell(() => onSelect(item.id));
+
+  const augmented = {
+    onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
+    onMouseLeave: () => { setActive(false); handlers.onMouseLeave(); },
+    onFocus:      () => { setActive(true);  handlers.onFocus(); },
+    onBlur:       () => { setActive(false); handlers.onBlur(); },
+  };
+
+  // Keep activeRef in sync so useDwell's onUpdate fires correctly
+  activeRef.current = active;
 
   const restShadow = selected
     ? [
@@ -443,10 +569,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   return (
     <button
       onClick={() => onSelect(item.id)}
-      onMouseEnter={() => setFocused(true)}
-      onMouseLeave={() => setFocused(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      {...augmented}
       style={{
         position: 'relative',
         display: 'flex', flexDirection: 'column',
@@ -462,7 +585,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         border: selected
           ? `1.5px solid ${glowColor.replace('0.40', '0.45')}`
           : '1px solid rgba(255,255,255,0.95)',
-        boxShadow: (focused && !selected) ? focusShadow : restShadow,
+        boxShadow: (active && !selected) ? focusShadow : restShadow,
         cursor: 'pointer',
         minHeight: 'clamp(88px, 12vh, 124px)',
         width: '100%',
@@ -471,46 +594,31 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
       aria-label={item.label}
       aria-pressed={selected}
     >
-      {/* Dwell progress ring — SVG outline that fills on focus */}
-      <svg
-        aria-hidden
-        style={{
-          position: 'absolute', inset: 0,
-          width: '100%', height: '100%',
-          overflow: 'visible', pointerEvents: 'none', zIndex: 5,
-        }}
-      >
-        {/* Faint track ring */}
-        <rect
-          x="2" y="2"
-          style={{ width: 'calc(100% - 4px)', height: 'calc(100% - 4px)' }}
-          rx="18" ry="18"
-          fill="none"
-          stroke={ringColor}
-          strokeWidth={1.5}
-          opacity={focused ? 0.18 : 0}
-          style2={{ transition: 'opacity 0.18s ease-out' }}
-        />
-        {/* Animated fill arc */}
-        <motion.rect
-          x={2} y={2}
-          style={{ width: 'calc(100% - 4px)', height: 'calc(100% - 4px)' }}
-          rx={18} ry={18}
-          fill="none"
-          stroke={ringColor}
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={focused
-            ? { pathLength: 0.72, opacity: 1 }
-            : { pathLength: 0,    opacity: 0 }
-          }
-          transition={{
-            pathLength: { duration: 0.7, ease: 'easeOut' },
-            opacity:    { duration: 0.15 },
+      {/*
+        Dwell ring — same circular ring as GazeCard, centered on the card.
+        Sized to match the card's min-height so it reads as a focus reticle.
+      */}
+      <div style={{
+        position: 'absolute',
+        top: '50%', left: '50%',
+        width: 'clamp(72px, 11vh, 96px)',
+        height: 'clamp(72px, 11vh, 96px)',
+        transform: 'translate(-50%, -50%)',
+        pointerEvents: 'none',
+      }}>
+        <DwellRingCircle
+          ringColor={ringColor}
+          glowColor={glowColor}
+          active={active}
+          controls={controls}
+          onUpdate={(latest) => {
+            if (activeRef.current && (latest.pathLength ?? 0) >= 0.999) {
+              activeRef.current = false;
+              onSelect(item.id);
+            }
           }}
         />
-      </svg>
+      </div>
 
       <span style={{ fontSize: 'clamp(1.9rem, 3.2vh, 2.6rem)', lineHeight: 1 }}>
         {item.emoji}
