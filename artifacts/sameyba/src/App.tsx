@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { Eye, Volume2, Smartphone } from 'lucide-react';
 
@@ -19,6 +19,8 @@ const itemVariants = {
 };
 
 function Home() {
+  const [, navigate] = useLocation();
+
   return (
     <div 
       className="min-h-[100dvh] w-full flex flex-col md:flex-row bg-[#FAFAFA] overflow-x-hidden"
@@ -86,6 +88,7 @@ function Home() {
             {/* CTA */}
             <motion.div variants={itemVariants} className="pt-4">
               <motion.button
+                onClick={() => navigate('/communicate')}
                 whileHover={{ 
                   scale: 1.05,
                   boxShadow: '0 8px 36px rgba(10,132,255,0.45)'
@@ -120,12 +123,143 @@ function Home() {
   );
 }
 
+const commContainerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08, delayChildren: 0.1 }
+  }
+};
+
+const commCardVariants = {
+  hidden: { scale: 0.94, opacity: 0 },
+  visible: { scale: 1, opacity: 1, transition: { duration: 0.4 } }
+};
+
+function CommunicationScreen() {
+  return (
+    <div 
+      className="h-[100dvh] overflow-hidden bg-[#FAFAFA] flex flex-col text-[#0A0A0A]"
+      dir="rtl"
+      style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
+    >
+      {/* ZONE 1 */}
+      <div className="flex-none py-10 flex justify-center">
+        <motion.h1 
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+          className="text-[2.2rem] font-bold text-[#0A0A0A]"
+        >
+          ماذا تحتاج؟
+        </motion.h1>
+      </div>
+
+      {/* ZONE 2 */}
+      <motion.div 
+        className="flex-1 px-4"
+        variants={commContainerVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        <div className="grid grid-cols-2 grid-rows-2 gap-4 h-full">
+          {/* Card 1: Needs */}
+          <motion.div
+            variants={commCardVariants}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
+            style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.07)' }}
+            data-gaze-target="true"
+            data-gaze-id="needs"
+            data-gaze-label="احتياجاتي"
+            id="gaze-card-needs"
+            aria-label="احتياجاتي"
+          >
+            <span className="text-[5.5rem] leading-none">🥤</span>
+            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">احتياجاتي</span>
+          </motion.div>
+
+          {/* Card 2: Health */}
+          <motion.div
+            variants={commCardVariants}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
+            style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.07)' }}
+            data-gaze-target="true"
+            data-gaze-id="health"
+            data-gaze-label="صحتي"
+            id="gaze-card-health"
+            aria-label="صحتي"
+          >
+            <span className="text-[5.5rem] leading-none">🩺</span>
+            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">صحتي</span>
+          </motion.div>
+
+          {/* Card 3: Worship */}
+          <motion.div
+            variants={commCardVariants}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
+            style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.07)' }}
+            data-gaze-target="true"
+            data-gaze-id="worship"
+            data-gaze-label="عبادتي"
+            id="gaze-card-worship"
+            aria-label="عبادتي"
+          >
+            <span className="text-[5.5rem] leading-none">🕌</span>
+            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">عبادتي</span>
+          </motion.div>
+
+          {/* Card 4: Emergency */}
+          <motion.div
+            variants={commCardVariants}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(255,59,48,0.18)' }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
+            style={{ boxShadow: '0 2px 20px rgba(255,59,48,0.12)' }}
+            data-gaze-target="true"
+            data-gaze-id="emergency"
+            data-gaze-label="طوارئ"
+            id="gaze-card-emergency"
+            aria-label="طوارئ"
+          >
+            <span className="text-[5.5rem] leading-none">🚨</span>
+            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">طوارئ</span>
+          </motion.div>
+        </div>
+      </motion.div>
+
+      {/* ZONE 3 */}
+      <motion.div 
+        className="flex-none py-6 flex items-center justify-center gap-2"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.45 }}
+      >
+        <Eye className="w-[14px] h-[14px] text-[#AEAEB2]" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
+        <span className="text-[0.88rem] text-[#AEAEB2]">
+          انظر إلى الخيار لمدة ثانيتين للاختيار.
+        </span>
+      </motion.div>
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <Switch>
           <Route path="/" component={Home} />
+          <Route path="/communicate" component={CommunicationScreen} />
           <Route component={() => (
             <div className="min-h-[100dvh] flex items-center justify-center text-center p-8 bg-[#FAFAFA] text-[#0A0A0A]" dir="rtl" style={{fontFamily: "'IBM Plex Sans Arabic', sans-serif"}}>
               الصفحة غير موجودة

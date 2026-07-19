@@ -24,3 +24,8 @@
     @apply font-sans antialiased bg-[#FAFAFA] text-[#0A0A0A] m-0 p-0;
   }
 }
+
+@keyframes gaze-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
