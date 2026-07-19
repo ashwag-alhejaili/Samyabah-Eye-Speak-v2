@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Eye, Volume2, Smartphone, Settings } from 'lucide-react';
+import { Eye, Volume2, Smartphone, ChevronRight } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
@@ -140,38 +140,52 @@ const CARDS = [
   {
     id: 'needs',
     label: 'احتياجاتي',
+    subtitle: 'ماء • قهوة • طعام',
     image: 'scene-needs.jpg',
-    bg: 'linear-gradient(145deg, #FFF3DC, #FFE8B4)',
-    glow: 'rgba(255, 180, 50, 0.45)',
-    overlay: 'linear-gradient(to top, rgba(160,90,10,0.82) 0%, rgba(160,90,10,0.3) 50%, transparent 100%)',
+    bg: 'linear-gradient(160deg, #FFFAF0 0%, #FFF3DC 60%, #FFE8B4 100%)',
+    imgBg: 'rgba(255, 220, 140, 0.25)',
+    glow: 'rgba(255, 180, 50, 0.50)',
+    titleColor: '#6B3A00',
+    subtitleColor: '#A0620A',
   },
   {
     id: 'health',
     label: 'صحتي',
+    subtitle: 'سرير • دواء • مساعدة',
     image: 'scene-health.jpg',
-    bg: 'linear-gradient(145deg, #DCF0FF, #C0E2FF)',
-    glow: 'rgba(30, 140, 255, 0.40)',
-    overlay: 'linear-gradient(to top, rgba(10,60,120,0.82) 0%, rgba(10,60,120,0.3) 50%, transparent 100%)',
+    bg: 'linear-gradient(160deg, #F0F8FF 0%, #DCF0FF 60%, #C0E2FF 100%)',
+    imgBg: 'rgba(150, 210, 255, 0.25)',
+    glow: 'rgba(30, 140, 255, 0.45)',
+    titleColor: '#003A6B',
+    subtitleColor: '#1060A0',
   },
   {
     id: 'worship',
     label: 'عبادتي',
+    subtitle: 'صلاة • وضوء • قرآن',
     image: 'scene-worship.jpg',
-    bg: 'linear-gradient(145deg, #F5ECD7, #EDD9B0)',
-    glow: 'rgba(180, 130, 40, 0.45)',
-    overlay: 'linear-gradient(to top, rgba(90,55,10,0.82) 0%, rgba(90,55,10,0.3) 50%, transparent 100%)',
+    bg: 'linear-gradient(160deg, #FFFBF0 0%, #F5ECD7 60%, #EDD9B0 100%)',
+    imgBg: 'rgba(220, 175, 90, 0.20)',
+    glow: 'rgba(180, 130, 40, 0.50)',
+    titleColor: '#4A2E00',
+    subtitleColor: '#7A5010',
   },
   {
     id: 'feelings',
     label: 'مشاعري',
+    subtitle: 'سعيد • متعب • متألم',
     image: 'scene-feelings.jpg',
-    bg: 'linear-gradient(145deg, #FFE4E4, #FFD0D0)',
-    glow: 'rgba(220, 60, 60, 0.38)',
-    overlay: 'linear-gradient(to top, rgba(120,20,20,0.82) 0%, rgba(120,20,20,0.3) 50%, transparent 100%)',
+    bg: 'linear-gradient(160deg, #FFF5F5 0%, #FFE4E4 60%, #FFD0D0 100%)',
+    imgBg: 'rgba(255, 160, 160, 0.20)',
+    glow: 'rgba(220, 60, 60, 0.42)',
+    titleColor: '#6B0000',
+    subtitleColor: '#A02020',
   },
 ];
 
 function CommunicationScreen() {
+  const [, navigate] = useLocation();
+
   return (
     <div
       className="h-[100dvh] overflow-hidden flex flex-col"
@@ -183,22 +197,22 @@ function CommunicationScreen() {
     >
       {/* ── HEADER ── */}
       <motion.div
-        className="flex-none grid items-center px-5 pt-5 pb-3"
+        className="flex-none grid items-center px-5 pt-5 pb-2"
         style={{ gridTemplateColumns: '1fr auto 1fr' }}
         initial={{ opacity: 0, y: -14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
       >
-        {/* Emergency — right side (first col in RTL) */}
+        {/* Emergency — right side (first col in RTL grid) */}
         <div className="flex justify-start">
           <motion.button
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.93 }}
-            className="text-white font-bold text-[1.05rem] rounded-full flex items-center gap-2 shrink-0"
+            className="text-white font-bold text-[1rem] rounded-full flex items-center gap-2 shrink-0"
             style={{
               background: 'linear-gradient(135deg, #FF3B30 0%, #FF6B35 100%)',
-              padding: '13px 26px',
-              boxShadow: '0 4px 24px rgba(255,59,48,0.50), 0 1px 4px rgba(255,59,48,0.30)',
+              padding: '12px 24px',
+              boxShadow: '0 4px 20px rgba(255,59,48,0.48), 0 1px 4px rgba(255,59,48,0.28)',
             }}
             aria-label="طوارئ"
           >
@@ -208,40 +222,42 @@ function CommunicationScreen() {
         </div>
 
         {/* Title — center */}
-        <div className="flex flex-col items-center text-center gap-[2px]">
-          <h1 className="text-[1.75rem] font-bold text-[#0A0A0A] leading-tight tracking-tight">
+        <div className="flex flex-col items-center text-center gap-[3px]">
+          <h1 className="text-[1.65rem] font-bold text-[#0A0A0A] leading-tight tracking-tight">
             ماذا تحتاج؟
           </h1>
-          <p className="text-[0.78rem] font-normal text-[#8E8E93] flex items-center gap-1">
-            <Eye className="w-[11px] h-[11px] shrink-0" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
+          <p className="text-[0.76rem] font-normal text-[#8E8E93] flex items-center gap-[5px]">
+            <Eye className="w-[10px] h-[10px] shrink-0" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
             انظر إلى الخيار لمدة ثانيتين للاختيار
           </p>
         </div>
 
-        {/* Settings — left side (last col in RTL) */}
+        {/* Back button — left side (last col in RTL grid) */}
         <div className="flex justify-end">
           <motion.button
-            whileHover={{ scale: 1.08, rotate: 30 }}
+            onClick={() => navigate('/')}
+            whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.92 }}
             transition={{ type: 'spring', stiffness: 350, damping: 20 }}
             className="w-11 h-11 rounded-full flex items-center justify-center"
             style={{
-              background: 'rgba(255,255,255,0.70)',
+              background: 'rgba(255,255,255,0.72)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
               boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
               border: '1px solid rgba(255,255,255,0.90)',
             }}
-            aria-label="الإعدادات"
+            aria-label="رجوع"
           >
-            <Settings className="w-5 h-5 text-[#3C3C43]" strokeWidth={1.8} />
+            {/* ChevronRight points left visually in RTL = back */}
+            <ChevronRight className="w-5 h-5 text-[#3C3C43]" strokeWidth={2} />
           </motion.button>
         </div>
       </motion.div>
 
       {/* ── CARDS GRID ── */}
       <motion.div
-        className="flex-1 grid grid-cols-2 grid-rows-2 gap-3 px-3 pb-3 min-h-0"
+        className="flex-1 grid grid-cols-2 grid-rows-2 gap-4 px-4 pb-4 min-h-0"
         variants={commContainerVariants}
         initial="hidden"
         animate="visible"
@@ -251,16 +267,16 @@ function CommunicationScreen() {
             key={card.id}
             variants={commCardVariants}
             whileHover={{
-              scale: 1.025,
-              boxShadow: `0 0 0 3px ${card.glow}, 0 16px 48px rgba(0,0,0,0.18)`,
+              scale: 1.022,
+              boxShadow: `0 0 0 2.5px ${card.glow}, 0 14px 40px rgba(0,0,0,0.14)`,
             }}
             whileTap={{ scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-            className="relative overflow-hidden cursor-pointer"
+            className="flex flex-col overflow-hidden cursor-pointer"
             style={{
               borderRadius: '32px',
               background: card.bg,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)',
+              boxShadow: '0 6px 24px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05)',
             }}
             data-gaze-target="true"
             data-gaze-id={card.id}
@@ -270,34 +286,49 @@ function CommunicationScreen() {
             role="button"
             tabIndex={0}
           >
-            {/* Scene image — full bleed */}
-            <img
-              src={import.meta.env.BASE_URL + card.image}
-              alt={card.label}
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ borderRadius: '32px' }}
-            />
-
-            {/* Bottom gradient overlay */}
+            {/* Image area — top 55%, with inner padding so it floats inside the card */}
             <div
-              className="absolute inset-0"
+              className="flex-none flex items-center justify-center overflow-hidden"
               style={{
-                background: card.overlay,
-                borderRadius: '32px',
+                height: '55%',
+                padding: '16px 16px 8px',
               }}
-            />
+            >
+              <div
+                className="w-full h-full rounded-[22px] overflow-hidden"
+                style={{ background: card.imgBg }}
+              >
+                <img
+                  src={import.meta.env.BASE_URL + card.image}
+                  alt={card.label}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
 
-            {/* Card label */}
-            <div className="absolute bottom-0 inset-x-0 pb-5 flex items-end justify-center">
+            {/* Text area — bottom 45%, generous white-ish space */}
+            <div
+              className="flex-1 flex flex-col items-center justify-center text-center gap-1 px-4 pb-5"
+            >
               <span
-                className="text-white font-bold drop-shadow-lg"
+                className="font-bold leading-tight"
                 style={{
-                  fontSize: 'clamp(1.2rem, 2.2vw, 1.6rem)',
-                  textShadow: '0 2px 12px rgba(0,0,0,0.50)',
+                  fontSize: 'clamp(1.15rem, 2vw, 1.55rem)',
+                  color: card.titleColor,
                   letterSpacing: '0.01em',
                 }}
               >
                 {card.label}
+              </span>
+              <span
+                className="font-normal leading-snug"
+                style={{
+                  fontSize: 'clamp(0.72rem, 1.1vw, 0.88rem)',
+                  color: card.subtitleColor,
+                  opacity: 0.85,
+                }}
+              >
+                {card.subtitle}
               </span>
             </div>
           </motion.div>
