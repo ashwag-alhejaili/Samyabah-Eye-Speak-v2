@@ -8,6 +8,7 @@ import {
   Droplets, UtensilsCrossed, BellOff,
   Cross, Footprints, Stethoscope,
   Lightbulb, LightbulbOff, Tv,
+  Smile, Frown, Annoyed, HeartHandshake,
 } from 'lucide-react';
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
@@ -242,6 +243,48 @@ function TvOffIcon({
       <line x1="8"  y1="21" x2="16" y2="21" />
       {/* Power-off slash */}
       <line x1="6" y1="7" x2="18" y2="17" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Worried face (raised inner brows + wavy mouth) ───────────────
+function WorriedFaceIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Face circle */}
+      <circle cx="12" cy="12" r="10" />
+      {/* Worried eyebrows — inner corners pulled up */}
+      <path d="M7.5 8.5 Q9 7 10.5 8.5" />
+      <path d="M13.5 8.5 Q15 7 16.5 8.5" />
+      {/* Eyes */}
+      <circle cx="9.5" cy="11.5" r="1" fill={color} stroke="none" />
+      <circle cx="14.5" cy="11.5" r="1" fill={color} stroke="none" />
+      {/* Worried mouth — wavy, showing unease */}
+      <path d="M9 16 Q10.5 14.5 12 16 Q13.5 17.5 15 16" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Tired face (heavy droopy lids + subdued frown) ───────────────
+function TiredFaceIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Face circle */}
+      <circle cx="12" cy="12" r="10" />
+      {/* Left eye: arched top lid + flat bottom (heavy-lidded) */}
+      <path d="M8 11.5 Q9.5 9.5 11 11.5" />
+      <line x1="8" y1="11.5" x2="11" y2="11.5" />
+      {/* Right eye: same */}
+      <path d="M13 11.5 Q14.5 9.5 16 11.5" />
+      <line x1="13" y1="11.5" x2="16" y2="11.5" />
+      {/* Tired mouth — gentle downward curve */}
+      <path d="M9.5 16 Q12 14.5 14.5 16" />
     </svg>
   );
 }
@@ -496,12 +539,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 38%',
     Icon: Heart,
     items: [
-      { id: 'okay',    label: 'أنا بخير',               emoji: '😊' },
-      { id: 'anxious', label: 'أشعر بالقلق',            emoji: '😰' },
-      { id: 'lonely',  label: 'أشعر بالوحدة',           emoji: '🥺' },
-      { id: 'someone', label: 'أريد أحداً بجانبي',      emoji: '🤗' },
-      { id: 'scared',  label: 'أنا خائف',               emoji: '😨' },
-      { id: 'calm',    label: 'أريد الهدوء',            emoji: '🧘' },
+      { id: 'happy',   label: 'سعيد',             emoji: '😊', Icon: Smile },
+      { id: 'sad',     label: 'حزين',             emoji: '😢', Icon: Frown },
+      { id: 'anxious', label: 'قلق',              emoji: '😟', Icon: WorriedFaceIcon },
+      { id: 'upset',   label: 'متضايق',           emoji: '😤', Icon: Annoyed },
+      { id: 'miss',    label: 'أشتاق لعيالي',    emoji: '❤️', Icon: HeartHandshake },
+      { id: 'tired',   label: 'متعب',             emoji: '😴', Icon: TiredFaceIcon },
     ],
   },
   {
