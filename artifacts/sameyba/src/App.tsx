@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -264,186 +264,148 @@ function BackButton({ onClick }: { onClick: () => void }) {
 }
 
 // ── GazeCard ─────────────────────────────────────────────────────────────────
-function GazeCard({ card, index, onClick }: {
+// Completely static at rest. Only scale + shadow + glow on focus (180ms ease-out).
+// No looping, floating, breathing, or entrance animations.
+function GazeCard({ card, onClick }: {
   card: Category;
   index: number;
   onClick: () => void;
 }) {
-  const [gazing, setGazing] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const entranceDelay = index * 0.08;
-  const floatDelay = index * 0.9;
+  const [focused, setFocused] = useState(false);
 
-  const startGaze = useCallback(() => { setGazing(true); }, []);
-  const stopGaze = useCallback(() => {
-    setGazing(false);
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-  }, []);
+  const restShadow = [
+    '0 0 0 0px rgba(0,0,0,0)',
+    '0 6px 20px rgba(0,0,0,0.08)',
+    '0 16px 48px rgba(0,0,0,0.09)',
+    'inset 0 2px 0 rgba(255,255,255,1)',
+    'inset 0 0 48px rgba(255,255,255,0.65)',
+  ].join(', ');
+
+  const focusShadow = [
+    `0 0 0 2.5px ${card.glowColor.replace('0.40', '0.50')}`,
+    `0 0 22px ${card.glowColor.replace('0.40', '0.30')}`,
+    `0 0 48px ${card.glowColor.replace('0.40', '0.14')}`,
+    `0 14px 44px rgba(20,30,60,0.13)`,
+    'inset 0 2px 0 rgba(255,255,255,1)',
+    'inset 0 0 48px rgba(255,255,255,0.65)',
+  ].join(', ');
 
   return (
-    <motion.div
+    <div
       className="flex flex-col items-center"
       style={{ gap: 'clamp(10px, 1.5vh, 18px)' }}
-      initial={{ opacity: 0, scale: 0.86 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.7, delay: entranceDelay, ease: [0.16, 1, 0.3, 1] }}
     >
-      <motion.div
-        className="flex flex-col items-center"
-        style={{ gap: 'clamp(10px, 1.5vh, 18px)' }}
-        animate={{ y: [0, -10, 0] }}
-        transition={{ duration: card.floatDuration, repeat: Infinity, ease: 'easeInOut', delay: floatDelay }}
+      {/* Ring + bubble */}
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: 'min(160px, 17.5vh)', aspectRatio: '1' }}
       >
-        {/* Ring + bubble */}
+        {/* Focus ring — CSS opacity only, no loop */}
         <div
-          className="relative flex items-center justify-center"
-          style={{ width: 'min(160px, 17.5vh)', aspectRatio: '1' }}
-        >
-          {/* SVG gaze-progress ring (hover indicator — eye tracking not active yet) */}
-          <svg
-            viewBox="0 0 240 240"
-            className="absolute pointer-events-none"
-            style={{
-              inset: '-5%', width: '110%', height: '110%',
-              transform: 'rotate(-90deg)',
-              filter: gazing ? `drop-shadow(0 0 7px ${card.glowColor})` : 'none',
-              transition: 'filter 0.3s ease',
-            }}
-          >
-            <circle cx={120} cy={120} r={112}
-              fill="none" stroke={card.ringColor} strokeWidth={3}
-              opacity={gazing ? 0.18 : 0}
-              style={{ transition: 'opacity 0.25s' }}
-            />
-            <motion.circle cx={120} cy={120} r={112}
-              fill="none" stroke={card.ringColor}
-              strokeWidth={4.5} strokeLinecap="round"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={gazing ? { pathLength: 0.7, opacity: 1 } : { pathLength: 0, opacity: 0 }}
-              transition={{ pathLength: { duration: 0.6, ease: 'easeOut' }, opacity: { duration: 0.15 } }}
-            />
-          </svg>
-
-          {/* Apple-glass circular bubble */}
-          <motion.div
-            className="relative overflow-hidden flex items-center justify-center"
-            style={{
-              width: '100%', height: '100%',
-              borderRadius: '50%',
-              background: card.bg,
-              backdropFilter: 'blur(48px) saturate(210%)',
-              WebkitBackdropFilter: 'blur(48px) saturate(210%)',
-              border: '1px solid rgba(255,255,255,0.96)',
-              cursor: 'pointer',
-              zIndex: 1,
-            }}
-            animate={gazing
-              ? {
-                  scale: 1.02,
-                  boxShadow: [
-                    `0 0 0 2px ${card.glowColor.replace('0.40', '0.55')}`,
-                    `0 0 18px ${card.glowColor.replace('0.40', '0.25')}`,
-                    `0 0 40px ${card.glowColor.replace('0.40', '0.15')}`,
-                    `0 12px 40px rgba(20,30,60,0.15)`,
-                    `inset 0 2px 0 rgba(255,255,255,1)`,
-                    `inset 0 0 48px rgba(255,255,255,0.65)`,
-                  ].join(', '),
-                }
-              : {
-                  scale: 1,
-                  boxShadow: [
-                    `0 0 0 0px rgba(0,0,0,0)`,
-                    `0 8px 24px rgba(0,0,0,0.08)`,
-                    `0 20px 56px rgba(0,0,0,0.10)`,
-                    `0 2px 6px rgba(0,0,0,0.04)`,
-                    `inset 0 2px 0 rgba(255,255,255,1)`,
-                    `inset 0 0 48px rgba(255,255,255,0.65)`,
-                  ].join(', '),
-                }
-            }
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            onClick={onClick}
-            onMouseEnter={startGaze}
-            onMouseLeave={stopGaze}
-            onFocus={startGaze}
-            onBlur={stopGaze}
-            data-gaze-target="true"
-            data-gaze-id={card.id}
-            data-gaze-label={card.label}
-            id={`gaze-card-${card.id}`}
-            role="button"
-            tabIndex={0}
-            aria-label={card.label}
-          >
-            {/* Specular highlight — top arc */}
-            <div aria-hidden style={{
-              position: 'absolute', top: 0, left: 0, right: 0,
-              height: '42%',
-              borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.68) 0%, transparent 100%)',
-              pointerEvents: 'none', zIndex: 3,
-            }} />
-
-            {card.image ? (
-              <img
-                src={import.meta.env.BASE_URL + card.image}
-                alt={card.label}
-                style={{
-                  position: 'absolute', inset: 0,
-                  width: '100%', height: '100%',
-                  objectFit: 'cover',
-                  objectPosition: card.imgPosition,
-                  transform: `scale(${card.imgScale})`,
-                  transformOrigin: 'center center',
-                  zIndex: 1,
-                }}
-                draggable={false}
-              />
-            ) : (
-              /* No photo — show category emoji large */
-              <span style={{
-                fontSize: 'clamp(2.2rem, 4.5vh, 3.2rem)',
-                zIndex: 2, lineHeight: 1, userSelect: 'none',
-              }} aria-hidden>
-                {card.emoji}
-              </span>
-            )}
-          </motion.div>
-        </div>
-
-        {/* Apple glass label pill */}
-        <motion.div
+          aria-hidden
           style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: '7px', height: '44px', padding: '0 15px',
-            borderRadius: '999px',
-            background: 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            border: '1px solid rgba(255,255,255,0.95)',
-            boxShadow: [
-              '0 4px 18px rgba(0,0,0,0.09)',
-              '0 1px 4px rgba(0,0,0,0.05)',
-              'inset 0 1.5px 0 rgba(255,255,255,1)',
-            ].join(', '),
+            position: 'absolute',
+            inset: '-5%', width: '110%', height: '110%',
+            borderRadius: '50%',
+            border: `2px solid ${card.ringColor}`,
+            opacity: focused ? 0.5 : 0,
+            transition: 'opacity 0.18s ease-out',
+            pointerEvents: 'none',
           }}
-          animate={gazing
-            ? { boxShadow: [`0 6px 22px ${card.glowColor}`, '0 2px 6px rgba(0,0,0,0.05)', 'inset 0 1.5px 0 rgba(255,255,255,1)'].join(', ') }
-            : { boxShadow: ['0 4px 18px rgba(0,0,0,0.09)', '0 1px 4px rgba(0,0,0,0.05)', 'inset 0 1.5px 0 rgba(255,255,255,1)'].join(', ') }
-          }
-          transition={{ duration: 0.25, ease: 'easeOut' }}
+        />
+
+        {/* Apple-glass circular bubble — only this element transitions on focus */}
+        <motion.div
+          className="relative overflow-hidden flex items-center justify-center"
+          style={{
+            width: '100%', height: '100%',
+            borderRadius: '50%',
+            background: card.bg,
+            backdropFilter: 'blur(48px) saturate(210%)',
+            WebkitBackdropFilter: 'blur(48px) saturate(210%)',
+            border: '1px solid rgba(255,255,255,0.96)',
+            cursor: 'pointer',
+            zIndex: 1,
+          }}
+          animate={{
+            scale: focused ? 1.03 : 1,
+            boxShadow: focused ? focusShadow : restShadow,
+          }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          onClick={onClick}
+          onMouseEnter={() => setFocused(true)}
+          onMouseLeave={() => setFocused(false)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          data-gaze-target="true"
+          data-gaze-id={card.id}
+          data-gaze-label={card.label}
+          id={`gaze-card-${card.id}`}
+          role="button"
+          tabIndex={0}
+          aria-label={card.label}
         >
-          <span className="font-bold text-[#1C1C1E]" style={{
-            fontSize: 'clamp(0.82rem, 1.05vw, 1.05rem)',
-            letterSpacing: '0.01em', lineHeight: 1,
-            whiteSpace: 'nowrap',
-          }}>
-            {card.label}
-          </span>
-          <card.Icon style={{ color: card.ringColor, flexShrink: 0 }} width={15} height={15} strokeWidth={1.75} />
+          {/* Specular highlight — top arc */}
+          <div aria-hidden style={{
+            position: 'absolute', top: 0, left: 0, right: 0,
+            height: '42%',
+            borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.68) 0%, transparent 100%)',
+            pointerEvents: 'none', zIndex: 3,
+          }} />
+
+          {card.image ? (
+            <img
+              src={import.meta.env.BASE_URL + card.image}
+              alt={card.label}
+              style={{
+                position: 'absolute', inset: 0,
+                width: '100%', height: '100%',
+                objectFit: 'cover',
+                objectPosition: card.imgPosition,
+                transform: `scale(${card.imgScale})`,
+                transformOrigin: 'center center',
+                zIndex: 1,
+              }}
+              draggable={false}
+            />
+          ) : (
+            <span style={{
+              fontSize: 'clamp(2.2rem, 4.5vh, 3.2rem)',
+              zIndex: 2, lineHeight: 1, userSelect: 'none',
+            }} aria-hidden>
+              {card.emoji}
+            </span>
+          )}
         </motion.div>
-      </motion.div>
-    </motion.div>
+      </div>
+
+      {/* Label pill — fully static, CSS shadow transition only */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: '7px', height: '44px', padding: '0 15px',
+          borderRadius: '999px',
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.95)',
+          boxShadow: focused
+            ? `0 6px 22px ${card.glowColor}, 0 2px 6px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)`
+            : '0 4px 18px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)',
+          transition: 'box-shadow 0.18s ease-out',
+        }}
+      >
+        <span className="font-bold text-[#1C1C1E]" style={{
+          fontSize: 'clamp(0.82rem, 1.05vw, 1.05rem)',
+          letterSpacing: '0.01em', lineHeight: 1,
+          whiteSpace: 'nowrap',
+        }}>
+          {card.label}
+        </span>
+        <card.Icon style={{ color: card.ringColor, flexShrink: 0 }} width={15} height={15} strokeWidth={1.75} />
+      </div>
+    </div>
   );
 }
 
