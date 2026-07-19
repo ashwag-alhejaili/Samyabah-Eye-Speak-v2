@@ -124,54 +124,55 @@ function Home() {
   );
 }
 
-// ─── Gaze-card sizing — adapts to the shorter viewport dimension ───
-// Circle: min(220px, 27vh). SVG ring wraps 10px outside the circle on each side.
-const CARD_PX = 220; // nominal; CSS clamp handles actual render size
-const RING_R = 112;
-const RING_CX = 120;
-const RING_CY = 120;
-
 const CARDS = [
   {
     id: 'needs',
     label: 'احتياجاتي',
-    subtitle: 'ماء • قهوة • طعام',
     image: 'illus-needs.png',
-    bg: 'linear-gradient(145deg, rgba(255,251,240,0.96) 0%, rgba(255,244,220,0.92) 100%)',
+    // warm amber-cream glass
+    bg: 'linear-gradient(148deg, rgba(255,253,245,0.97) 0%, rgba(255,246,222,0.94) 55%, rgba(255,234,180,0.88) 100%)',
     ringColor: '#FF9F0A',
+    glowColor: 'rgba(255,159,10,0.55)',
+    floatDuration: 3.8,
   },
   {
     id: 'health',
     label: 'صحتي',
-    subtitle: 'سرير • دواء • مساعدة',
     image: 'illus-health.png',
-    bg: 'linear-gradient(145deg, rgba(240,248,255,0.96) 0%, rgba(220,238,255,0.92) 100%)',
+    // cool sky-blue glass
+    bg: 'linear-gradient(148deg, rgba(245,250,255,0.97) 0%, rgba(225,242,255,0.94) 55%, rgba(195,228,255,0.88) 100%)',
     ringColor: '#0A84FF',
+    glowColor: 'rgba(10,132,255,0.55)',
+    floatDuration: 4.2,
   },
   {
     id: 'worship',
     label: 'عبادتي',
-    subtitle: 'صلاة • وضوء • قرآن',
     image: 'illus-worship.png',
-    bg: 'linear-gradient(145deg, rgba(242,255,245,0.96) 0%, rgba(220,248,230,0.92) 100%)',
+    // sage-green glass
+    bg: 'linear-gradient(148deg, rgba(245,255,248,0.97) 0%, rgba(222,248,230,0.94) 55%, rgba(190,238,208,0.88) 100%)',
     ringColor: '#34C759',
+    glowColor: 'rgba(52,199,89,0.55)',
+    floatDuration: 3.5,
   },
   {
     id: 'feelings',
     label: 'مشاعري',
-    subtitle: 'سعيد • هادئ • متألم',
     image: 'illus-feelings.png',
-    bg: 'linear-gradient(145deg, rgba(255,244,248,0.96) 0%, rgba(255,228,238,0.92) 100%)',
+    // rose glass
+    bg: 'linear-gradient(148deg, rgba(255,246,250,0.97) 0%, rgba(255,230,240,0.94) 55%, rgba(255,210,228,0.88) 100%)',
     ringColor: '#FF375F',
+    glowColor: 'rgba(255,55,95,0.55)',
+    floatDuration: 4.0,
   },
 ];
 
-// Animated circular card with gaze-progress ring.
-// Size is fully responsive: the circle is min(220px, 24.5vh) so two rows + labels
-// always fit within the viewport without scrolling.
-function GazeCard({ card, delay }: { card: typeof CARDS[0]; delay: number }) {
+function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
   const [gazing, setGazing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const entranceDelay = index * 0.1;
+  // Each card floats at a different phase so they don't all move in sync
+  const floatDelay = index * 0.9;
 
   const startGaze = useCallback(() => {
     setGazing(true);
@@ -185,93 +186,134 @@ function GazeCard({ card, delay }: { card: typeof CARDS[0]; delay: number }) {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
   }, []);
 
-  // The circle is driven by CSS min() — the SVG uses a fixed viewBox and
-  // width="100%" so it scales identically to the wrapper.
-  // viewBox: 240×240, circle at (120,120) r=112, ring wrapper = 240×240
-  // circle card = 220×220 centred in the viewBox
   return (
+    // Outer: entrance animation (opacity + scale, no y conflict)
     <motion.div
       className="flex flex-col items-center"
-      style={{ gap: 'clamp(12px, 1.8vh, 20px)' }}
-      initial={{ opacity: 0, scale: 0.88, y: 22 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.65, delay, ease: [0.16, 1, 0.3, 1] }}
+      style={{ gap: 'clamp(14px, 2vh, 22px)' }}
+      initial={{ opacity: 0, scale: 0.86 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.7, delay: entranceDelay, ease: [0.16, 1, 0.3, 1] }}
     >
-      {/* Ring + bubble — sized via CSS min() */}
-      <div
-        className="relative flex items-center justify-center"
-        style={{ width: 'min(220px, 24.5vh)', aspectRatio: '1' }}
+      {/* Inner: continuous floating breath — independent from entrance y */}
+      <motion.div
+        className="flex flex-col items-center"
+        style={{ gap: 'clamp(14px, 2vh, 22px)' }}
+        animate={{ y: [0, -10, 0] }}
+        transition={{
+          duration: card.floatDuration,
+          repeat: Infinity,
+          ease: 'easeInOut',
+          delay: floatDelay,
+        }}
       >
-        {/* SVG ring sits 4.5% outside the circle on each side, same CSS size */}
-        <svg
-          viewBox="0 0 240 240"
-          className="absolute pointer-events-none"
+        {/* Ring + bubble sized via CSS min() */}
+        <div
+          className="relative flex items-center justify-center"
+          style={{ width: 'min(220px, 24.5vh)', aspectRatio: '1' }}
+        >
+          {/* SVG gaze-progress ring */}
+          <svg
+            viewBox="0 0 240 240"
+            className="absolute pointer-events-none"
+            style={{
+              inset: '-5%',
+              width: '110%',
+              height: '110%',
+              transform: 'rotate(-90deg)',
+              // glow only while gazing
+              filter: gazing ? `drop-shadow(0 0 7px ${card.glowColor})` : 'none',
+              transition: 'filter 0.3s ease',
+            }}
+          >
+            {/* Faint track */}
+            <circle cx={120} cy={120} r={112}
+              fill="none" stroke={card.ringColor} strokeWidth={3}
+              opacity={gazing ? 0.18 : 0}
+              style={{ transition: 'opacity 0.25s' }}
+            />
+            {/* Animated fill */}
+            <motion.circle cx={120} cy={120} r={112}
+              fill="none" stroke={card.ringColor}
+              strokeWidth={4.5} strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={gazing
+                ? { pathLength: 1, opacity: 1 }
+                : { pathLength: 0, opacity: 0 }}
+              transition={{
+                pathLength: { duration: 2, ease: 'linear' },
+                opacity: { duration: 0.15 },
+              }}
+            />
+          </svg>
+
+          {/* Frosted-glass circular bubble */}
+          <motion.div
+            className="relative overflow-hidden flex items-center justify-center"
+            style={{
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              background: card.bg,
+              backdropFilter: 'blur(28px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(160%)',
+              border: '1.5px solid rgba(255,255,255,0.90)',
+              boxShadow: [
+                '0 22px 56px rgba(0,0,0,0.11)',
+                '0 6px 18px rgba(0,0,0,0.07)',
+                '0 1px 3px rgba(0,0,0,0.04)',
+                'inset 0 2px 0 rgba(255,255,255,0.80)',
+                'inset 0 -1px 0 rgba(0,0,0,0.04)',
+              ].join(', '),
+              cursor: 'none',
+            }}
+            animate={gazing ? { scale: 1.09 } : { scale: 1 }}
+            transition={{ type: 'spring', stiffness: 170, damping: 17 }}
+            onMouseEnter={startGaze}
+            onMouseLeave={stopGaze}
+            onFocus={startGaze}
+            onBlur={stopGaze}
+            data-gaze-target="true"
+            data-gaze-id={card.id}
+            data-gaze-label={card.label}
+            id={`gaze-card-${card.id}`}
+            role="button"
+            tabIndex={0}
+            aria-label={card.label}
+          >
+            {/* Specular light reflection — top arc */}
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0,
+                height: '46%',
+                borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.52) 0%, transparent 100%)',
+                pointerEvents: 'none',
+              }}
+            />
+            <img
+              src={import.meta.env.BASE_URL + card.image}
+              alt={card.label}
+              style={{ width: '82%', height: '82%', objectFit: 'contain', position: 'relative', zIndex: 1 }}
+              draggable={false}
+            />
+          </motion.div>
+        </div>
+
+        {/* Label — large, no subtitle */}
+        <span
+          className="font-bold text-[#1C1C1E]"
           style={{
-            inset: '-4.5%',
-            width: '109%',
-            height: '109%',
-            transform: 'rotate(-90deg)',
+            fontSize: 'clamp(1.05rem, 1.5vw, 1.4rem)',
+            letterSpacing: '0.01em',
+            textShadow: '0 1px 3px rgba(255,255,255,0.8)',
           }}
         >
-          <circle cx={120} cy={120} r={112} fill="none" stroke={card.ringColor}
-            strokeWidth={3.5} opacity={gazing ? 0.14 : 0}
-            style={{ transition: 'opacity 0.2s' }} />
-          <motion.circle cx={120} cy={120} r={112} fill="none"
-            stroke={card.ringColor} strokeWidth={3.5} strokeLinecap="round"
-            initial={{ pathLength: 0, opacity: 0 }}
-            animate={gazing ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
-            transition={{ pathLength: { duration: 2, ease: 'linear' }, opacity: { duration: 0.15 } }}
-          />
-        </svg>
-
-        {/* Circular bubble */}
-        <motion.div
-          className="relative flex items-center justify-center overflow-hidden"
-          style={{
-            width: '100%',
-            height: '100%',
-            borderRadius: '50%',
-            background: card.bg,
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            border: '1.5px solid rgba(255,255,255,0.85)',
-            boxShadow: '0 16px 44px rgba(0,0,0,0.09), 0 3px 10px rgba(0,0,0,0.06), inset 0 1.5px 0 rgba(255,255,255,0.70)',
-            cursor: 'none',
-          }}
-          animate={gazing ? { scale: 1.08 } : { scale: 1 }}
-          transition={{ type: 'spring', stiffness: 180, damping: 18 }}
-          onMouseEnter={startGaze}
-          onMouseLeave={stopGaze}
-          onFocus={startGaze}
-          onBlur={stopGaze}
-          data-gaze-target="true"
-          data-gaze-id={card.id}
-          data-gaze-label={card.label}
-          id={`gaze-card-${card.id}`}
-          role="button"
-          tabIndex={0}
-          aria-label={card.label}
-        >
-          <img
-            src={import.meta.env.BASE_URL + card.image}
-            alt={card.label}
-            style={{ width: '76%', height: '76%', objectFit: 'contain' }}
-            draggable={false}
-          />
-        </motion.div>
-      </div>
-
-      {/* Label beneath bubble */}
-      <div className="flex flex-col items-center text-center" style={{ gap: '4px' }}>
-        <span className="font-bold text-[#1C1C1E]"
-          style={{ fontSize: 'clamp(0.95rem, 1.4vw, 1.3rem)', letterSpacing: '0.01em' }}>
           {card.label}
         </span>
-        <span className="font-normal text-[#AEAEB2]"
-          style={{ fontSize: 'clamp(0.68rem, 0.9vw, 0.82rem)' }}>
-          {card.subtitle}
-        </span>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -281,30 +323,69 @@ function CommunicationScreen() {
 
   return (
     <div
-      className="h-[100dvh] overflow-hidden flex flex-col"
+      className="h-[100dvh] overflow-hidden flex flex-col relative"
       dir="rtl"
       style={{
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'radial-gradient(ellipse at 50% 20%, #FFF8EE 0%, #F5F5FA 55%, #EEEEF6 100%)',
+        background: 'linear-gradient(160deg, #FFFDF7 0%, #F8F8FC 50%, #F2F2F8 100%)',
       }}
     >
+      {/* ── AMBIENT LIGHT BLOBS ── */}
+      {/* Each blob is a large soft radial gradient — no patterns, no distractions */}
+      <div aria-hidden style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
+      }}>
+        {/* Top-right warm glow */}
+        <div style={{
+          position: 'absolute', top: '-18%', right: '-12%',
+          width: '55vw', height: '55vw',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,220,140,0.38) 0%, transparent 68%)',
+          filter: 'blur(48px)',
+        }} />
+        {/* Bottom-left cool lavender */}
+        <div style={{
+          position: 'absolute', bottom: '-20%', left: '-10%',
+          width: '52vw', height: '52vw',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(190,200,255,0.28) 0%, transparent 68%)',
+          filter: 'blur(56px)',
+        }} />
+        {/* Center subtle cream */}
+        <div style={{
+          position: 'absolute', top: '25%', left: '30%',
+          width: '40vw', height: '40vw',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,240,210,0.20) 0%, transparent 70%)',
+          filter: 'blur(60px)',
+        }} />
+      </div>
+
       {/* ── HEADER ── */}
       <motion.div
-        className="flex-none relative flex items-center justify-center px-6 pt-6 pb-3"
+        className="flex-none relative z-10 flex items-center justify-center px-6 pt-6 pb-3"
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       >
-        {/* Emergency — absolute top-right */}
+        {/* Emergency — absolute right side (RTL: insetInlineStart) */}
         <motion.button
-          whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.92 }}
-          className="absolute text-white font-bold text-[1rem] rounded-full flex items-center gap-2"
+          // Gentle continuous pulse every few seconds
+          animate={{
+            boxShadow: [
+              '0 4px 18px rgba(255,59,48,0.42), 0 1px 4px rgba(255,59,48,0.22)',
+              '0 6px 28px rgba(255,59,48,0.68), 0 2px 8px rgba(255,59,48,0.38)',
+              '0 4px 18px rgba(255,59,48,0.42), 0 1px 4px rgba(255,59,48,0.22)',
+            ],
+          }}
+          transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute text-white font-bold rounded-full flex items-center gap-2"
           style={{
-            insetInlineStart: '24px', // RTL: left → right side visually
+            insetInlineStart: '24px',
             background: 'linear-gradient(135deg, #FF3B30 0%, #FF6B35 100%)',
-            padding: '12px 22px',
-            boxShadow: '0 4px 20px rgba(255,59,48,0.48), 0 1px 4px rgba(255,59,48,0.25)',
+            padding: '13px 24px',
+            fontSize: '1rem',
           }}
           aria-label="طوارئ"
         >
@@ -312,21 +393,23 @@ function CommunicationScreen() {
           <span>طوارئ</span>
         </motion.button>
 
-        {/* Title — center */}
-        <div className="flex flex-col items-center text-center gap-1 pointer-events-none">
+        {/* Title — centered */}
+        <div className="flex flex-col items-center text-center gap-[6px] pointer-events-none">
           <h1
             className="font-bold text-[#0A0A0A] leading-tight tracking-tight"
-            style={{ fontSize: 'clamp(1.5rem, 2.2vw, 2rem)' }}
+            style={{ fontSize: 'clamp(1.55rem, 2.3vw, 2.1rem)' }}
           >
             ماذا تحتاج؟
           </h1>
-          <p className="text-[0.78rem] font-normal text-[#AEAEB2] flex items-center gap-[5px]">
-            <Eye className="w-[10px] h-[10px] shrink-0" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
+          <p className="font-normal text-[#AEAEB2] flex items-center gap-[5px]"
+            style={{ fontSize: 'clamp(0.74rem, 0.95vw, 0.84rem)' }}>
+            <Eye className="w-[10px] h-[10px] shrink-0"
+              style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
             انظر إلى الخيار لمدة ثانيتين للاختيار
           </p>
         </div>
 
-        {/* Back — absolute top-left */}
+        {/* Back — absolute left side (RTL: insetInlineEnd) */}
         <motion.button
           onClick={() => navigate('/')}
           whileHover={{ scale: 1.1 }}
@@ -334,14 +417,13 @@ function CommunicationScreen() {
           transition={{ type: 'spring', stiffness: 360, damping: 20 }}
           className="absolute flex items-center justify-center"
           style={{
-            insetInlineEnd: '24px', // RTL: right → left side visually
-            width: '46px',
-            height: '46px',
+            insetInlineEnd: '24px',
+            width: '48px', height: '48px',
             borderRadius: '50%',
-            background: 'rgba(255,255,255,0.78)',
-            backdropFilter: 'blur(14px)',
-            WebkitBackdropFilter: 'blur(14px)',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.09)',
+            background: 'rgba(255,255,255,0.80)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            boxShadow: '0 2px 14px rgba(0,0,0,0.09), inset 0 1px 0 rgba(255,255,255,0.90)',
             border: '1px solid rgba(255,255,255,0.92)',
           }}
           aria-label="رجوع"
@@ -350,14 +432,14 @@ function CommunicationScreen() {
         </motion.button>
       </motion.div>
 
-      {/* ── CARDS — centered 2×2 grid of floating circles ── */}
-      <div className="flex-1 flex items-center justify-center px-6 pb-6">
+      {/* ── CARDS — centered 2×2 floating circles ── */}
+      <div className="relative z-10 flex-1 flex items-center justify-center px-6 pb-6">
         <div
           className="grid grid-cols-2"
-          style={{ gap: 'clamp(28px, 4vw, 52px)' }}
+          style={{ gap: 'clamp(32px, 5vw, 60px)' }}
         >
           {CARDS.map((card, i) => (
-            <GazeCard key={card.id} card={card} delay={i * 0.1} />
+            <GazeCard key={card.id} card={card} index={i} />
           ))}
         </div>
       </div>

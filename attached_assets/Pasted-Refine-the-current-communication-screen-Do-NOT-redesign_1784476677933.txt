@@ -1,0 +1,148 @@
+Refine the current communication screen.
+
+Do NOT redesign it.
+
+Keep the current circular layout.
+
+Improve it to feel like a premium Apple accessibility product.
+
+=========================
+VISUAL DESIGN
+=========================
+
+Keep the four circular cards.
+
+Increase the quality dramatically.
+
+Each circle should look like floating frosted glass.
+
+Add:
+
+- Soft glassmorphism
+- Soft white border
+- Premium shadow
+- Slight depth
+- Elegant light reflection
+- Very soft warm gradient behind each circle
+
+The circles should feel alive, not flat.
+
+=========================
+BACKGROUND
+=========================
+
+Replace the plain white background.
+
+Create an elegant Apple-style background.
+
+Very soft cream-white gradient.
+
+Large blurred light blobs.
+
+Extremely subtle.
+
+No patterns.
+
+No distractions.
+
+=========================
+HEADER
+=========================
+
+Center:
+
+ماذا تحتاج؟
+
+Subtitle:
+
+انظر إلى الخيار لمدة ثانيتين للاختيار
+
+Top Left:
+
+Floating circular Back button
+
+Top Right:
+
+Floating Emergency button
+
+🚨 طوارئ
+
+The emergency button should gently pulse every few seconds.
+
+=========================
+EYE GAZE EXPERIENCE
+=========================
+
+This application is controlled only by eye gaze.
+
+When the gaze reaches a circle:
+
+• the circle enlarges slightly
+
+• a blue glowing ring appears
+
+• a circular progress indicator starts filling
+
+• after 2 seconds the card opens
+
+No click.
+
+No hover.
+
+Only eye gaze interaction.
+
+=========================
+ANIMATIONS
+=========================
+
+Every circle should float very slowly.
+
+Very subtle breathing animation.
+
+Very premium.
+
+Apple quality.
+
+=========================
+ILLUSTRATIONS
+=========================
+
+Keep the existing illustrations.
+
+Improve their rendering quality.
+
+Make them slightly larger.
+
+Perfectly centered.
+
+High-end 3D.
+
+=========================
+TYPOGRAPHY
+=========================
+
+Arabic only.
+
+IBM Plex Sans Arabic.
+
+Large titles.
+
+Remove the small descriptive text under every category.
+
+The illustration itself should explain the meaning.
+
+=========================
+SPACING
+=========================
+
+Increase spacing between circles.
+
+Everything should breathe.
+
+Nothing should feel crowded.
+
+=========================
+GOAL
+=========================
+
+The screen should look like a futuristic accessibility product designed by Apple specifically for elderly stroke survivors.
