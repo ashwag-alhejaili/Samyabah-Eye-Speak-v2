@@ -129,40 +129,40 @@ const CARDS = [
     id: 'needs',
     label: 'احتياجاتي',
     image: 'user-needs.png',
-    // warm amber-cream glass
-    bg: 'linear-gradient(148deg, rgba(255,253,245,0.97) 0%, rgba(255,246,222,0.94) 55%, rgba(255,234,180,0.88) 100%)',
+    // Apple glass — white base, whisper of amber at edge
+    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(255,251,238,0.84) 55%, rgba(255,242,200,0.72) 100%)',
     ringColor: '#FF9F0A',
-    glowColor: 'rgba(255,159,10,0.55)',
+    glowColor: 'rgba(255,159,10,0.50)',
     floatDuration: 3.8,
   },
   {
     id: 'health',
     label: 'صحتي',
     image: 'user-health.png',
-    // cool sky-blue glass
-    bg: 'linear-gradient(148deg, rgba(245,250,255,0.97) 0%, rgba(225,242,255,0.94) 55%, rgba(195,228,255,0.88) 100%)',
+    // Apple glass — white base, whisper of sky at edge
+    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(241,249,255,0.84) 55%, rgba(210,234,255,0.72) 100%)',
     ringColor: '#0A84FF',
-    glowColor: 'rgba(10,132,255,0.55)',
+    glowColor: 'rgba(10,132,255,0.50)',
     floatDuration: 4.2,
   },
   {
     id: 'worship',
     label: 'عبادتي',
     image: 'user-worship.png',
-    // sage-green glass
-    bg: 'linear-gradient(148deg, rgba(245,255,248,0.97) 0%, rgba(222,248,230,0.94) 55%, rgba(190,238,208,0.88) 100%)',
+    // Apple glass — white base, whisper of sage at edge
+    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(241,255,246,0.84) 55%, rgba(210,242,222,0.72) 100%)',
     ringColor: '#34C759',
-    glowColor: 'rgba(52,199,89,0.55)',
+    glowColor: 'rgba(52,199,89,0.50)',
     floatDuration: 3.5,
   },
   {
     id: 'feelings',
     label: 'مشاعري',
     image: 'user-feelings.png',
-    // rose glass
-    bg: 'linear-gradient(148deg, rgba(255,246,250,0.97) 0%, rgba(255,230,240,0.94) 55%, rgba(255,210,228,0.88) 100%)',
+    // Apple glass — white base, whisper of rose at edge
+    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(255,244,249,0.84) 55%, rgba(255,220,235,0.72) 100%)',
     ringColor: '#FF375F',
-    glowColor: 'rgba(255,55,95,0.55)',
+    glowColor: 'rgba(255,55,95,0.50)',
     floatDuration: 4.0,
   },
 ];
@@ -247,7 +247,7 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
             />
           </svg>
 
-          {/* Frosted-glass circular bubble */}
+          {/* Premium Apple-glass circular bubble */}
           <motion.div
             className="relative overflow-hidden flex items-center justify-center"
             style={{
@@ -255,20 +255,21 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               height: '100%',
               borderRadius: '50%',
               background: card.bg,
-              backdropFilter: 'blur(28px) saturate(160%)',
-              WebkitBackdropFilter: 'blur(28px) saturate(160%)',
-              border: '1.5px solid rgba(255,255,255,0.90)',
+              backdropFilter: 'blur(44px) saturate(200%)',
+              WebkitBackdropFilter: 'blur(44px) saturate(200%)',
+              border: '1px solid rgba(255,255,255,0.96)',
               boxShadow: [
-                '0 22px 56px rgba(0,0,0,0.11)',
-                '0 6px 18px rgba(0,0,0,0.07)',
-                '0 1px 3px rgba(0,0,0,0.04)',
-                'inset 0 2px 0 rgba(255,255,255,0.80)',
-                'inset 0 -1px 0 rgba(0,0,0,0.04)',
+                '0 28px 72px rgba(0,0,0,0.09)',
+                '0 8px 24px rgba(0,0,0,0.06)',
+                '0 2px 6px rgba(0,0,0,0.04)',
+                'inset 0 1.5px 0 rgba(255,255,255,1)',
+                'inset 0 0 32px rgba(255,255,255,0.55)',
+                'inset 0 -1px 0 rgba(0,0,0,0.03)',
               ].join(', '),
               cursor: 'none',
             }}
-            animate={gazing ? { scale: 1.09 } : { scale: 1 }}
-            transition={{ type: 'spring', stiffness: 170, damping: 17 }}
+            animate={gazing ? { scale: 1.05 } : { scale: 1 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 28 }}
             onMouseEnter={startGaze}
             onMouseLeave={stopGaze}
             onFocus={startGaze}
@@ -287,28 +288,28 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               style={{
                 position: 'absolute',
                 top: 0, left: 0, right: 0,
-                height: '46%',
+                height: '44%',
                 borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.52) 0%, transparent 100%)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.60) 0%, transparent 100%)',
                 pointerEvents: 'none',
               }}
             />
             <img
               src={import.meta.env.BASE_URL + card.image}
               alt={card.label}
-              style={{ width: '82%', height: '82%', objectFit: 'contain', position: 'relative', zIndex: 1 }}
+              style={{ width: '94%', height: '94%', objectFit: 'contain', position: 'relative', zIndex: 1 }}
               draggable={false}
             />
           </motion.div>
         </div>
 
-        {/* Label — large, no subtitle */}
+        {/* Label */}
         <span
-          className="font-bold text-[#1C1C1E]"
+          className="font-semibold text-[#1C1C1E]"
           style={{
-            fontSize: 'clamp(1.05rem, 1.5vw, 1.4rem)',
-            letterSpacing: '0.01em',
-            textShadow: '0 1px 3px rgba(255,255,255,0.8)',
+            fontSize: 'clamp(1.1rem, 1.6vw, 1.5rem)',
+            letterSpacing: '0.005em',
+            textShadow: '0 1px 4px rgba(255,255,255,0.9)',
           }}
         >
           {card.label}
@@ -327,7 +328,7 @@ function CommunicationScreen() {
       dir="rtl"
       style={{
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(160deg, #FFFDF7 0%, #F8F8FC 50%, #F2F2F8 100%)',
+        background: 'linear-gradient(160deg, #FFFFFF 0%, #F7F7FC 50%, #F0F0F8 100%)',
       }}
     >
       {/* ── AMBIENT LIGHT BLOBS ── */}
@@ -335,29 +336,29 @@ function CommunicationScreen() {
       <div aria-hidden style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
       }}>
-        {/* Top-right warm glow */}
+        {/* Top-right warm glow — 20% less saturated */}
         <div style={{
           position: 'absolute', top: '-18%', right: '-12%',
           width: '55vw', height: '55vw',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(255,220,140,0.38) 0%, transparent 68%)',
-          filter: 'blur(48px)',
+          background: 'radial-gradient(circle, rgba(255,220,140,0.28) 0%, transparent 68%)',
+          filter: 'blur(56px)',
         }} />
-        {/* Bottom-left cool lavender */}
+        {/* Bottom-left cool lavender — 20% less saturated */}
         <div style={{
           position: 'absolute', bottom: '-20%', left: '-10%',
           width: '52vw', height: '52vw',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(190,200,255,0.28) 0%, transparent 68%)',
-          filter: 'blur(56px)',
+          background: 'radial-gradient(circle, rgba(190,200,255,0.20) 0%, transparent 68%)',
+          filter: 'blur(64px)',
         }} />
-        {/* Center subtle cream */}
+        {/* Center subtle cream — 20% less saturated */}
         <div style={{
           position: 'absolute', top: '25%', left: '30%',
           width: '40vw', height: '40vw',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(255,240,210,0.20) 0%, transparent 70%)',
-          filter: 'blur(60px)',
+          background: 'radial-gradient(circle, rgba(255,240,210,0.14) 0%, transparent 70%)',
+          filter: 'blur(70px)',
         }} />
       </div>
 
@@ -368,24 +369,26 @@ function CommunicationScreen() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       >
-        {/* Emergency — absolute right side (RTL: insetInlineStart) */}
+        {/* Emergency — Apple glass pill, right side (RTL: insetInlineStart) */}
         <motion.button
-          whileTap={{ scale: 0.92 }}
-          // Gentle continuous pulse every few seconds
+          whileTap={{ scale: 0.94 }}
           animate={{
             boxShadow: [
-              '0 4px 18px rgba(255,59,48,0.42), 0 1px 4px rgba(255,59,48,0.22)',
-              '0 6px 28px rgba(255,59,48,0.68), 0 2px 8px rgba(255,59,48,0.38)',
-              '0 4px 18px rgba(255,59,48,0.42), 0 1px 4px rgba(255,59,48,0.22)',
+              '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
+              '0 10px 36px rgba(255,59,48,0.70), 0 3px 10px rgba(255,59,48,0.38)',
+              '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
             ],
           }}
           transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute text-white font-bold rounded-full flex items-center gap-2"
+          className="absolute text-white font-semibold rounded-full flex items-center gap-[7px]"
           style={{
             insetInlineStart: '24px',
-            background: 'linear-gradient(135deg, #FF3B30 0%, #FF6B35 100%)',
-            padding: '13px 24px',
-            fontSize: '1rem',
+            background: 'rgba(255,48,36,0.92)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,110,100,0.30)',
+            padding: '11px 20px',
+            fontSize: '0.92rem',
           }}
           aria-label="طوارئ"
         >
@@ -393,38 +396,40 @@ function CommunicationScreen() {
           <span>طوارئ</span>
         </motion.button>
 
-        {/* Title — centered */}
-        <div className="flex flex-col items-center text-center gap-[6px] pointer-events-none">
+        {/* Title — centered, larger */}
+        <div className="flex flex-col items-center text-center gap-[8px] pointer-events-none">
           <h1
             className="font-bold text-[#0A0A0A] leading-tight tracking-tight"
-            style={{ fontSize: 'clamp(1.55rem, 2.3vw, 2.1rem)' }}
+            style={{ fontSize: 'clamp(1.7rem, 2.6vw, 2.4rem)' }}
           >
-            ماذا تحتاج؟
+            بماذا أستطيع مساعدتك؟
           </h1>
-          <p className="font-normal text-[#AEAEB2] flex items-center gap-[5px]"
-            style={{ fontSize: 'clamp(0.74rem, 0.95vw, 0.84rem)' }}>
-            <Eye className="w-[10px] h-[10px] shrink-0"
+          <p
+            className="font-normal flex items-center gap-[6px]"
+            style={{ fontSize: 'clamp(0.78rem, 1vw, 0.88rem)', color: '#6E6E73' }}
+          >
+            <Eye className="w-[11px] h-[11px] shrink-0"
               style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
-            انظر إلى الخيار لمدة ثانيتين للاختيار
+            ثبت نظرك على الخيار لمدة ثانيتين للاختيار
           </p>
         </div>
 
-        {/* Back — absolute left side (RTL: insetInlineEnd) */}
+        {/* Back — Apple glass circle, left side (RTL: insetInlineEnd) */}
         <motion.button
           onClick={() => navigate('/')}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.92 }}
-          transition={{ type: 'spring', stiffness: 360, damping: 20 }}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.94 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 28 }}
           className="absolute flex items-center justify-center"
           style={{
             insetInlineEnd: '24px',
-            width: '48px', height: '48px',
+            width: '46px', height: '46px',
             borderRadius: '50%',
-            background: 'rgba(255,255,255,0.80)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            boxShadow: '0 2px 14px rgba(0,0,0,0.09), inset 0 1px 0 rgba(255,255,255,0.90)',
-            border: '1px solid rgba(255,255,255,0.92)',
+            background: 'rgba(255,255,255,0.82)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            boxShadow: '0 4px 18px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,1)',
+            border: '1px solid rgba(255,255,255,0.95)',
           }}
           aria-label="رجوع"
         >
@@ -436,7 +441,7 @@ function CommunicationScreen() {
       <div className="relative z-10 flex-1 flex items-center justify-center px-6 pb-6">
         <div
           className="grid grid-cols-2"
-          style={{ gap: 'clamp(32px, 5vw, 60px)' }}
+          style={{ gap: 'clamp(29px, 4.5vw, 54px)' }}
         >
           {CARDS.map((card, i) => (
             <GazeCard key={card.id} card={card} index={i} />
