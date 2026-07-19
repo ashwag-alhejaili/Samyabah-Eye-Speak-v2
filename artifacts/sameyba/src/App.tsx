@@ -7,6 +7,7 @@ import {
   HeartPulse, Utensils, Heart, Sparkles, Home as HomeIcon, Users,
   Droplets, UtensilsCrossed, BellOff,
   Cross, Footprints, Stethoscope,
+  Lightbulb, LightbulbOff, Tv,
 } from 'lucide-react';
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
@@ -179,6 +180,68 @@ function HelpStandIcon({
       <path d="M19 14 L21 20" />
       {/* Helper arm reaching down to patient */}
       <path d="M19 7.5 L13 7" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Hospital Bed — raise (upward arrow on right) ────────────────
+function BedUpIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Bed frame / mattress */}
+      <rect x="1" y="12" width="17" height="4" rx="1" />
+      {/* Head post */}
+      <path d="M1 12 L1 9" />
+      {/* Pillow */}
+      <rect x="2" y="9" width="5" height="3" rx="0.8" />
+      {/* Legs */}
+      <line x1="3"  y1="16" x2="3"  y2="20" />
+      <line x1="16" y1="16" x2="16" y2="20" />
+      {/* Up arrow */}
+      <line x1="21" y1="19" x2="21" y2="8" />
+      <polyline points="19,10 21,8 23,10" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Hospital Bed — lower (downward arrow on right) ───────────────
+function BedDownIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Same bed */}
+      <rect x="1" y="12" width="17" height="4" rx="1" />
+      <path d="M1 12 L1 9" />
+      <rect x="2" y="9" width="5" height="3" rx="0.8" />
+      <line x1="3"  y1="16" x2="3"  y2="20" />
+      <line x1="16" y1="16" x2="16" y2="20" />
+      {/* Down arrow */}
+      <line x1="21" y1="8" x2="21" y2="19" />
+      <polyline points="19,17 21,19 23,17" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Television — off (screen with diagonal slash) ────────────────
+function TvOffIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* TV cabinet */}
+      <rect x="2" y="4" width="20" height="14" rx="2" />
+      {/* Stand base */}
+      <line x1="10" y1="18" x2="10" y2="21" />
+      <line x1="14" y1="18" x2="14" y2="21" />
+      <line x1="8"  y1="21" x2="16" y2="21" />
+      {/* Power-off slash */}
+      <line x1="6" y1="7" x2="18" y2="17" />
     </svg>
   );
 }
@@ -411,12 +474,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 35%',
     Icon: HomeIcon,
     items: [
-      { id: 'curtains_open',  label: 'افتح الستائر',      emoji: '🌤️' },
-      { id: 'curtains_close', label: 'أغلق الستائر',      emoji: '🌙' },
-      { id: 'cooler',         label: 'أريد برودة أكثر',   emoji: '❄️' },
-      { id: 'warmer',         label: 'أريد دفئاً أكثر',   emoji: '🔥' },
-      { id: 'light_up',       label: 'أنر الغرفة',        emoji: '💡' },
-      { id: 'light_down',     label: 'خفف الإضاءة',       emoji: '🌑' },
+      { id: 'bed_up',    label: 'ارفع السرير',        emoji: '🛏️', Icon: BedUpIcon },
+      { id: 'bed_down',  label: 'أنزل السرير',        emoji: '🛏️', Icon: BedDownIcon },
+      { id: 'light_on',  label: 'شغّل النور',         emoji: '💡', Icon: Lightbulb },
+      { id: 'light_off', label: 'أطفئ النور',         emoji: '🌑', Icon: LightbulbOff },
+      { id: 'tv_on',     label: 'شغّل التلفزيون',     emoji: '📺', Icon: Tv },
+      { id: 'tv_off',    label: 'أطفئ التلفزيون',     emoji: '📺', Icon: TvOffIcon },
     ],
   },
   {
