@@ -129,41 +129,45 @@ const CARDS = [
     id: 'needs',
     label: 'احتياجاتي',
     image: 'user-needs.png',
-    // Apple glass — white base, whisper of amber at edge
     bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(255,251,238,0.84) 55%, rgba(255,242,200,0.72) 100%)',
     ringColor: '#FF9F0A',
     glowColor: 'rgba(255,159,10,0.50)',
     floatDuration: 3.8,
+    imgScale: 1.55,         // tray nearly fills circle
+    imgPosition: 'center center',
   },
   {
     id: 'health',
     label: 'صحتي',
     image: 'user-health.png',
-    // Apple glass — white base, whisper of sky at edge
     bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(241,249,255,0.84) 55%, rgba(210,234,255,0.72) 100%)',
     ringColor: '#0A84FF',
     glowColor: 'rgba(10,132,255,0.50)',
     floatDuration: 4.2,
+    imgScale: 1.70,         // zoom in on nurse + patient, drop background
+    imgPosition: 'center 42%',
   },
   {
     id: 'worship',
     label: 'عبادتي',
     image: 'user-worship.png',
-    // Apple glass — white base, whisper of sage at edge
     bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(241,255,246,0.84) 55%, rgba(210,242,222,0.72) 100%)',
     ringColor: '#34C759',
     glowColor: 'rgba(52,199,89,0.50)',
     floatDuration: 3.5,
+    imgScale: 1.50,         // Quran + prayer mat occupies most of circle
+    imgPosition: 'center 55%',
   },
   {
     id: 'feelings',
     label: 'مشاعري',
     image: 'user-feelings.png',
-    // Apple glass — white base, whisper of rose at edge
     bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(255,244,249,0.84) 55%, rgba(255,220,235,0.72) 100%)',
     ringColor: '#FF375F',
     glowColor: 'rgba(255,55,95,0.50)',
     floatDuration: 4.0,
+    imgScale: 1.12,         // portrait already well-framed, subtle zoom only
+    imgPosition: 'center 38%',
   },
 ];
 
@@ -297,7 +301,17 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
             <img
               src={import.meta.env.BASE_URL + card.image}
               alt={card.label}
-              style={{ width: '94%', height: '94%', objectFit: 'contain', position: 'relative', zIndex: 1 }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: card.imgPosition ?? 'center center',
+                transform: `scale(${card.imgScale ?? 1})`,
+                transformOrigin: 'center center',
+                zIndex: 1,
+              }}
               draggable={false}
             />
           </motion.div>
