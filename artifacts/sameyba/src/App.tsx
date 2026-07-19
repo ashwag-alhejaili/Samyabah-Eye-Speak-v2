@@ -127,13 +127,13 @@ const commContainerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.1 }
+    transition: { staggerChildren: 0.08, delayChildren: 0.15 }
   }
 };
 
 const commCardVariants = {
-  hidden: { scale: 0.94, opacity: 0 },
-  visible: { scale: 1, opacity: 1, transition: { duration: 0.4 } }
+  hidden: { scale: 0.93, opacity: 0 },
+  visible: { scale: 1, opacity: 1, transition: { duration: 0.5 } }
 };
 
 function CommunicationScreen() {
@@ -144,20 +144,34 @@ function CommunicationScreen() {
       style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
     >
       {/* ZONE 1 */}
-      <div className="flex-none py-10 flex justify-center">
+      <div className="flex-none py-6 px-6 flex justify-between items-center">
         <motion.h1 
           initial={{ y: -10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="text-[2.2rem] font-bold text-[#0A0A0A]"
+          className="text-[1.9rem] font-bold text-[#0A0A0A]"
         >
           ماذا تحتاج؟
         </motion.h1>
+        
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="text-white font-bold text-[1rem] rounded-full flex items-center gap-2"
+          style={{ 
+            background: 'linear-gradient(135deg, #FF3B30, #FF6B35)',
+            padding: '12px 24px',
+            boxShadow: '0 4px 20px rgba(255,59,48,0.40)'
+          }}
+        >
+          <span>🚨</span>
+          <span>طوارئ</span>
+        </motion.button>
       </div>
 
       {/* ZONE 2 */}
       <motion.div 
-        className="flex-1 px-4"
+        className="flex-1 px-4 pb-4"
         variants={commContainerVariants}
         initial="hidden"
         animate="visible"
@@ -166,86 +180,134 @@ function CommunicationScreen() {
           {/* Card 1: Needs */}
           <motion.div
             variants={commCardVariants}
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
-            style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.07)' }}
+            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 280, damping: 22 }}
+            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
+            style={{ 
+              background: 'rgba(255,255,255,0.72)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.85)',
+              borderRadius: '28px',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
+            }}
             data-gaze-target="true"
             data-gaze-id="needs"
             data-gaze-label="احتياجاتي"
             id="gaze-card-needs"
             aria-label="احتياجاتي"
           >
-            <span className="text-[5.5rem] leading-none">🥤</span>
-            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">احتياجاتي</span>
+            <img 
+              src={import.meta.env.BASE_URL + 'card-needs.png'} 
+              alt="احتياجاتي"
+              className="w-[48%] max-h-[45%] object-contain"
+              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
+            />
+            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>احتياجاتي</span>
           </motion.div>
 
           {/* Card 2: Health */}
           <motion.div
             variants={commCardVariants}
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
-            style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.07)' }}
+            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 280, damping: 22 }}
+            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
+            style={{ 
+              background: 'rgba(255,255,255,0.72)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.85)',
+              borderRadius: '28px',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
+            }}
             data-gaze-target="true"
             data-gaze-id="health"
             data-gaze-label="صحتي"
             id="gaze-card-health"
             aria-label="صحتي"
           >
-            <span className="text-[5.5rem] leading-none">🩺</span>
-            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">صحتي</span>
+            <img 
+              src={import.meta.env.BASE_URL + 'card-health.png'} 
+              alt="صحتي"
+              className="w-[48%] max-h-[45%] object-contain"
+              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
+            />
+            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>صحتي</span>
           </motion.div>
 
           {/* Card 3: Worship */}
           <motion.div
             variants={commCardVariants}
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
-            style={{ boxShadow: '0 2px 16px rgba(0,0,0,0.07)' }}
+            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 280, damping: 22 }}
+            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
+            style={{ 
+              background: 'rgba(255,255,255,0.72)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.85)',
+              borderRadius: '28px',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
+            }}
             data-gaze-target="true"
             data-gaze-id="worship"
             data-gaze-label="عبادتي"
             id="gaze-card-worship"
             aria-label="عبادتي"
           >
-            <span className="text-[5.5rem] leading-none">🕌</span>
-            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">عبادتي</span>
+            <img 
+              src={import.meta.env.BASE_URL + 'card-worship.png'} 
+              alt="عبادتي"
+              className="w-[48%] max-h-[45%] object-contain"
+              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
+            />
+            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>عبادتي</span>
           </motion.div>
 
-          {/* Card 4: Emergency */}
+          {/* Card 4: Feelings */}
           <motion.div
             variants={commCardVariants}
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 24px rgba(255,59,48,0.18)' }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="gaze-card bg-white rounded-[28px] flex flex-col items-center justify-center gap-4 cursor-pointer"
-            style={{ boxShadow: '0 2px 20px rgba(255,59,48,0.12)' }}
+            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 280, damping: 22 }}
+            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
+            style={{ 
+              background: 'rgba(255,255,255,0.72)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.85)',
+              borderRadius: '28px',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
+            }}
             data-gaze-target="true"
-            data-gaze-id="emergency"
-            data-gaze-label="طوارئ"
-            id="gaze-card-emergency"
-            aria-label="طوارئ"
+            data-gaze-id="feelings"
+            data-gaze-label="مشاعري"
+            id="gaze-card-feelings"
+            aria-label="مشاعري"
           >
-            <span className="text-[5.5rem] leading-none">🚨</span>
-            <span className="text-[1.4rem] font-bold text-[#1C1C1E]">طوارئ</span>
+            <img 
+              src={import.meta.env.BASE_URL + 'card-feelings.png'} 
+              alt="مشاعري"
+              className="w-[48%] max-h-[45%] object-contain"
+              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
+            />
+            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>مشاعري</span>
           </motion.div>
         </div>
       </motion.div>
 
       {/* ZONE 3 */}
       <motion.div 
-        className="flex-none py-6 flex items-center justify-center gap-2"
+        className="flex-none py-5 flex items-center justify-center gap-2"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.45 }}
+        transition={{ delay: 0.5 }}
       >
-        <Eye className="w-[14px] h-[14px] text-[#AEAEB2]" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
-        <span className="text-[0.88rem] text-[#AEAEB2]">
+        <Eye className="w-[13px] h-[13px] text-[#AEAEB2]" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
+        <span className="text-[0.85rem] text-[#AEAEB2]">
           انظر إلى الخيار لمدة ثانيتين للاختيار.
         </span>
       </motion.div>
