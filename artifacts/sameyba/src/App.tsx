@@ -176,17 +176,16 @@ const CARDS = [
 ];
 
 function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
-  // gazing is ONLY set by the eye-tracking system — never by mouse or generic focus
   const [gazing, setGazing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entranceDelay = index * 0.1;
+  // Each card floats at a different phase so they don't all move in sync
   const floatDelay = index * 0.9;
 
-  // Called exclusively by eye-tracking hardware / gaze dwell logic — not DOM events
   const startGaze = useCallback(() => {
     setGazing(true);
     timerRef.current = setTimeout(() => {
-      // real eye-tracking selection fires here after 2 s dwell
+      // placeholder — real eye-tracking fires this after 2 s dwell
     }, 2000);
   }, []);
 
@@ -196,7 +195,7 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
   }, []);
 
   return (
-    // Outer: entrance animation
+    // Outer: entrance animation (opacity + scale, no y conflict)
     <motion.div
       className="flex flex-col items-center"
       style={{ gap: 'clamp(14px, 2vh, 22px)' }}
@@ -204,53 +203,51 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, delay: entranceDelay, ease: [0.16, 1, 0.3, 1] }}
     >
-      {/* Inner: continuous floating breath */}
+      {/* Inner: continuous floating breath — independent from entrance y */}
       <motion.div
         className="flex flex-col items-center"
         style={{ gap: 'clamp(14px, 2vh, 22px)' }}
         animate={{ y: [0, -10, 0] }}
-        transition={{ duration: card.floatDuration, repeat: Infinity, ease: 'easeInOut', delay: floatDelay }}
+        transition={{
+          duration: card.floatDuration,
+          repeat: Infinity,
+          ease: 'easeInOut',
+          delay: floatDelay,
+        }}
       >
-        {/* Focusable wrapper — keyboard nav only, no mouse effects */}
+        {/* Ring + bubble sized via CSS min() */}
         <div
-          style={{ width: 'min(220px, 24.5vh)', aspectRatio: '1', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
-          // Keyboard-only focus ring via :focus-visible; suppressed on mouse click
-          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0A84FF] focus-visible:ring-offset-2"
-          data-gaze-target="true"
-          data-gaze-id={card.id}
-          data-gaze-label={card.label}
-          id={`gaze-card-${card.id}`}
-          role="button"
-          tabIndex={0}
-          aria-label={card.label}
+          className="relative flex items-center justify-center"
+          style={{ width: 'min(220px, 24.5vh)', aspectRatio: '1' }}
         >
-          {/* SVG progress ring — gaze state only, invisible otherwise */}
+          {/* SVG gaze-progress ring */}
           <svg
             viewBox="0 0 240 240"
-            aria-hidden
+            className="absolute pointer-events-none"
             style={{
-              position: 'absolute',
               inset: '-5%',
               width: '110%',
               height: '110%',
               transform: 'rotate(-90deg)',
-              filter: gazing ? `drop-shadow(0 0 6px ${card.glowColor})` : 'none',
-              transition: 'filter 0.2s ease-out',
-              pointerEvents: 'none',
+              // glow only while gazing
+              filter: gazing ? `drop-shadow(0 0 7px ${card.glowColor})` : 'none',
+              transition: 'filter 0.3s ease',
             }}
           >
-            {/* Track — only visible during gaze */}
+            {/* Faint track */}
             <circle cx={120} cy={120} r={112}
-              fill="none" stroke={card.ringColor} strokeWidth={2.5}
-              opacity={gazing ? 0.16 : 0}
-              style={{ transition: 'opacity 0.2s ease-out' }}
+              fill="none" stroke={card.ringColor} strokeWidth={3}
+              opacity={gazing ? 0.18 : 0}
+              style={{ transition: 'opacity 0.25s' }}
             />
-            {/* Animated fill — gaze only */}
+            {/* Animated fill */}
             <motion.circle cx={120} cy={120} r={112}
               fill="none" stroke={card.ringColor}
-              strokeWidth={4} strokeLinecap="round"
+              strokeWidth={4.5} strokeLinecap="round"
               initial={{ pathLength: 0, opacity: 0 }}
-              animate={gazing ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
+              animate={gazing
+                ? { pathLength: 1, opacity: 1 }
+                : { pathLength: 0, opacity: 0 }}
               transition={{
                 pathLength: { duration: 2, ease: 'linear' },
                 opacity: { duration: 0.15 },
@@ -258,20 +255,20 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
             />
           </svg>
 
-          {/* Colored glow — gaze state only, opacity 0 at rest */}
+          {/* Outer color-tinted glow ring — sits behind the bubble */}
           <div aria-hidden style={{
             position: 'absolute',
             inset: '-6px',
             borderRadius: '50%',
-            background: `radial-gradient(circle, ${card.glowColor} 0%, transparent 70%)`,
-            filter: 'blur(16px)',
-            opacity: gazing ? 0.80 : 0,
-            transition: 'opacity 0.2s ease-out',
+            background: `radial-gradient(circle, ${card.glowColor} 0%, transparent 72%)`,
+            filter: 'blur(14px)',
+            opacity: gazing ? 0.85 : 0.35,
+            transition: 'opacity 0.4s ease',
             pointerEvents: 'none',
             zIndex: 0,
           }} />
 
-          {/* Glass bubble — no mouse/focus event handlers, scale driven by gaze only */}
+          {/* Premium Apple-glass circular bubble */}
           <motion.div
             className="relative overflow-hidden flex items-center justify-center"
             style={{
@@ -281,22 +278,32 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               background: card.bg,
               backdropFilter: 'blur(48px) saturate(210%)',
               WebkitBackdropFilter: 'blur(48px) saturate(210%)',
+              // Thin white border + soft outer glow + subtle inner shadow
               border: '1px solid rgba(255,255,255,0.96)',
               boxShadow: [
-                '0 20px 60px rgba(0,0,0,0.12)',
-                '0 8px 24px rgba(0,0,0,0.08)',
-                '0 2px 6px rgba(0,0,0,0.04)',
-                'inset 0 2px 0 rgba(255,255,255,1)',
-                'inset 0 0 48px rgba(255,255,255,0.65)',
-                'inset 0 -3px 8px rgba(0,0,0,0.04)',
+                `0 20px 60px rgba(0,0,0,0.12)`,
+                `0 8px 24px rgba(0,0,0,0.08)`,
+                `0 2px 6px rgba(0,0,0,0.04)`,
+                `inset 0 2px 0 rgba(255,255,255,1)`,
+                `inset 0 0 48px rgba(255,255,255,0.65)`,
+                `inset 0 -3px 8px rgba(0,0,0,0.04)`,
               ].join(', '),
-              // no pointer-events interaction here; wrapper handles keyboard
-              pointerEvents: 'none',
+              cursor: 'none',
               zIndex: 1,
             }}
-            // Scale 1.02 max, 200ms ease-out, gaze state only
-            animate={gazing ? { scale: 1.02 } : { scale: 1 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
+            animate={gazing ? { scale: 1.03 } : { scale: 1 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            onMouseEnter={startGaze}
+            onMouseLeave={stopGaze}
+            onFocus={startGaze}
+            onBlur={stopGaze}
+            data-gaze-target="true"
+            data-gaze-id={card.id}
+            data-gaze-label={card.label}
+            id={`gaze-card-${card.id}`}
+            role="button"
+            tabIndex={0}
+            aria-label={card.label}
           >
             {/* Specular highlight — top arc */}
             <div aria-hidden style={{
