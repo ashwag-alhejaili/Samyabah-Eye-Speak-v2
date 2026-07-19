@@ -138,7 +138,7 @@ const CARDS = [
   {
     id: 'health',
     label: 'صحتي',
-    image: 'illus-health.png',
+    image: 'care-health-v2.png',
     // cool sky-blue glass
     bg: 'linear-gradient(148deg, rgba(245,250,255,0.97) 0%, rgba(225,242,255,0.94) 55%, rgba(195,228,255,0.88) 100%)',
     ringColor: '#0A84FF',
@@ -158,7 +158,7 @@ const CARDS = [
   {
     id: 'feelings',
     label: 'مشاعري',
-    image: 'illus-feelings.png',
+    image: 'care-feelings-v2.png',
     // rose glass
     bg: 'linear-gradient(148deg, rgba(255,246,250,0.97) 0%, rgba(255,230,240,0.94) 55%, rgba(255,210,228,0.88) 100%)',
     ringColor: '#FF375F',
