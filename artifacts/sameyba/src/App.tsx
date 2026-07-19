@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Eye, Volume2, Smartphone, ChevronRight, HeartPulse, UtensilsCrossed, Heart, Sparkles } from 'lucide-react';
+import { Eye, Volume2, Smartphone, ChevronRight, HeartPulse, Utensils, Heart, Sparkles } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
@@ -135,7 +135,7 @@ const CARDS = [
     floatDuration: 3.8,
     imgScale: 1.45,
     imgPosition: 'center center',
-    Icon: UtensilsCrossed,
+    Icon: Utensils,
   },
   {
     id: 'health',
@@ -291,9 +291,9 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               cursor: 'none',
               zIndex: 1,
             }}
-            // scale 1.03 on gaze, spring ~250ms
+            // scale 1.03 on gaze, 250ms ease-out
             animate={gazing ? { scale: 1.03 } : { scale: 1 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
             onMouseEnter={startGaze}
             onMouseLeave={stopGaze}
             onFocus={startGaze}
@@ -338,16 +338,19 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
         <motion.div
           style={{
             display: 'flex',
+            flexDirection: 'row',      // LTR order so icon lands visually RIGHT of Arabic text
             alignItems: 'center',
+            justifyContent: 'center',
             gap: '8px',
-            padding: '10px 20px',
-            borderRadius: '9999px',
+            height: '48px',
+            padding: '0 18px',
+            borderRadius: '999px',
             background: 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(18px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
             border: '1px solid rgba(255,255,255,0.96)',
             boxShadow: [
-              '0 4px 16px rgba(0,0,0,0.08)',
+              '0 4px 18px rgba(0,0,0,0.09)',
               '0 1px 4px rgba(0,0,0,0.05)',
               'inset 0 1px 0 rgba(255,255,255,1)',
             ].join(', '),
@@ -355,26 +358,22 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
           animate={gazing
             ? {
                 boxShadow: [
-                  `0 6px 24px ${card.glowColor}`,
+                  `0 6px 26px ${card.glowColor}`,
                   `0 2px 8px rgba(0,0,0,0.06)`,
                   `inset 0 1px 0 rgba(255,255,255,1)`,
                 ].join(', '),
               }
             : {
                 boxShadow: [
-                  '0 4px 16px rgba(0,0,0,0.08)',
+                  '0 4px 18px rgba(0,0,0,0.09)',
                   '0 1px 4px rgba(0,0,0,0.05)',
                   'inset 0 1px 0 rgba(255,255,255,1)',
                 ].join(', '),
               }
           }
-          transition={{ duration: 0.25, ease: 'easeInOut' }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          {/* Icon — 18px, accent color, before Arabic text */}
-          <card.Icon
-            style={{ color: card.ringColor, flexShrink: 0 }}
-            width={18} height={18} strokeWidth={2}
-          />
+          {/* Arabic label first in DOM = left side visually in LTR row */}
           <span
             className="font-bold text-[#1C1C1E]"
             style={{
@@ -385,6 +384,11 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
           >
             {card.label}
           </span>
+          {/* Icon second in DOM = right side visually in LTR row */}
+          <card.Icon
+            style={{ color: card.ringColor, flexShrink: 0 }}
+            width={18} height={18} strokeWidth={1.8}
+          />
         </motion.div>
       </motion.div>
     </motion.div>
