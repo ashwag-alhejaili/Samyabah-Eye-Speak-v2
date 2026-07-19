@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Eye, Volume2, Smartphone, ChevronRight } from 'lucide-react';
+import { Eye, Volume2, Smartphone, ChevronRight, Utensils, Heart, Star, Smile } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
@@ -129,45 +129,49 @@ const CARDS = [
     id: 'needs',
     label: 'احتياجاتي',
     image: 'user-needs.png',
-    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(255,251,238,0.84) 55%, rgba(255,242,200,0.72) 100%)',
+    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,252,240,0.86) 60%, rgba(255,243,205,0.75) 100%)',
     ringColor: '#FF9F0A',
-    glowColor: 'rgba(255,159,10,0.50)',
+    glowColor: 'rgba(255,159,10,0.40)',
     floatDuration: 3.8,
-    imgScale: 1.55,         // tray nearly fills circle
+    imgScale: 1.45,
     imgPosition: 'center center',
+    Icon: Utensils,
   },
   {
     id: 'health',
     label: 'صحتي',
     image: 'user-health.png',
-    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(241,249,255,0.84) 55%, rgba(210,234,255,0.72) 100%)',
+    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,249,255,0.86) 60%, rgba(212,235,255,0.75) 100%)',
     ringColor: '#0A84FF',
-    glowColor: 'rgba(10,132,255,0.50)',
+    glowColor: 'rgba(10,132,255,0.40)',
     floatDuration: 4.2,
-    imgScale: 1.70,         // zoom in on nurse + patient, drop background
+    imgScale: 1.60,
     imgPosition: 'center 42%',
+    Icon: Heart,
   },
   {
     id: 'worship',
     label: 'عبادتي',
     image: 'user-worship.png',
-    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(241,255,246,0.84) 55%, rgba(210,242,222,0.72) 100%)',
+    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,255,247,0.86) 60%, rgba(212,243,224,0.75) 100%)',
     ringColor: '#34C759',
-    glowColor: 'rgba(52,199,89,0.50)',
+    glowColor: 'rgba(52,199,89,0.40)',
     floatDuration: 3.5,
-    imgScale: 1.50,         // Quran + prayer mat occupies most of circle
+    imgScale: 1.40,
     imgPosition: 'center 55%',
+    Icon: Star,
   },
   {
     id: 'feelings',
     label: 'مشاعري',
     image: 'user-feelings.png',
-    bg: 'linear-gradient(148deg, rgba(255,255,255,0.90) 0%, rgba(255,244,249,0.84) 55%, rgba(255,220,235,0.72) 100%)',
+    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,245,250,0.86) 60%, rgba(255,222,237,0.75) 100%)',
     ringColor: '#FF375F',
-    glowColor: 'rgba(255,55,95,0.50)',
+    glowColor: 'rgba(255,55,95,0.40)',
     floatDuration: 4.0,
-    imgScale: 1.12,         // portrait already well-framed, subtle zoom only
+    imgScale: 1.10,
     imgPosition: 'center 38%',
+    Icon: Smile,
   },
 ];
 
@@ -251,6 +255,19 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
             />
           </svg>
 
+          {/* Outer color-tinted glow ring — sits behind the bubble */}
+          <div aria-hidden style={{
+            position: 'absolute',
+            inset: '-6px',
+            borderRadius: '50%',
+            background: `radial-gradient(circle, ${card.glowColor} 0%, transparent 72%)`,
+            filter: 'blur(14px)',
+            opacity: gazing ? 0.85 : 0.35,
+            transition: 'opacity 0.4s ease',
+            pointerEvents: 'none',
+            zIndex: 0,
+          }} />
+
           {/* Premium Apple-glass circular bubble */}
           <motion.div
             className="relative overflow-hidden flex items-center justify-center"
@@ -259,18 +276,20 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               height: '100%',
               borderRadius: '50%',
               background: card.bg,
-              backdropFilter: 'blur(44px) saturate(200%)',
-              WebkitBackdropFilter: 'blur(44px) saturate(200%)',
-              border: '1px solid rgba(255,255,255,0.96)',
+              backdropFilter: 'blur(48px) saturate(210%)',
+              WebkitBackdropFilter: 'blur(48px) saturate(210%)',
+              // Layered border: thin crisp white stroke + inner glow
+              border: '1.5px solid rgba(255,255,255,0.98)',
               boxShadow: [
-                '0 28px 72px rgba(0,0,0,0.09)',
-                '0 8px 24px rgba(0,0,0,0.06)',
-                '0 2px 6px rgba(0,0,0,0.04)',
-                'inset 0 1.5px 0 rgba(255,255,255,1)',
-                'inset 0 0 32px rgba(255,255,255,0.55)',
-                'inset 0 -1px 0 rgba(0,0,0,0.03)',
+                `0 32px 80px rgba(0,0,0,0.10)`,
+                `0 12px 32px rgba(0,0,0,0.07)`,
+                `0 3px 8px rgba(0,0,0,0.04)`,
+                `inset 0 2px 0 rgba(255,255,255,1)`,
+                `inset 0 0 40px rgba(255,255,255,0.60)`,
+                `inset 0 -2px 0 rgba(0,0,0,0.03)`,
               ].join(', '),
               cursor: 'none',
+              zIndex: 1,
             }}
             animate={gazing ? { scale: 1.05 } : { scale: 1 }}
             transition={{ type: 'spring', stiffness: 260, damping: 28 }}
@@ -286,18 +305,15 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
             tabIndex={0}
             aria-label={card.label}
           >
-            {/* Specular light reflection — top arc */}
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                top: 0, left: 0, right: 0,
-                height: '44%',
-                borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.60) 0%, transparent 100%)',
-                pointerEvents: 'none',
-              }}
-            />
+            {/* Specular highlight — top arc */}
+            <div aria-hidden style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              height: '42%',
+              borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.65) 0%, transparent 100%)',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }} />
             <img
               src={import.meta.env.BASE_URL + card.image}
               alt={card.label}
@@ -317,17 +333,41 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
           </motion.div>
         </div>
 
-        {/* Label */}
-        <span
-          className="font-semibold text-[#1C1C1E]"
+        {/* Floating glass label pill with icon */}
+        <motion.div
           style={{
-            fontSize: 'clamp(1.1rem, 1.6vw, 1.5rem)',
-            letterSpacing: '0.005em',
-            textShadow: '0 1px 4px rgba(255,255,255,0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '7px',
+            padding: '9px 22px',
+            borderRadius: '100px',
+            background: 'rgba(255,255,255,0.80)',
+            backdropFilter: 'blur(18px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.95)',
+            boxShadow: [
+              '0 6px 20px rgba(0,0,0,0.08)',
+              '0 2px 6px rgba(0,0,0,0.05)',
+              'inset 0 1px 0 rgba(255,255,255,1)',
+            ].join(', '),
           }}
+          animate={gazing
+            ? { boxShadow: `0 8px 28px ${card.glowColor}, 0 2px 6px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,1)` }
+            : { boxShadow: '0 6px 20px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,1)' }
+          }
+          transition={{ duration: 0.25, ease: 'easeInOut' }}
         >
-          {card.label}
-        </span>
+          <card.Icon
+            style={{ color: card.ringColor, flexShrink: 0 }}
+            width={15} height={15} strokeWidth={2.2}
+          />
+          <span
+            className="font-semibold text-[#1C1C1E]"
+            style={{ fontSize: 'clamp(1rem, 1.4vw, 1.3rem)', letterSpacing: '0.01em' }}
+          >
+            {card.label}
+          </span>
+        </motion.div>
       </motion.div>
     </motion.div>
   );
@@ -342,7 +382,7 @@ function CommunicationScreen() {
       dir="rtl"
       style={{
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(160deg, #FFFFFF 0%, #F7F7FC 50%, #F0F0F8 100%)',
+        background: 'linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)',
       }}
     >
       {/* ── AMBIENT LIGHT BLOBS ── */}
