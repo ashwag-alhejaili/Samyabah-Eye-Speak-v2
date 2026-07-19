@@ -6,6 +6,7 @@ import {
   Eye, Volume2, Smartphone, ChevronRight,
   HeartPulse, Utensils, Heart, Sparkles, Home as HomeIcon, Users,
   Droplets, UtensilsCrossed, BellOff,
+  Cross, Footprints, Stethoscope,
 } from 'lucide-react';
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
@@ -111,6 +112,73 @@ function RepositionIcon({
       <path d="M3 19 C2 15.5 4 12.5 8 11.5" />
       {/* Arrow head */}
       <path d="M6 10.5 L8 11.5 L7 13.5" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Shower (pipe arm + nozzle head + falling streams) ────────────
+function ShowerIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Pipe: vertical then elbow to horizontal */}
+      <path d="M4 2 L4 7 Q4 9.5 6.5 9.5 L20 9.5" />
+      {/* Shower head nozzle (rounded rect) */}
+      <rect x="6" y="9.5" width="14" height="3.5" rx="1.2" />
+      {/* Water streams angled slightly */}
+      <line x1="8"  y1="13" x2="7.5"  y2="18" />
+      <line x1="11" y1="13" x2="10.5" y2="18" />
+      <line x1="14" y1="13" x2="13.5" y2="18" />
+      <line x1="17" y1="13" x2="16.5" y2="18" />
+      <line x1="20" y1="13" x2="19.5" y2="18" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Nausea (stomach pouch with wavy inner lines) ─────────────────
+function NauseaIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Stomach outline — rounded pouch shape */}
+      <path d="M9 3 Q4 3 4 8 L4 15 Q4 21 12 21 Q20 21 20 15 L20 9 Q20 5 16.5 4 Q13 3 9 3 Z" />
+      {/* Wave lines inside indicating discomfort */}
+      <path d="M8 10.5 Q9.5 9 11 10.5 Q12.5 12 14 10.5" />
+      <path d="M8 14.5 Q9.5 13 11 14.5 Q12.5 16 14 14.5" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Help Stand (two figures — patient rising, helper supporting) ─
+function HelpStandIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* ── Patient (left) — leaning forward, mid-rise ── */}
+      <circle cx="6" cy="4.5" r="2" />
+      {/* Torso: angled forward as if rising */}
+      <path d="M6 6.5 L4.5 12" />
+      {/* Legs: one pushing off floor, one bent */}
+      <path d="M4.5 12 L3 17" />
+      <path d="M4.5 12 L7 16" />
+      {/* Patient arm reaching up to helper's hand */}
+      <path d="M5.5 8.5 L13 7" />
+
+      {/* ── Helper (right) — standing upright, arm extended ── */}
+      <circle cx="19" cy="3.5" r="2" />
+      {/* Torso: straight */}
+      <path d="M19 5.5 L19 14" />
+      {/* Legs */}
+      <path d="M19 14 L17 20" />
+      <path d="M19 14 L21 20" />
+      {/* Helper arm reaching down to patient */}
+      <path d="M19 7.5 L13 7" />
     </svg>
   );
 }
@@ -277,12 +345,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 42%',
     Icon: HeartPulse,
     items: [
-      { id: 'pain',      label: 'أشعر بألم',           emoji: '😣' },
-      { id: 'medicine',  label: 'أحتاج دواء',           emoji: '💊' },
-      { id: 'dizzy',     label: 'أشعر بدوخة',           emoji: '😵' },
-      { id: 'breathe',   label: 'صعوبة في التنفس',      emoji: '😮‍💨' },
-      { id: 'doctor',    label: 'أريد طبيباً',           emoji: '👨‍⚕️' },
-      { id: 'notwell',   label: 'لست بخير',             emoji: '🤒' },
+      { id: 'pain',    label: 'متألم',               emoji: '🤒',  Icon: Cross },
+      { id: 'nausea',  label: 'غثيان',              emoji: '🤢',  Icon: NauseaIcon },
+      { id: 'shower',  label: 'أريد الاستحمام',     emoji: '🛁',  Icon: ShowerIcon },
+      { id: 'walk',    label: 'أريد المشي قليلًا',  emoji: '🚶',  Icon: Footprints },
+      { id: 'standup', label: 'ساعدني على الوقوف',  emoji: '🪑',  Icon: HelpStandIcon },
+      { id: 'nurse',   label: 'نادِ الممرضة',        emoji: '👩‍⚕️', Icon: Stethoscope },
     ],
   },
   {
