@@ -10,6 +10,7 @@ import {
   Lightbulb, LightbulbOff, Tv,
   Smile, Frown, Annoyed, HeartHandshake,
   BookOpen,
+  MessageCircle, Video,
 } from 'lucide-react';
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
@@ -413,6 +414,109 @@ function PrayerRugIcon({
   );
 }
 
+// ── Custom icon: Call Son — smartphone + male stick figure ────────────────────
+function SonCallIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Smartphone */}
+      <rect x="1" y="5" width="8" height="14" rx="1.5" />
+      <line x1="3" y1="17" x2="7" y2="17" />
+      {/* Male person (right half) */}
+      <circle cx="18" cy="6.5" r="2.3" />
+      {/* Body */}
+      <path d="M18 8.8 L18 16" />
+      {/* Arms */}
+      <path d="M18 11 L15.5 13 M18 11 L20.5 13" />
+      {/* Legs */}
+      <path d="M18 16 L16 21 M18 16 L20 21" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Call Daughter — smartphone + female figure with dress ─────────
+function DaughterCallIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Smartphone */}
+      <rect x="1" y="5" width="8" height="14" rx="1.5" />
+      <line x1="3" y1="17" x2="7" y2="17" />
+      {/* Female person (right half) */}
+      <circle cx="18" cy="6.5" r="2.3" />
+      {/* Torso */}
+      <path d="M18 8.8 L18 13" />
+      {/* Arms */}
+      <path d="M18 10.5 L15.5 12.5 M18 10.5 L20.5 12.5" />
+      {/* A-line dress / skirt — flares from waist to hem */}
+      <path d="M15 13 L18 13 L21 13" />
+      <path d="M15 13 L13.5 21 M21 13 L22.5 21" />
+      <line x1="13.5" y1="21" x2="22.5" y2="21" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Call Friend — smartphone + figure with open welcoming arms ───
+function FriendCallIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Smartphone */}
+      <rect x="1" y="5" width="8" height="14" rx="1.5" />
+      <line x1="3" y1="17" x2="7" y2="17" />
+      {/* Friend person (right half) — arms spread open wide in welcoming gesture */}
+      <circle cx="18" cy="6.5" r="2.3" />
+      {/* Body */}
+      <path d="M18 8.8 L18 16" />
+      {/* Wide-open arms (welcoming / waving) */}
+      <path d="M18 10.5 L14.5 8.5" />
+      <path d="M18 10.5 L21.5 8.5" />
+      {/* Legs */}
+      <path d="M18 16 L16 21 M18 16 L20 21" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Companionship — two seated figures side by side ──────────────
+function CompanionshipIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Person 1 (left) — seated */}
+      <circle cx="7" cy="4" r="2" />
+      {/* Torso */}
+      <path d="M7 6 L7 11" />
+      {/* Thigh — horizontal, pointing right */}
+      <path d="M7 11 L11 11" />
+      {/* Shin — hanging down */}
+      <path d="M11 11 L11 16" />
+
+      {/* Person 2 (right) — seated, mirrored */}
+      <circle cx="17" cy="4" r="2" />
+      {/* Torso */}
+      <path d="M17 6 L17 11" />
+      {/* Thigh — pointing left (toward person 1) */}
+      <path d="M17 11 L13 11" />
+      {/* Shin — hanging down */}
+      <path d="M13 11 L13 16" />
+
+      {/* Shared seat / bench between them */}
+      <line x1="4" y1="16" x2="20" y2="16" />
+
+      {/* Small heart between them — connection */}
+      <path d="M11.5 8 Q12 7 12.5 8 Q13 9 12 10 Q11 9 11.5 8 Z" />
+    </svg>
+  );
+}
+
 const queryClient = new QueryClient();
 
 // ── useDwell — shared 2-second gaze-dwell hook ───────────────────────────────
@@ -685,12 +789,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 30%',
     Icon: Users,
     items: [
-      { id: 'family',      label: 'اتصل بأسرتي',              emoji: '👨‍👩‍👧‍👦' },
-      { id: 'nurse',       label: 'اتصل بالممرضة',            emoji: '👩‍⚕️' },
-      { id: 'doctor_talk', label: 'أريد التحدث مع طبيبي',    emoji: '🩺' },
-      { id: 'yes',         label: 'نعم',                       emoji: '✅' },
-      { id: 'no',          label: 'لا',                        emoji: '❌' },
-      { id: 'thanks',      label: 'شكراً',                     emoji: '🙏' },
+      { id: 'call_son',      label: 'اتصل بابني',            emoji: '📞', Icon: SonCallIcon },
+      { id: 'call_daughter', label: 'اتصل بابنتي',           emoji: '📞', Icon: DaughterCallIcon },
+      { id: 'call_friend',   label: 'اتصل بصديقي',           emoji: '📞', Icon: FriendCallIcon },
+      { id: 'message',       label: 'أرسل رسالة لعيالي',     emoji: '💬', Icon: MessageCircle },
+      { id: 'video',         label: 'مكالمة فيديو',           emoji: '📹', Icon: Video },
+      { id: 'companion',     label: 'نادِ أحدًا يجلس معي',  emoji: '🤝', Icon: CompanionshipIcon },
     ],
   },
 ];
