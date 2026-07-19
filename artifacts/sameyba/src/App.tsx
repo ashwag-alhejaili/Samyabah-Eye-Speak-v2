@@ -5,7 +5,7 @@ import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
   Eye, Volume2, Smartphone, ChevronRight,
   HeartPulse, Utensils, Heart, Sparkles, Home as HomeIcon, Users,
-  Droplets, UtensilsCrossed, VolumeX, PersonStanding, Armchair,
+  Droplets, UtensilsCrossed, BellOff,
 } from 'lucide-react';
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
@@ -36,6 +36,81 @@ function ToiletIcon({
       <path d="M4 8 Q4 13.5 12 15 Q20 13.5 20 8" />
       {/* Pedestal */}
       <path d="M10 20 L9.5 23 h5 L15 20" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Single Chair (front-view, stroke-based) ─────────────────────
+function ChairIcon({
+  size = 24,
+  color = 'currentColor',
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
+  return (
+    <svg
+      width={size} height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Back left post — runs full height */}
+      <line x1="8" y1="2" x2="8" y2="20" />
+      {/* Back right post — runs full height */}
+      <line x1="16" y1="2" x2="16" y2="20" />
+      {/* Top back rail */}
+      <line x1="8" y1="2" x2="16" y2="2" />
+      {/* Middle back rail */}
+      <line x1="8" y1="8" x2="16" y2="8" />
+      {/* Seat — slightly wider than back */}
+      <line x1="5" y1="12" x2="19" y2="12" />
+      {/* Front left leg */}
+      <line x1="6" y1="12" x2="6" y2="20" />
+      {/* Front right leg */}
+      <line x1="18" y1="12" x2="18" y2="20" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Reposition Patient (lying figure + curved rotation arrow) ────
+function RepositionIcon({
+  size = 24,
+  color = 'currentColor',
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
+  return (
+    <svg
+      width={size} height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Head */}
+      <circle cx="18" cy="5.5" r="2.2" />
+      {/* Body lying at a slight diagonal */}
+      <path d="M16 7.5 L5 11" />
+      {/* Legs — bent at knee */}
+      <path d="M5 11 L3 14.5" />
+      <path d="M5 11 L8 13" />
+      {/* One arm raised */}
+      <path d="M13 9 L14 7" />
+      {/* Curved rotation arrow below body — indicates the repositioning motion */}
+      <path d="M3 19 C2 15.5 4 12.5 8 11.5" />
+      {/* Arrow head */}
+      <path d="M6 10.5 L8 11.5 L7 13.5" />
     </svg>
   );
 }
@@ -227,9 +302,9 @@ const CATEGORIES: Category[] = [
       { id: 'water',    label: 'أريد ماء',         emoji: '💧', Icon: Droplets },
       { id: 'food',     label: 'أريد طعامًا',      emoji: '🍽️', Icon: UtensilsCrossed },
       { id: 'bathroom', label: 'أريد الحمام',      emoji: '🚻', Icon: ToiletIcon },
-      { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', Icon: Armchair },
-      { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', Icon: VolumeX },
-      { id: 'position', label: 'غيّر وضعيتي',     emoji: '🧍', Icon: PersonStanding },
+      { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', Icon: ChairIcon },
+      { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', Icon: BellOff },
+      { id: 'position', label: 'غيّر وضعيتي',     emoji: '🧍', Icon: RepositionIcon },
     ],
   },
   {
@@ -952,7 +1027,7 @@ function CategoryPage() {
                   {picked.label}
                 </span>
                 <span style={{ color: '#6E6E73', fontSize: 'clamp(0.76rem, 0.9vw, 0.86rem)' }}>
-                  — تم الاختيار
+                  — تم إرسال الطلب
                 </span>
               </div>
             </motion.div>
