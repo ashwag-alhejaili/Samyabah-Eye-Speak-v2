@@ -5,15 +5,15 @@
 @plugin "@tailwindcss/typography";
 
 @theme inline {
-  --color-background: #ffffff;
-  --color-foreground: #111827;
-  --font-sans: 'Inter', sans-serif;
+  --color-background: #FAFAFA;
+  --color-foreground: #0A0A0A;
+  --font-sans: 'IBM Plex Sans Arabic', sans-serif;
   --font-arabic: 'IBM Plex Sans Arabic', sans-serif;
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #111827;
+  --background: #FAFAFA;
+  --foreground: #0A0A0A;
 }
 
 @layer base {
@@ -21,6 +21,6 @@
     border-color: #e5e7eb;
   }
   body {
-    @apply font-sans antialiased bg-white text-gray-900 m-0 p-0;
+    @apply font-sans antialiased bg-[#FAFAFA] text-[#0A0A0A] m-0 p-0;
   }
 }

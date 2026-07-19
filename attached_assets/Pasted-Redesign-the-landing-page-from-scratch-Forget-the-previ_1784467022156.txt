@@ -1,0 +1,129 @@
+Redesign the landing page from scratch.
+
+Forget the previous design.
+
+I want this to feel like an Apple product announcement mixed with modern healthcare.
+
+========================
+GENERAL STYLE
+========================
+
+- Ultra premium.
+- Minimal.
+- Emotional.
+- Apple-level spacing.
+- Large typography.
+- Arabic RTL.
+- Soft white background (#FAFAFA).
+- Rounded corners.
+- Soft shadows.
+- Elegant animations.
+- Absolutely no clutter.
+
+========================
+HEADER
+========================
+
+Large title:
+
+سَم يبه
+
+Large subtitle:
+
+التواصل بالنظر... عندما تعجز الكلمات
+
+Below it a short sentence:
+
+لأن فقدان القدرة على الكلام لا يعني فقدان القدرة على التعبير.
+
+========================
+HERO SECTION
+========================
+
+Instead of a generic stock image,
+
+create a premium hero section showing:
+
+A realistic elderly Saudi man wearing white thobe and shemagh, sitting comfortably in a hospital bed.
+
+He is looking at a mounted tablet.
+
+The tablet interface is simple with four large buttons.
+
+The atmosphere should feel hopeful, calm and respectful.
+
+Warm natural lighting.
+
+Premium healthcare environment.
+
+No cartoon.
+
+No western patient.
+
+========================
+LEFT SIDE
+========================
+
+Three elegant feature icons.
+
+👁️
+
+يتواصل بالنظر فقط
+
+↓
+
+🔊
+
+يحوّل النظر إلى كلام
+
+↓
+
+📲
+
+يرسل الطلب لمقدم الرعاية
+
+========================
+CTA
+========================
+
+Large blue rounded button.
+
+ابدأ التواصل
+
+When hovering:
+
+small scale animation
+
+soft shadow
+
+========================
+BOTTOM
+========================
+
+Small elegant text:
+
+مصمم لمساعدة مرضى الجلطات وفاقدي القدرة على الكلام للتواصل بسهولة وكرامة.
+
+========================
+IMPORTANT
+========================
+
+Everything must be in Arabic.
+
+Use IBM Plex Sans Arabic.
+
+No English anywhere.
+
+No lorem ipsum.
+
+No fake dashboard.
+
+No medical charts.
+
+No login.
+
+No navigation.
+
+No footer.
+
+Make it look like a startup that just raised $20M.
