@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Eye, Volume2, Smartphone, ChevronRight, HeartPulse, UtensilsCrossed, Heart, Sparkles } from 'lucide-react';
+import { Eye, Volume2, Smartphone, ChevronRight, HeartPulse, Utensils, Heart, Sparkles } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
@@ -135,7 +135,7 @@ const CARDS = [
     floatDuration: 3.8,
     imgScale: 1.45,
     imgPosition: 'center center',
-    Icon: UtensilsCrossed,
+    Icon: Utensils,
   },
   {
     id: 'health',
@@ -278,22 +278,21 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               background: card.bg,
               backdropFilter: 'blur(48px) saturate(210%)',
               WebkitBackdropFilter: 'blur(48px) saturate(210%)',
-              // White outline + inner glow + soft elegant shadow
-              border: '1.5px solid rgba(255,255,255,0.98)',
+              // Thin white border + soft outer glow + subtle inner shadow
+              border: '1px solid rgba(255,255,255,0.96)',
               boxShadow: [
-                `0 24px 64px rgba(0,0,0,0.11)`,
-                `0 8px 24px rgba(0,0,0,0.07)`,
+                `0 20px 60px rgba(0,0,0,0.12)`,
+                `0 8px 24px rgba(0,0,0,0.08)`,
                 `0 2px 6px rgba(0,0,0,0.04)`,
                 `inset 0 2px 0 rgba(255,255,255,1)`,
-                `inset 0 0 44px rgba(255,255,255,0.62)`,
-                `inset 0 -2px 0 rgba(0,0,0,0.025)`,
+                `inset 0 0 48px rgba(255,255,255,0.65)`,
+                `inset 0 -3px 8px rgba(0,0,0,0.04)`,
               ].join(', '),
               cursor: 'none',
               zIndex: 1,
             }}
-            // scale 1.03 on gaze, spring ~250ms
             animate={gazing ? { scale: 1.03 } : { scale: 1 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
             onMouseEnter={startGaze}
             onMouseLeave={stopGaze}
             onFocus={startGaze}
@@ -339,52 +338,55 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: '8px',
-            padding: '10px 20px',
-            borderRadius: '9999px',
+            height: '48px',
+            padding: '0 18px',
+            borderRadius: '999px',
             background: 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(18px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(18px) saturate(180%)',
-            border: '1px solid rgba(255,255,255,0.96)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.95)',
             boxShadow: [
-              '0 4px 16px rgba(0,0,0,0.08)',
+              '0 4px 18px rgba(0,0,0,0.09)',
               '0 1px 4px rgba(0,0,0,0.05)',
-              'inset 0 1px 0 rgba(255,255,255,1)',
+              'inset 0 1.5px 0 rgba(255,255,255,1)',
             ].join(', '),
           }}
           animate={gazing
             ? {
                 boxShadow: [
-                  `0 6px 24px ${card.glowColor}`,
-                  `0 2px 8px rgba(0,0,0,0.06)`,
-                  `inset 0 1px 0 rgba(255,255,255,1)`,
+                  `0 6px 22px ${card.glowColor}`,
+                  `0 2px 6px rgba(0,0,0,0.05)`,
+                  `inset 0 1.5px 0 rgba(255,255,255,1)`,
                 ].join(', '),
               }
             : {
                 boxShadow: [
-                  '0 4px 16px rgba(0,0,0,0.08)',
+                  '0 4px 18px rgba(0,0,0,0.09)',
                   '0 1px 4px rgba(0,0,0,0.05)',
-                  'inset 0 1px 0 rgba(255,255,255,1)',
+                  'inset 0 1.5px 0 rgba(255,255,255,1)',
                 ].join(', '),
               }
           }
-          transition={{ duration: 0.25, ease: 'easeInOut' }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          {/* Icon — 18px, accent color, before Arabic text */}
-          <card.Icon
-            style={{ color: card.ringColor, flexShrink: 0 }}
-            width={18} height={18} strokeWidth={2}
-          />
+          {/* Arabic text first in DOM → visually on right in RTL */}
           <span
             className="font-bold text-[#1C1C1E]"
             style={{
-              fontSize: 'clamp(1.05rem, 1.5vw, 1.35rem)',
+              fontSize: 'clamp(1.05rem, 1.45vw, 1.3rem)',
               letterSpacing: '0.01em',
               lineHeight: 1,
             }}
           >
             {card.label}
           </span>
+          {/* Icon 18px, accent color — sits to the right of text in RTL */}
+          <card.Icon
+            style={{ color: card.ringColor, flexShrink: 0 }}
+            width={18} height={18} strokeWidth={1.75}
+          />
         </motion.div>
       </motion.div>
     </motion.div>
