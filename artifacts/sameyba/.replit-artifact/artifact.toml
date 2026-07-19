@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "سَم يبه — Landing Page"
+version = "1.0.0"
+id = "artifacts/sameyba"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25887
+
+[services.development]
+run = "pnpm --filter @workspace/sameyba run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sameyba", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sameyba/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25887"
+BASE_PATH = "/"
