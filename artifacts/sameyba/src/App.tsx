@@ -128,7 +128,7 @@ const CARDS = [
   {
     id: 'needs',
     label: 'احتياجاتي',
-    image: 'illus-needs.png',
+    image: 'user-needs.png',
     // warm amber-cream glass
     bg: 'linear-gradient(148deg, rgba(255,253,245,0.97) 0%, rgba(255,246,222,0.94) 55%, rgba(255,234,180,0.88) 100%)',
     ringColor: '#FF9F0A',
@@ -138,7 +138,7 @@ const CARDS = [
   {
     id: 'health',
     label: 'صحتي',
-    image: 'care-health-v2.png',
+    image: 'user-health.png',
     // cool sky-blue glass
     bg: 'linear-gradient(148deg, rgba(245,250,255,0.97) 0%, rgba(225,242,255,0.94) 55%, rgba(195,228,255,0.88) 100%)',
     ringColor: '#0A84FF',
@@ -148,7 +148,7 @@ const CARDS = [
   {
     id: 'worship',
     label: 'عبادتي',
-    image: 'illus-worship.png',
+    image: 'user-worship.png',
     // sage-green glass
     bg: 'linear-gradient(148deg, rgba(245,255,248,0.97) 0%, rgba(222,248,230,0.94) 55%, rgba(190,238,208,0.88) 100%)',
     ringColor: '#34C759',
@@ -158,7 +158,7 @@ const CARDS = [
   {
     id: 'feelings',
     label: 'مشاعري',
-    image: 'care-feelings-v2.png',
+    image: 'user-feelings.png',
     // rose glass
     bg: 'linear-gradient(148deg, rgba(255,246,250,0.97) 0%, rgba(255,230,240,0.94) 55%, rgba(255,210,228,0.88) 100%)',
     ringColor: '#FF375F',
