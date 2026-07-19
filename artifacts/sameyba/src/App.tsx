@@ -410,7 +410,8 @@ function GazeCard({ card, onClick }: {
 }
 
 // ── ItemCard — tappable glass card for category items ─────────────────────────
-function ItemCard({ item, ringColor, glowColor, onSelect, selected, index }: {
+// ── ItemCard — completely static at rest; glow + dwell ring on focus only ──────
+function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   item: CategoryItem;
   ringColor: string;
   glowColor: string;
@@ -418,15 +419,36 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected, index }: {
   selected: boolean;
   index: number;
 }) {
+  const [focused, setFocused] = useState(false);
+
+  const restShadow = selected
+    ? [
+        `0 0 0 3px ${glowColor.replace('0.40', '0.12')}`,
+        `0 8px 32px ${glowColor.replace('0.40', '0.18')}`,
+        'inset 0 1.5px 0 rgba(255,255,255,1)',
+      ].join(', ')
+    : [
+        '0 4px 18px rgba(0,0,0,0.08)',
+        '0 1px 4px rgba(0,0,0,0.04)',
+        'inset 0 1.5px 0 rgba(255,255,255,1)',
+      ].join(', ');
+
+  const focusShadow = [
+    `0 0 0 2px ${glowColor.replace('0.40', '0.35')}`,
+    `0 0 20px ${glowColor.replace('0.40', '0.22')}`,
+    `0 8px 32px ${glowColor.replace('0.40', '0.15')}`,
+    'inset 0 1.5px 0 rgba(255,255,255,1)',
+  ].join(', ');
+
   return (
-    <motion.button
+    <button
       onClick={() => onSelect(item.id)}
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.97 }}
+      onMouseEnter={() => setFocused(true)}
+      onMouseLeave={() => setFocused(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
+        position: 'relative',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         gap: '10px',
@@ -440,25 +462,56 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected, index }: {
         border: selected
           ? `1.5px solid ${glowColor.replace('0.40', '0.45')}`
           : '1px solid rgba(255,255,255,0.95)',
-        boxShadow: selected
-          ? [
-              `0 0 0 3px ${glowColor.replace('0.40', '0.12')}`,
-              `0 8px 32px ${glowColor.replace('0.40', '0.18')}`,
-              'inset 0 1.5px 0 rgba(255,255,255,1)',
-            ].join(', ')
-          : [
-              '0 4px 18px rgba(0,0,0,0.08)',
-              '0 1px 4px rgba(0,0,0,0.04)',
-              'inset 0 1.5px 0 rgba(255,255,255,1)',
-            ].join(', '),
+        boxShadow: (focused && !selected) ? focusShadow : restShadow,
         cursor: 'pointer',
         minHeight: 'clamp(88px, 12vh, 124px)',
         width: '100%',
-        transition: 'background 0.2s ease, border 0.2s ease, box-shadow 0.2s ease',
+        transition: 'background 0.18s ease-out, border 0.18s ease-out, box-shadow 0.18s ease-out',
       }}
       aria-label={item.label}
       aria-pressed={selected}
     >
+      {/* Dwell progress ring — SVG outline that fills on focus */}
+      <svg
+        aria-hidden
+        style={{
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
+          overflow: 'visible', pointerEvents: 'none', zIndex: 5,
+        }}
+      >
+        {/* Faint track ring */}
+        <rect
+          x="2" y="2"
+          style={{ width: 'calc(100% - 4px)', height: 'calc(100% - 4px)' }}
+          rx="18" ry="18"
+          fill="none"
+          stroke={ringColor}
+          strokeWidth={1.5}
+          opacity={focused ? 0.18 : 0}
+          style2={{ transition: 'opacity 0.18s ease-out' }}
+        />
+        {/* Animated fill arc */}
+        <motion.rect
+          x={2} y={2}
+          style={{ width: 'calc(100% - 4px)', height: 'calc(100% - 4px)' }}
+          rx={18} ry={18}
+          fill="none"
+          stroke={ringColor}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={focused
+            ? { pathLength: 0.72, opacity: 1 }
+            : { pathLength: 0,    opacity: 0 }
+          }
+          transition={{
+            pathLength: { duration: 0.7, ease: 'easeOut' },
+            opacity:    { duration: 0.15 },
+          }}
+        />
+      </svg>
+
       <span style={{ fontSize: 'clamp(1.9rem, 3.2vh, 2.6rem)', lineHeight: 1 }}>
         {item.emoji}
       </span>
@@ -468,11 +521,11 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected, index }: {
         color: selected ? ringColor : '#1C1C1E',
         textAlign: 'center',
         lineHeight: 1.3,
-        transition: 'color 0.2s ease',
+        transition: 'color 0.18s ease-out',
       }}>
         {item.label}
       </span>
-    </motion.button>
+    </button>
   );
 }
 
