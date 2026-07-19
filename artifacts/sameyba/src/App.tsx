@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Eye, Volume2, Smartphone } from 'lucide-react';
+import { Eye, Volume2, Smartphone, Settings } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
@@ -127,189 +127,181 @@ const commContainerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.15 }
+    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
   }
 };
 
 const commCardVariants = {
-  hidden: { scale: 0.93, opacity: 0 },
-  visible: { scale: 1, opacity: 1, transition: { duration: 0.5 } }
+  hidden: { scale: 0.94, opacity: 0, y: 12 },
+  visible: { scale: 1, opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.16, 1, 0.3, 1] } }
 };
+
+const CARDS = [
+  {
+    id: 'needs',
+    label: 'احتياجاتي',
+    image: 'scene-needs.jpg',
+    bg: 'linear-gradient(145deg, #FFF3DC, #FFE8B4)',
+    glow: 'rgba(255, 180, 50, 0.45)',
+    overlay: 'linear-gradient(to top, rgba(160,90,10,0.82) 0%, rgba(160,90,10,0.3) 50%, transparent 100%)',
+  },
+  {
+    id: 'health',
+    label: 'صحتي',
+    image: 'scene-health.jpg',
+    bg: 'linear-gradient(145deg, #DCF0FF, #C0E2FF)',
+    glow: 'rgba(30, 140, 255, 0.40)',
+    overlay: 'linear-gradient(to top, rgba(10,60,120,0.82) 0%, rgba(10,60,120,0.3) 50%, transparent 100%)',
+  },
+  {
+    id: 'worship',
+    label: 'عبادتي',
+    image: 'scene-worship.jpg',
+    bg: 'linear-gradient(145deg, #F5ECD7, #EDD9B0)',
+    glow: 'rgba(180, 130, 40, 0.45)',
+    overlay: 'linear-gradient(to top, rgba(90,55,10,0.82) 0%, rgba(90,55,10,0.3) 50%, transparent 100%)',
+  },
+  {
+    id: 'feelings',
+    label: 'مشاعري',
+    image: 'scene-feelings.jpg',
+    bg: 'linear-gradient(145deg, #FFE4E4, #FFD0D0)',
+    glow: 'rgba(220, 60, 60, 0.38)',
+    overlay: 'linear-gradient(to top, rgba(120,20,20,0.82) 0%, rgba(120,20,20,0.3) 50%, transparent 100%)',
+  },
+];
 
 function CommunicationScreen() {
   return (
-    <div 
-      className="h-[100dvh] overflow-hidden bg-[#FAFAFA] flex flex-col text-[#0A0A0A]"
+    <div
+      className="h-[100dvh] overflow-hidden flex flex-col"
       dir="rtl"
-      style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
+      style={{
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        background: 'linear-gradient(160deg, #F2F2F7 0%, #E8E8EF 100%)',
+      }}
     >
-      {/* ZONE 1 */}
-      <div className="flex-none py-6 px-6 flex justify-between items-center">
-        <motion.h1 
-          initial={{ y: -10, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="text-[1.9rem] font-bold text-[#0A0A0A]"
-        >
-          ماذا تحتاج؟
-        </motion.h1>
-        
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="text-white font-bold text-[1rem] rounded-full flex items-center gap-2"
-          style={{ 
-            background: 'linear-gradient(135deg, #FF3B30, #FF6B35)',
-            padding: '12px 24px',
-            boxShadow: '0 4px 20px rgba(255,59,48,0.40)'
-          }}
-        >
-          <span>🚨</span>
-          <span>طوارئ</span>
-        </motion.button>
-      </div>
+      {/* ── HEADER ── */}
+      <motion.div
+        className="flex-none grid items-center px-5 pt-5 pb-3"
+        style={{ gridTemplateColumns: '1fr auto 1fr' }}
+        initial={{ opacity: 0, y: -14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+      >
+        {/* Emergency — right side (first col in RTL) */}
+        <div className="flex justify-start">
+          <motion.button
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.93 }}
+            className="text-white font-bold text-[1.05rem] rounded-full flex items-center gap-2 shrink-0"
+            style={{
+              background: 'linear-gradient(135deg, #FF3B30 0%, #FF6B35 100%)',
+              padding: '13px 26px',
+              boxShadow: '0 4px 24px rgba(255,59,48,0.50), 0 1px 4px rgba(255,59,48,0.30)',
+            }}
+            aria-label="طوارئ"
+          >
+            <span role="img" aria-hidden>🚨</span>
+            <span>طوارئ</span>
+          </motion.button>
+        </div>
 
-      {/* ZONE 2 */}
-      <motion.div 
-        className="flex-1 px-4 pb-4"
+        {/* Title — center */}
+        <div className="flex flex-col items-center text-center gap-[2px]">
+          <h1 className="text-[1.75rem] font-bold text-[#0A0A0A] leading-tight tracking-tight">
+            ماذا تحتاج؟
+          </h1>
+          <p className="text-[0.78rem] font-normal text-[#8E8E93] flex items-center gap-1">
+            <Eye className="w-[11px] h-[11px] shrink-0" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
+            انظر إلى الخيار لمدة ثانيتين للاختيار
+          </p>
+        </div>
+
+        {/* Settings — left side (last col in RTL) */}
+        <div className="flex justify-end">
+          <motion.button
+            whileHover={{ scale: 1.08, rotate: 30 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 20 }}
+            className="w-11 h-11 rounded-full flex items-center justify-center"
+            style={{
+              background: 'rgba(255,255,255,0.70)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
+              border: '1px solid rgba(255,255,255,0.90)',
+            }}
+            aria-label="الإعدادات"
+          >
+            <Settings className="w-5 h-5 text-[#3C3C43]" strokeWidth={1.8} />
+          </motion.button>
+        </div>
+      </motion.div>
+
+      {/* ── CARDS GRID ── */}
+      <motion.div
+        className="flex-1 grid grid-cols-2 grid-rows-2 gap-3 px-3 pb-3 min-h-0"
         variants={commContainerVariants}
         initial="hidden"
         animate="visible"
       >
-        <div className="grid grid-cols-2 grid-rows-2 gap-4 h-full">
-          {/* Card 1: Needs */}
+        {CARDS.map((card) => (
           <motion.div
+            key={card.id}
             variants={commCardVariants}
-            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 280, damping: 22 }}
-            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
-            style={{ 
-              background: 'rgba(255,255,255,0.72)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.85)',
-              borderRadius: '28px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
+            whileHover={{
+              scale: 1.025,
+              boxShadow: `0 0 0 3px ${card.glow}, 0 16px 48px rgba(0,0,0,0.18)`,
+            }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+            className="relative overflow-hidden cursor-pointer"
+            style={{
+              borderRadius: '32px',
+              background: card.bg,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)',
             }}
             data-gaze-target="true"
-            data-gaze-id="needs"
-            data-gaze-label="احتياجاتي"
-            id="gaze-card-needs"
-            aria-label="احتياجاتي"
+            data-gaze-id={card.id}
+            data-gaze-label={card.label}
+            id={`gaze-card-${card.id}`}
+            aria-label={card.label}
+            role="button"
+            tabIndex={0}
           >
-            <img 
-              src={import.meta.env.BASE_URL + 'card-needs.png'} 
-              alt="احتياجاتي"
-              className="w-[48%] max-h-[45%] object-contain"
-              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
+            {/* Scene image — full bleed */}
+            <img
+              src={import.meta.env.BASE_URL + card.image}
+              alt={card.label}
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ borderRadius: '32px' }}
             />
-            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>احتياجاتي</span>
-          </motion.div>
 
-          {/* Card 2: Health */}
-          <motion.div
-            variants={commCardVariants}
-            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 280, damping: 22 }}
-            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
-            style={{ 
-              background: 'rgba(255,255,255,0.72)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.85)',
-              borderRadius: '28px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
-            }}
-            data-gaze-target="true"
-            data-gaze-id="health"
-            data-gaze-label="صحتي"
-            id="gaze-card-health"
-            aria-label="صحتي"
-          >
-            <img 
-              src={import.meta.env.BASE_URL + 'card-health.png'} 
-              alt="صحتي"
-              className="w-[48%] max-h-[45%] object-contain"
-              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
+            {/* Bottom gradient overlay */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: card.overlay,
+                borderRadius: '32px',
+              }}
             />
-            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>صحتي</span>
-          </motion.div>
 
-          {/* Card 3: Worship */}
-          <motion.div
-            variants={commCardVariants}
-            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 280, damping: 22 }}
-            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
-            style={{ 
-              background: 'rgba(255,255,255,0.72)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.85)',
-              borderRadius: '28px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
-            }}
-            data-gaze-target="true"
-            data-gaze-id="worship"
-            data-gaze-label="عبادتي"
-            id="gaze-card-worship"
-            aria-label="عبادتي"
-          >
-            <img 
-              src={import.meta.env.BASE_URL + 'card-worship.png'} 
-              alt="عبادتي"
-              className="w-[48%] max-h-[45%] object-contain"
-              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
-            />
-            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>عبادتي</span>
+            {/* Card label */}
+            <div className="absolute bottom-0 inset-x-0 pb-5 flex items-end justify-center">
+              <span
+                className="text-white font-bold drop-shadow-lg"
+                style={{
+                  fontSize: 'clamp(1.2rem, 2.2vw, 1.6rem)',
+                  textShadow: '0 2px 12px rgba(0,0,0,0.50)',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                {card.label}
+              </span>
+            </div>
           </motion.div>
-
-          {/* Card 4: Feelings */}
-          <motion.div
-            variants={commCardVariants}
-            whileHover={{ scale: 1.03, boxShadow: '0 12px 36px rgba(0,0,0,0.13)' }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 280, damping: 22 }}
-            className="flex flex-col items-center justify-center gap-5 cursor-pointer"
-            style={{ 
-              background: 'rgba(255,255,255,0.72)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.85)',
-              borderRadius: '28px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)'
-            }}
-            data-gaze-target="true"
-            data-gaze-id="feelings"
-            data-gaze-label="مشاعري"
-            id="gaze-card-feelings"
-            aria-label="مشاعري"
-          >
-            <img 
-              src={import.meta.env.BASE_URL + 'card-feelings.png'} 
-              alt="مشاعري"
-              className="w-[48%] max-h-[45%] object-contain"
-              style={{ filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.12))' }}
-            />
-            <span className="text-[1.35rem] font-bold text-[#1C1C1E]" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>مشاعري</span>
-          </motion.div>
-        </div>
-      </motion.div>
-
-      {/* ZONE 3 */}
-      <motion.div 
-        className="flex-none py-5 flex items-center justify-center gap-2"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-      >
-        <Eye className="w-[13px] h-[13px] text-[#AEAEB2]" style={{ animation: 'gaze-blink 2.5s ease-in-out infinite' }} />
-        <span className="text-[0.85rem] text-[#AEAEB2]">
-          انظر إلى الخيار لمدة ثانيتين للاختيار.
-        </span>
+        ))}
       </motion.div>
     </div>
   );

@@ -1,0 +1,159 @@
+Redesign the communication screen completely.
+
+Do NOT use icons.
+Do NOT use emojis.
+Do NOT use simple illustrations.
+
+I want each card to feel like a premium visual story.
+
+The application is designed for elderly stroke survivors who may have difficulty reading.
+
+The patient should understand every category immediately just by looking at the image.
+
+========================
+STYLE
+========================
+
+Use the exact same premium design language as the landing page.
+
+Apple-inspired.
+
+Very clean.
+
+Soft gradients.
+
+Rounded corners (32px).
+
+Soft shadows.
+
+Luxury healthcare aesthetic.
+
+No clutter.
+
+Large spacing.
+
+Arabic RTL.
+
+========================
+HEADER
+========================
+
+Top center:
+
+ماذا تحتاج؟
+
+Small subtitle:
+
+انظر إلى الخيار لمدة ثانيتين للاختيار
+
+Top left:
+
+⚙️ Settings
+
+Top right:
+
+Large floating red emergency button
+
+🚨 طوارئ
+
+Always visible.
+
+========================
+CARDS
+========================
+
+Create four large premium cards.
+
+Each card should have its own warm background color.
+
+Do NOT use white cards.
+
+Cards should look alive.
+
+========================
+
+CARD 1
+
+احتياجاتي
+
+Show a realistic bedside table containing:
+
+• Arabic coffee
+• Glass of water
+• Healthy meal tray
+
+Everything should look warm, inviting and realistic.
+
+========================
+
+CARD 2
+
+صحتي
+
+Show a realistic elderly Saudi patient in a hospital bed.
+
+A nurse is adjusting the electric bed while medicine and medical assistance are visible.
+
+The scene should communicate health assistance without using medical symbols.
+
+No heartbeat icon.
+
+========================
+
+CARD 3
+
+عبادتي
+
+Show:
+
+Prayer rug
+
+Holy Quran
+
+Water jug for wudu
+
+Tasbeeh
+
+Warm sunlight.
+
+Peaceful atmosphere.
+
+========================
+
+CARD 4
+
+مشاعري
+
+Show the SAME elderly Saudi man three times.
+
+One smiling.
+
+One neutral.
+
+One in pain.
+
+The three faces should communicate emotions without reading.
+
+========================
+INTERACTION
+========================
+
+Each card slightly scales when focused.
+
+Soft glowing border.
+
+Prepare for future eye tracking selection.
+
+========================
+IMPORTANT
+========================
+
+Do NOT use stock dashboard icons.
+
+Do NOT use generic healthcare graphics.
+
+Every card should feel like a beautiful realistic scene.
+
+The user should understand the meaning before reading the title.
+
+The whole screen must look like an Apple product presentation, not a hospital software.
