@@ -255,19 +255,6 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
             />
           </svg>
 
-          {/* Outer color-tinted glow ring — sits behind the bubble */}
-          <div aria-hidden style={{
-            position: 'absolute',
-            inset: '-6px',
-            borderRadius: '50%',
-            background: `radial-gradient(circle, ${card.glowColor} 0%, transparent 72%)`,
-            filter: 'blur(14px)',
-            opacity: gazing ? 0.85 : 0.35,
-            transition: 'opacity 0.4s ease',
-            pointerEvents: 'none',
-            zIndex: 0,
-          }} />
-
           {/* Premium Apple-glass circular bubble */}
           <motion.div
             className="relative overflow-hidden flex items-center justify-center"
@@ -278,21 +265,50 @@ function GazeCard({ card, index }: { card: typeof CARDS[0]; index: number }) {
               background: card.bg,
               backdropFilter: 'blur(48px) saturate(210%)',
               WebkitBackdropFilter: 'blur(48px) saturate(210%)',
-              // Thin white border + soft outer glow + subtle inner shadow
+              // White glass border always visible beneath the glow
               border: '1px solid rgba(255,255,255,0.96)',
-              boxShadow: [
-                `0 20px 60px rgba(0,0,0,0.12)`,
-                `0 8px 24px rgba(0,0,0,0.08)`,
-                `0 2px 6px rgba(0,0,0,0.04)`,
-                `inset 0 2px 0 rgba(255,255,255,1)`,
-                `inset 0 0 48px rgba(255,255,255,0.65)`,
-                `inset 0 -3px 8px rgba(0,0,0,0.04)`,
-              ].join(', '),
               cursor: 'none',
               zIndex: 1,
             }}
-            animate={gazing ? { scale: 1.03 } : { scale: 1 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            // Both states carry identical shadow slots so Framer Motion
+            // can interpolate every value cleanly (no count mismatch).
+            animate={gazing
+              ? {
+                  scale: 1.02,
+                  boxShadow: [
+                    // 2 px colored ring — thin, not a thick outline
+                    `0 0 0 2px ${card.glowColor.replace('0.40', '0.55')}`,
+                    // soft near glow spreading outside the circle
+                    `0 0 18px ${card.glowColor.replace('0.40', '0.25')}`,
+                    // wider, softer halo
+                    `0 0 40px ${card.glowColor.replace('0.40', '0.15')}`,
+                    // elegant depth shadow beneath
+                    `0 12px 40px rgba(20,30,60,0.15)`,
+                    // keep white top specular inset
+                    `inset 0 2px 0 rgba(255,255,255,1)`,
+                    // keep inner glow
+                    `inset 0 0 48px rgba(255,255,255,0.65)`,
+                  ].join(', '),
+                }
+              : {
+                  scale: 1,
+                  boxShadow: [
+                    // invisible ring placeholder (same slot count)
+                    `0 0 0 0px rgba(0,0,0,0)`,
+                    // neutral near shadow
+                    `0 8px 24px rgba(0,0,0,0.08)`,
+                    // neutral far shadow
+                    `0 20px 56px rgba(0,0,0,0.10)`,
+                    // base depth
+                    `0 2px 6px rgba(0,0,0,0.04)`,
+                    // white top inset
+                    `inset 0 2px 0 rgba(255,255,255,1)`,
+                    // inner glow
+                    `inset 0 0 48px rgba(255,255,255,0.65)`,
+                  ].join(', '),
+                }
+            }
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
             onMouseEnter={startGaze}
             onMouseLeave={stopGaze}
             onFocus={startGaze}
