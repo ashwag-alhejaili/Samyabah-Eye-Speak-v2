@@ -5,7 +5,40 @@ import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
   Eye, Volume2, Smartphone, ChevronRight,
   HeartPulse, Utensils, Heart, Sparkles, Home as HomeIcon, Users,
+  Droplets, UtensilsCrossed, VolumeX, PersonStanding, Armchair,
 } from 'lucide-react';
+
+// ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
+function ToiletIcon({
+  size = 24,
+  color = 'currentColor',
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
+  return (
+    <svg
+      width={size} height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Tank */}
+      <rect x="6" y="2" width="12" height="6" rx="1.5" />
+      {/* Bowl outer — wide at top, tapers toward base */}
+      <path d="M4 8 h16 Q20.5 18 12 20 Q3.5 18 4 8 Z" />
+      {/* Seat ring inside bowl */}
+      <path d="M4 8 Q4 13.5 12 15 Q20 13.5 20 8" />
+      {/* Pedestal */}
+      <path d="M10 20 L9.5 23 h5 L15 20" />
+    </svg>
+  );
+}
 
 const queryClient = new QueryClient();
 
@@ -131,7 +164,13 @@ const itemVariants = {
 };
 
 // ── Data ─────────────────────────────────────────────────────────────────────
-type CategoryItem = { id: string; label: string; emoji: string };
+type CategoryItem = {
+  id: string;
+  label: string;
+  emoji: string;
+  /** Optional icon component — when present, renders instead of the emoji */
+  Icon?: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+};
 type Category = {
   id: string;
   label: string;
@@ -185,12 +224,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center center',
     Icon: Utensils,
     items: [
-      { id: 'water',    label: 'أريد ماء',              emoji: '💧' },
-      { id: 'food',     label: 'أريد طعاماً',           emoji: '🍽️' },
-      { id: 'bathroom', label: 'أحتاج الحمام',          emoji: '🚻' },
-      { id: 'rest',     label: 'أريد الراحة',           emoji: '😴' },
-      { id: 'sit',      label: 'أريد الجلوس',           emoji: '🪑' },
-      { id: 'blanket',  label: 'أريد بطانية',           emoji: '🛏️' },
+      { id: 'water',    label: 'أريد ماء',         emoji: '💧', Icon: Droplets },
+      { id: 'food',     label: 'أريد طعامًا',      emoji: '🍽️', Icon: UtensilsCrossed },
+      { id: 'bathroom', label: 'أريد الحمام',      emoji: '🚻', Icon: ToiletIcon },
+      { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', Icon: Armchair },
+      { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', Icon: VolumeX },
+      { id: 'position', label: 'غيّر وضعيتي',     emoji: '🧍', Icon: PersonStanding },
     ],
   },
   {
@@ -620,9 +659,17 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         />
       </div>
 
-      <span style={{ fontSize: 'clamp(1.9rem, 3.2vh, 2.6rem)', lineHeight: 1 }}>
-        {item.emoji}
-      </span>
+      {item.Icon ? (
+        <item.Icon
+          size={44}
+          color={selected ? ringColor : '#3C3C43'}
+          strokeWidth={1.5}
+        />
+      ) : (
+        <span style={{ fontSize: 'clamp(1.9rem, 3.2vh, 2.6rem)', lineHeight: 1 }}>
+          {item.emoji}
+        </span>
+      )}
       <span style={{
         fontSize: 'clamp(0.82rem, 1.1vw, 1rem)',
         fontWeight: 700,
