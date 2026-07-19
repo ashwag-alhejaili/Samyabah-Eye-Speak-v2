@@ -9,6 +9,7 @@ import {
   Cross, Footprints, Stethoscope,
   Lightbulb, LightbulbOff, Tv,
   Smile, Frown, Annoyed, HeartHandshake,
+  BookOpen,
 } from 'lucide-react';
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
@@ -289,6 +290,129 @@ function TiredFaceIcon({
   );
 }
 
+// ── Custom icon: Wudu — cupped hands with water streams ──────────────────────
+function WuduIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Water streams falling from above */}
+      <line x1="9"  y1="2" x2="8.5"  y2="7" />
+      <line x1="12" y1="1" x2="12"   y2="6" />
+      <line x1="15" y1="2" x2="15.5" y2="7" />
+      {/* Left cupped hand */}
+      <path d="M5 17 Q5 14 7 13 L10 12 L10 17" />
+      {/* Right cupped hand */}
+      <path d="M19 17 Q19 14 17 13 L14 12 L14 17" />
+      {/* Cup base joining both hands */}
+      <path d="M10 17 Q12 19.5 14 17" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Praying Person — standing figure, palms raised (du'a) ────────
+function PrayingPersonIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Head */}
+      <circle cx="12" cy="4" r="2.2" />
+      {/* Torso */}
+      <path d="M12 6.2 L12 14" />
+      {/* Left arm — raised, palm open and facing up */}
+      <path d="M12 9 L7 6.5" />
+      <path d="M7 6.5 Q6 6 5.5 5" />
+      {/* Right arm — raised, palm open and facing up */}
+      <path d="M12 9 L17 6.5" />
+      <path d="M17 6.5 Q18 6 18.5 5" />
+      {/* Legs */}
+      <path d="M12 14 L10 21" />
+      <path d="M12 14 L14 21" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Prayer Beads — loop with bead dots and tassel ────────────────
+function PrayerBeadsIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  // Bead positions on a circle of radius 8 centered at (12, 12)
+  // Angles at 0°,51°,103°,154°,206°,257°,309° (7 beads, leaving gap at top-left for tassel)
+  const r = 8;
+  const cx = 12, cy = 12;
+  const angles = [0, 51, 103, 154, 206, 257, 309].map(a => (a * Math.PI) / 180);
+  const beads = angles.map(a => ({
+    x: +(cx + r * Math.sin(a)).toFixed(2),
+    y: +(cy - r * Math.cos(a)).toFixed(2),
+  }));
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* String loop (almost-full circle, gap at top) */}
+      <path d="M12 4 Q20 4 20 12 Q20 20 12 20 Q4 20 4 12 Q4 5.5 9.5 4.2" />
+      {/* Tassel / counter bead hanging from gap */}
+      <line x1="10" y1="4" x2="9"   y2="2" />
+      <circle cx="9" cy="1.5" r="1" fill={color} stroke="none" />
+      {/* Bead dots on the string */}
+      {beads.map((b, i) => (
+        <circle key={i} cx={b.x} cy={b.y} r={1.3} fill={color} stroke="none" />
+      ))}
+    </svg>
+  );
+}
+
+// ── Custom icon: Help Pray — kneeling person + standing helper ────────────────
+function HelpPrayIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* ── Person being helped to pray (left) — kneeling, bowing forward ── */}
+      <circle cx="6" cy="6" r="2" />
+      {/* Body bowing forward */}
+      <path d="M6 8 L5 11 L10 13" />
+      {/* Kneeling legs on ground */}
+      <path d="M5 11 L4 14" />
+      <path d="M5 11 L7 13.5" />
+
+      {/* ── Helper (right) — standing, arm extended to person's shoulder ── */}
+      <circle cx="19" cy="4" r="2" />
+      <path d="M19 6 L19 15" />
+      <path d="M19 15 L17 21" />
+      <path d="M19 15 L21 21" />
+      {/* Arm reaching across to the praying person */}
+      <path d="M19 9 L10 12" />
+    </svg>
+  );
+}
+
+// ── Custom icon: Prayer Rug — rectangle with mihrab arch inside ───────────────
+function PrayerRugIcon({
+  size = 24, color = 'currentColor', strokeWidth = 1.75,
+}: { size?: number; color?: string; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      {/* Rug outer border */}
+      <rect x="2" y="3" width="20" height="18" rx="1.5" />
+      {/* Fringe at top */}
+      <line x1="5"  y1="3" x2="5"  y2="1" />
+      <line x1="9"  y1="3" x2="9"  y2="1" />
+      <line x1="12" y1="3" x2="12" y2="1" />
+      <line x1="15" y1="3" x2="15" y2="1" />
+      <line x1="19" y1="3" x2="19" y2="1" />
+      {/* Mihrab arch (prayer direction marker) */}
+      <path d="M7 19 L7 13 Q7 9 12 9 Q17 9 17 13 L17 19" />
+      {/* Inner arch detail */}
+      <path d="M9 19 L9 14 Q9 11 12 11 Q15 11 15 14 L15 19" />
+    </svg>
+  );
+}
+
 const queryClient = new QueryClient();
 
 // ── useDwell — shared 2-second gaze-dwell hook ───────────────────────────────
@@ -495,12 +619,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 55%',
     Icon: Sparkles,
     items: [
-      { id: 'pray',        label: 'أريد أن أصلي',       emoji: '🙏' },
-      { id: 'wudu',        label: 'أريد الوضوء',         emoji: '🚿' },
-      { id: 'quran',       label: 'أريد القرآن',         emoji: '📖' },
-      { id: 'dua',         label: 'أريد الدعاء',         emoji: '🤲' },
-      { id: 'prayertime',  label: 'وقت الصلاة',          emoji: '🕐' },
-      { id: 'qibla',       label: 'اتجاه القبلة',        emoji: '🧭' },
+      { id: 'quran',    label: 'تشغيل القرآن',            emoji: '📖', Icon: BookOpen },
+      { id: 'wudu',     label: 'أريد الوضوء',             emoji: '🚿', Icon: WuduIcon },
+      { id: 'pray',     label: 'أريد الصلاة',             emoji: '🙏', Icon: PrayingPersonIcon },
+      { id: 'beads',    label: 'أريد السبحة',             emoji: '📿', Icon: PrayerBeadsIcon },
+      { id: 'helppray', label: 'ساعدني على الصلاة',       emoji: '🤲', Icon: HelpPrayIcon },
+      { id: 'rug',      label: 'جهّز لي سجادة الصلاة',  emoji: '🕌', Icon: PrayerRugIcon },
     ],
   },
   {
