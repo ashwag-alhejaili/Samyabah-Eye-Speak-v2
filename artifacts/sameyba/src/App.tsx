@@ -2668,7 +2668,7 @@ function SettingsPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المريض';
+    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المستخدم';
     if (!caregiverName.trim())  e.caregiverName  = 'يرجى إدخال اسم مقدم الرعاية';
     if (!caregiverPhone.trim()) e.caregiverPhone = 'يرجى إدخال رقم الجوال';
     return e;
@@ -2731,14 +2731,14 @@ function SettingsPage() {
           position: 'absolute', top: '-12%', right: '-8%',
           width: 'clamp(260px,40vw,520px)', height: 'clamp(260px,40vw,520px)',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0,122,255,0.13) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)',
           filter: 'blur(48px)',
         }} />
         <div style={{
           position: 'absolute', bottom: '-10%', left: '-6%',
           width: 'clamp(200px,32vw,420px)', height: 'clamp(200px,32vw,420px)',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(88,86,214,0.11) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)',
           filter: 'blur(48px)',
         }} />
       </div>
@@ -2813,15 +2813,15 @@ function SettingsPage() {
           {/* Patient name */}
           <div style={fieldBox}>
             <label style={labelStyle}>
-              <span>👤</span><span>اسم المريض</span>
+              <span>👤</span><span>اسم المستخدم</span>
             </label>
             <input
               type="text"
-              placeholder="مثال: أحمد"
+              placeholder="مثال: محمد"
               value={patientName}
               onChange={e => { setPatientName(e.target.value); clearError('patientName'); }}
               style={inputStyle(!!errors.patientName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
               onBlur={e => { e.currentTarget.style.borderColor = errors.patientName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <AnimatePresence>
@@ -2847,7 +2847,7 @@ function SettingsPage() {
               value={caregiverName}
               onChange={e => { setCaregiverName(e.target.value); clearError('caregiverName'); }}
               style={inputStyle(!!errors.caregiverName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
               onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <AnimatePresence>
@@ -2873,7 +2873,7 @@ function SettingsPage() {
               value={caregiverPhone}
               onChange={e => { setCaregiverPhone(e.target.value); clearError('caregiverPhone'); }}
               style={{ ...inputStyle(!!errors.caregiverPhone), direction: 'ltr', textAlign: 'right' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
               onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverPhone ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <AnimatePresence>
@@ -2898,7 +2898,7 @@ function SettingsPage() {
           style={{
             marginTop: '32px',
             width: '100%',
-            background: 'linear-gradient(145deg, #007AFF, #0062E6)',
+            background: 'linear-gradient(145deg, #5E7E35, #4F6C2D)',
             color: '#fff',
             border: 'none',
             borderRadius: '16px',
@@ -2907,7 +2907,7 @@ function SettingsPage() {
             fontWeight: 700,
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
             cursor: 'pointer',
-            boxShadow: '0 8px 28px rgba(0,122,255,0.38)',
+            boxShadow: '0 8px 28px rgba(94,126,53,0.38)',
             letterSpacing: '0.01em',
           }}
         >
@@ -2977,7 +2977,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المريض';
+    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المستخدم';
     if (!caregiverName.trim())  e.caregiverName  = 'يرجى إدخال اسم مقدم الرعاية';
     if (!caregiverPhone.trim()) e.caregiverPhone = 'يرجى إدخال رقم الجوال';
     return e;
@@ -3046,21 +3046,21 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
           position: 'absolute', top: '-12%', right: '-8%',
           width: 'clamp(260px, 40vw, 520px)', height: 'clamp(260px, 40vw, 520px)',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0,122,255,0.13) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)',
           filter: 'blur(48px)',
         }} />
         <div style={{
           position: 'absolute', bottom: '-10%', left: '-6%',
           width: 'clamp(200px, 32vw, 420px)', height: 'clamp(200px, 32vw, 420px)',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(88,86,214,0.11) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)',
           filter: 'blur(48px)',
         }} />
         <div style={{
           position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)',
           width: 'clamp(300px, 50vw, 600px)', height: 'clamp(300px, 50vw, 600px)',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(52,199,89,0.07) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.10) 0%, transparent 70%)',
           filter: 'blur(60px)',
         }} />
       </div>
@@ -3128,15 +3128,15 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
           <div style={fieldBox}>
             <label style={labelStyle}>
               <span>👤</span>
-              <span>اسم المريض</span>
+              <span>اسم المستخدم</span>
             </label>
             <input
               type="text"
-              placeholder="مثال: أحمد"
+              placeholder="مثال: محمد"
               value={patientName}
               onChange={e => { setPatientName(e.target.value); clearError('patientName'); }}
               style={inputStyle(!!errors.patientName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
               onBlur={e => { e.currentTarget.style.borderColor = errors.patientName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <AnimatePresence>
@@ -3163,7 +3163,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
               value={caregiverName}
               onChange={e => { setCaregiverName(e.target.value); clearError('caregiverName'); }}
               style={inputStyle(!!errors.caregiverName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
               onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <AnimatePresence>
@@ -3190,7 +3190,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
               value={caregiverPhone}
               onChange={e => { setCaregiverPhone(e.target.value); clearError('caregiverPhone'); }}
               style={{ ...inputStyle(!!errors.caregiverPhone), direction: 'ltr', textAlign: 'right' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
               onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverPhone ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <AnimatePresence>
@@ -3215,7 +3215,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
           style={{
             marginTop: '32px',
             width: '100%',
-            background: 'linear-gradient(145deg, #007AFF, #0062E6)',
+            background: 'linear-gradient(145deg, #5E7E35, #4F6C2D)',
             color: '#fff',
             border: 'none',
             borderRadius: '16px',
@@ -3224,7 +3224,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
             fontWeight: 700,
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
             cursor: 'pointer',
-            boxShadow: '0 8px 28px rgba(0,122,255,0.38)',
+            boxShadow: '0 8px 28px rgba(94,126,53,0.38)',
             letterSpacing: '0.01em',
           }}
         >
