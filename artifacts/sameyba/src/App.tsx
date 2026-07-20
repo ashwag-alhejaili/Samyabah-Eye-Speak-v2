@@ -1734,12 +1734,75 @@ function HistoryCard({ req }: { req: PatientRequest }) {
   );
 }
 
+// ── Soft notification chime (Web Audio, no file dependency) ──────────────────
+function playNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    // Two-tone descending chime: ~E6 → ~C#6, resembling a soft iOS ping
+    const notes: [number, number][] = [[1318.5, 0], [1046.5, 0.13]];
+    notes.forEach(([freq, offset]) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
+      gain.gain.setValueAtTime(0, ctx.currentTime + offset);
+      gain.gain.linearRampToValueAtTime(0.16, ctx.currentTime + offset + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.22);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.23);
+    });
+    setTimeout(() => ctx.close(), 900);
+  } catch { /* AudioContext not supported or blocked */ }
+}
+
 function CaregiverDashboard() {
   const [, navigate] = useLocation();
   const { requests, completeRequest, rejectRequest } = useRequestStore();
   const [toastVisible, setToastVisible] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setTick] = useState(0);
+
+  // Seed with all IDs present at mount — we only notify about requests that
+  // arrive while the dashboard is open, not ones already in localStorage.
+  const notifiedIds = useRef<Set<string>>(new Set(requests.map(r => r.id)));
+
+  // Request browser-notification permission once, silently
+  useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Detect newly arriving pending requests → chime + browser notification
+  useEffect(() => {
+    const fresh = requests.filter(
+      r => r.status === 'pending' && !notifiedIds.current.has(r.id),
+    );
+    if (fresh.length === 0) return;
+
+    // Sound fires once per batch regardless of how many cards arrived
+    playNotificationSound();
+
+    fresh.forEach(req => {
+      notifiedIds.current.add(req.id);
+      // Browser notification only when this tab is not in focus
+      if (
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted' &&
+        document.hidden
+      ) {
+        new Notification('طلب جديد', {
+          body: `${req.patientName} - ${req.requestText}`,
+          dir: 'rtl',
+          lang: 'ar',
+        });
+      }
+    });
+  }, [requests]);
 
   // Refresh all relative timestamps every 10 s
   useEffect(() => {
