@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
@@ -799,6 +799,93 @@ const CATEGORIES: Category[] = [
   },
 ];
 
+// ── Request store (localStorage-backed, shared between patient & dashboard) ───
+
+const PATIENT_NAME   = 'محمد عبدالله';
+const STORE_KEY      = 'sameyba_requests_v1';
+const URGENT_LABELS  = ['متألم', 'غثيان', 'أريد الحمام', 'نادِ الممرضة', 'طلب مساعدة عاجلة'];
+
+function isUrgent(label: string): boolean {
+  return URGENT_LABELS.some(kw => label.includes(kw) || kw.includes(label));
+}
+
+interface PatientRequest {
+  id:            string;
+  patientName:   string;
+  requestText:   string;
+  requestEmoji:  string;
+  categoryId:    string;
+  categoryLabel: string;
+  createdAt:     string;   // ISO
+  priority:      'urgent' | 'normal';
+  status:        'pending' | 'done' | 'rejected';
+  completedAt?:  string;   // ISO
+  rejectedAt?:   string;   // ISO
+}
+
+interface RequestStoreShape {
+  requests:        PatientRequest[];
+  addRequest:      (data: Omit<PatientRequest, 'id' | 'createdAt' | 'status'>) => void;
+  completeRequest: (id: string) => void;
+  rejectRequest:   (id: string) => void;
+}
+
+const RequestContext = createContext<RequestStoreShape | null>(null);
+
+function loadRequests(): PatientRequest[] {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) ?? '[]') as PatientRequest[]; }
+  catch { return []; }
+}
+function saveRequests(reqs: PatientRequest[]): void {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(reqs)); } catch { /* quota */ }
+}
+
+function RequestStoreProvider({ children }: { children: React.ReactNode }) {
+  const [requests, setRequests] = useState<PatientRequest[]>(loadRequests);
+
+  const addRequest = useCallback((data: Omit<PatientRequest, 'id' | 'createdAt' | 'status'>) => {
+    const req: PatientRequest = {
+      ...data,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    setRequests(prev => { const next = [req, ...prev]; saveRequests(next); return next; });
+  }, []);
+
+  const completeRequest = useCallback((id: string) => {
+    setRequests(prev => {
+      const next = prev.map(r =>
+        r.id === id ? { ...r, status: 'done' as const, completedAt: new Date().toISOString() } : r,
+      );
+      saveRequests(next);
+      return next;
+    });
+  }, []);
+
+  const rejectRequest = useCallback((id: string) => {
+    setRequests(prev => {
+      const next = prev.map(r =>
+        r.id === id ? { ...r, status: 'rejected' as const, rejectedAt: new Date().toISOString() } : r,
+      );
+      saveRequests(next);
+      return next;
+    });
+  }, []);
+
+  return (
+    <RequestContext.Provider value={{ requests, addRequest, completeRequest, rejectRequest }}>
+      {children}
+    </RequestContext.Provider>
+  );
+}
+
+function useRequestStore(): RequestStoreShape {
+  const ctx = useContext(RequestContext);
+  if (!ctx) throw new Error('useRequestStore must be used inside RequestStoreProvider');
+  return ctx;
+}
+
 // ── Shared: Ambient background blobs ─────────────────────────────────────────
 function AmbientBackground() {
   return (
@@ -1332,6 +1419,7 @@ function CategoryPage() {
   const [, params] = useRoute<{ categoryId: string }>('/communicate/:categoryId');
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const { addRequest } = useRequestStore();
 
   const category = CATEGORIES.find(c => c.id === params?.categoryId);
 
@@ -1348,6 +1436,17 @@ function CategoryPage() {
   }
 
   const handleSelect = (id: string) => {
+    const item = category.items.find(i => i.id === id);
+    if (item) {
+      addRequest({
+        patientName:   PATIENT_NAME,
+        requestText:   item.label,
+        requestEmoji:  item.emoji,
+        categoryId:    category.id,
+        categoryLabel: category.label,
+        priority:      isUrgent(item.label) ? 'urgent' : 'normal',
+      });
+    }
     setSelectedItem(prev => (prev === id ? null : id));
   };
 
@@ -1457,41 +1556,25 @@ function CategoryPage() {
 
 // ── Caregiver Dashboard ───────────────────────────────────────────────────────
 
-interface CaregiverRequest {
-  id: string;
-  patientName: string;
-  roomNumber: string;
-  requestEmoji: string;
-  requestText: string;
-  receivedAt: Date;
-  priority: 'urgent' | 'normal';
-  completedAt?: Date;
-}
-
-function formatRelativeTime(date: Date): string {
-  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+function formatRelativeTime(iso: string): string {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 10)  return 'الآن';
   if (s < 60)  return `قبل ${s} ثانية`;
   const m = Math.floor(s / 60);
   if (m === 1) return 'قبل دقيقة';
+  if (m === 2) return 'قبل دقيقتين';
+  if (m < 11)  return `قبل ${m} دقائق`;
   if (m < 60)  return `قبل ${m} دقيقة`;
   const h = Math.floor(m / 60);
   if (h === 1) return 'قبل ساعة';
+  if (h === 2) return 'قبل ساعتين';
   return `قبل ${h} ساعات`;
 }
-
-const INITIAL_REQUESTS: CaregiverRequest[] = [
-  { id: '1', patientName: 'محمد عبدالله',      roomNumber: '204', requestEmoji: '💧', requestText: 'أريد ماء',       receivedAt: new Date(Date.now() -  10_000), priority: 'urgent' },
-  { id: '2', patientName: 'فاطمة الزهراني',    roomNumber: '301', requestEmoji: '🤕', requestText: 'أشعر بألم',      receivedAt: new Date(Date.now() -  45_000), priority: 'urgent' },
-  { id: '3', patientName: 'إبراهيم السالم',    roomNumber: '118', requestEmoji: '🍽️', requestText: 'أريد الغداء',    receivedAt: new Date(Date.now() - 120_000), priority: 'normal' },
-  { id: '4', patientName: 'سلمى القحطاني',     roomNumber: '212', requestEmoji: '📖', requestText: 'تشغيل القرآن',   receivedAt: new Date(Date.now() - 300_000), priority: 'normal' },
-  { id: '5', patientName: 'عبدالرحمن المطيري', roomNumber: '403', requestEmoji: '📹', requestText: 'مكالمة فيديو',   receivedAt: new Date(Date.now() - 480_000), priority: 'normal' },
-  { id: '6', patientName: 'نورة الحربي',       roomNumber: '115', requestEmoji: '🛏️', requestText: 'ارفع السرير',    receivedAt: new Date(Date.now() - 720_000), priority: 'normal' },
-];
 
 function RequestCard({
   req, onComplete, onReject,
 }: {
-  req: CaregiverRequest;
+  req: PatientRequest;
   onComplete: (id: string) => void;
   onReject:   (id: string) => void;
 }) {
@@ -1505,8 +1588,7 @@ function RequestCard({
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       style={{
         background: 'rgba(255,255,255,0.72)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
+        backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
         borderRadius: '20px',
         border: urgent ? '1.5px solid rgba(255,59,48,0.22)' : '1.5px solid rgba(0,0,0,0.07)',
         boxShadow: urgent
@@ -1516,28 +1598,37 @@ function RequestCard({
         display: 'flex', flexDirection: 'column' as const, gap: '14px',
       }}
     >
-      {/* Priority badge + time */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{
-          background: urgent ? 'rgba(255,59,48,0.09)' : 'rgba(142,142,147,0.10)',
-          color: urgent ? '#FF3B30' : '#6E6E73',
-          borderRadius: '999px', padding: '3px 12px',
-          fontSize: '0.75rem', fontWeight: 700,
-        }}>
-          {urgent ? '⚠️ عاجل' : 'عادي'}
-        </span>
-        <span style={{ color: '#AEAEB2', fontSize: '0.77rem' }}>
-          🕒 {formatRelativeTime(req.receivedAt)}
+      {/* Priority + status badges, time */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' as const }}>
+          <span style={{
+            background: urgent ? 'rgba(255,59,48,0.09)' : 'rgba(142,142,147,0.10)',
+            color: urgent ? '#FF3B30' : '#6E6E73',
+            borderRadius: '999px', padding: '3px 10px',
+            fontSize: '0.74rem', fontWeight: 700,
+          }}>
+            {urgent ? '⚠️ عاجل' : 'عادي'}
+          </span>
+          <span style={{
+            background: 'rgba(10,132,255,0.09)', color: '#0A84FF',
+            borderRadius: '999px', padding: '3px 10px',
+            fontSize: '0.74rem', fontWeight: 700,
+          }}>
+            جديد
+          </span>
+        </div>
+        <span style={{ color: '#AEAEB2', fontSize: '0.77rem', whiteSpace: 'nowrap' }}>
+          🕒 {formatRelativeTime(req.createdAt)}
         </span>
       </div>
 
-      {/* Patient info */}
+      {/* Patient name + category */}
       <div>
         <p style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0A0A0A', margin: 0 }}>
           👤 {req.patientName}
         </p>
-        <p style={{ color: '#6E6E73', fontSize: '0.87rem', margin: '4px 0 0 0' }}>
-          🏠 غرفة {req.roomNumber}
+        <p style={{ color: '#6E6E73', fontSize: '0.82rem', margin: '3px 0 0 0' }}>
+          {req.categoryLabel}
         </p>
       </div>
 
@@ -1588,7 +1679,9 @@ function RequestCard({
   );
 }
 
-function CompletedCard({ req }: { req: CaregiverRequest }) {
+function HistoryCard({ req }: { req: PatientRequest }) {
+  const done      = req.status === 'done';
+  const actionISO = done ? req.completedAt : req.rejectedAt;
   return (
     <motion.div
       layout
@@ -1598,10 +1691,9 @@ function CompletedCard({ req }: { req: CaregiverRequest }) {
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       style={{
         background: 'rgba(255,255,255,0.50)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
+        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
         borderRadius: '16px',
-        border: '1.5px solid rgba(52,199,89,0.18)',
+        border: done ? '1.5px solid rgba(52,199,89,0.18)' : '1.5px solid rgba(255,59,48,0.15)',
         boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
         padding: '16px 20px',
         display: 'flex', alignItems: 'center', gap: '14px',
@@ -1610,50 +1702,70 @@ function CompletedCard({ req }: { req: CaregiverRequest }) {
     >
       <div style={{
         width: '38px', height: '38px', borderRadius: '50%', flexShrink: 0,
-        background: 'rgba(52,199,89,0.10)',
-        border: '1.5px solid rgba(52,199,89,0.22)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '1rem',
+        background: done ? 'rgba(52,199,89,0.10)' : 'rgba(255,59,48,0.08)',
+        border: done ? '1.5px solid rgba(52,199,89,0.22)' : '1.5px solid rgba(255,59,48,0.18)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem',
       }}>
-        ✅
+        {done ? '✅' : '❌'}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1C1C1E', margin: 0 }}>
-          {req.patientName}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' as const }}>
+          <p style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1C1C1E', margin: 0 }}>
+            {req.patientName}
+          </p>
+          <span style={{
+            fontSize: '0.72rem', fontWeight: 700,
+            color: done ? '#34C759' : '#FF3B30',
+            background: done ? 'rgba(52,199,89,0.09)' : 'rgba(255,59,48,0.09)',
+            borderRadius: '999px', padding: '1px 8px',
+          }}>
+            {done ? 'تم التنفيذ' : 'مرفوض'}
+          </span>
+        </div>
         <p style={{ color: '#6E6E73', fontSize: '0.82rem', margin: '3px 0 0 0' }}>
-          {req.requestEmoji} {req.requestText} · غرفة {req.roomNumber}
+          {req.requestEmoji} {req.requestText}
+        </p>
+        <p style={{ color: '#AEAEB2', fontSize: '0.75rem', margin: '2px 0 0 0' }}>
+          طُلب {formatRelativeTime(req.createdAt)}
+          {actionISO && ` · ${done ? 'نُفِّذ' : 'رُفض'} ${formatRelativeTime(actionISO)}`}
         </p>
       </div>
-      {req.completedAt && (
-        <span style={{ color: '#34C759', fontSize: '0.76rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-          {formatRelativeTime(req.completedAt)}
-        </span>
-      )}
     </motion.div>
   );
 }
 
 function CaregiverDashboard() {
-  const [, navigate]       = useLocation();
-  const [pending, setPending]     = useState<CaregiverRequest[]>(INITIAL_REQUESTS);
-  const [completed, setCompleted] = useState<CaregiverRequest[]>([]);
+  const [, navigate] = useLocation();
+  const { requests, completeRequest, rejectRequest } = useRequestStore();
   const [toastVisible, setToastVisible] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, setTick] = useState(0);
+
+  // Refresh all relative timestamps every 10 s
+  useEffect(() => {
+    const iv = setInterval(() => setTick(n => n + 1), 10_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const pending = [...requests.filter(r => r.status === 'pending')].sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority === 'urgent' ? -1 : 1;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+  const done = [...requests.filter(r => r.status === 'done')]
+    .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime());
+  const rejected = [...requests.filter(r => r.status === 'rejected')]
+    .sort((a, b) => new Date(b.rejectedAt!).getTime() - new Date(a.rejectedAt!).getTime());
 
   const handleComplete = useCallback((id: string) => {
-    const req = pending.find(r => r.id === id);
-    if (!req) return;
-    setPending(prev => prev.filter(r => r.id !== id));
-    setCompleted(prev => [{ ...req, completedAt: new Date() }, ...prev]);
+    completeRequest(id);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToastVisible(true);
     toastTimer.current = setTimeout(() => setToastVisible(false), 2500);
-  }, [pending]);
+  }, [completeRequest]);
 
   const handleReject = useCallback((id: string) => {
-    setPending(prev => prev.filter(r => r.id !== id));
-  }, []);
+    rejectRequest(id);
+  }, [rejectRequest]);
 
   return (
     <div
@@ -1679,8 +1791,8 @@ function CaregiverDashboard() {
             لوحة مقدم الرعاية
           </h1>
           <p style={{ color: '#6E6E73', fontSize: '0.87rem', margin: '5px 0 0 0' }}>
-            {pending.length} طلب معلّق
-            {completed.length > 0 && ` · ${completed.length} منجز`}
+            {pending.length > 0 ? `${pending.length} طلب معلّق` : 'لا توجد طلبات معلّقة'}
+            {(done.length + rejected.length) > 0 && ` · ${done.length + rejected.length} منتهٍ`}
           </p>
         </div>
 
@@ -1707,7 +1819,7 @@ function CaregiverDashboard() {
         className="relative z-10 flex-1 px-6 pb-16"
         style={{ maxWidth: '1100px', width: '100%', margin: '0 auto' }}
       >
-        {/* Pending requests */}
+        {/* ─ Pending ─ */}
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
             <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
@@ -1736,9 +1848,7 @@ function CaregiverDashboard() {
             {pending.length === 0 ? (
               <motion.div
                 key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 style={{
                   background: 'rgba(255,255,255,0.60)',
                   backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
@@ -1767,33 +1877,60 @@ function CaregiverDashboard() {
           </AnimatePresence>
         </section>
 
-        {/* Completed requests */}
+        {/* ─ Done ─ */}
         <AnimatePresence>
-          {completed.length > 0 && (
+          {done.length > 0 && (
             <motion.section
-              key="completed-section"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              key="done-section"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
               style={{ marginTop: '48px' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
                 <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
-                  الطلبات المنجزة
+                  الطلبات المنفذة
                 </h2>
                 <span style={{
                   background: '#34C759', color: '#fff',
                   borderRadius: '999px', padding: '2px 10px',
                   fontSize: '0.75rem', fontWeight: 700,
                 }}>
-                  {completed.length}
+                  {done.length}
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <AnimatePresence mode="popLayout">
-                  {completed.map(req => (
-                    <CompletedCard key={req.id} req={req} />
-                  ))}
+                  {done.map(req => <HistoryCard key={req.id} req={req} />)}
+                </AnimatePresence>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
+
+        {/* ─ Rejected ─ */}
+        <AnimatePresence>
+          {rejected.length > 0 && (
+            <motion.section
+              key="rejected-section"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              style={{ marginTop: '40px' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
+                  الطلبات المرفوضة
+                </h2>
+                <span style={{
+                  background: '#FF3B30', color: '#fff',
+                  borderRadius: '999px', padding: '2px 10px',
+                  fontSize: '0.75rem', fontWeight: 700,
+                }}>
+                  {rejected.length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <AnimatePresence mode="popLayout">
+                  {rejected.map(req => <HistoryCard key={req.id} req={req} />)}
                 </AnimatePresence>
               </div>
             </motion.section>
@@ -1806,9 +1943,7 @@ function CaregiverDashboard() {
         {toastVisible && (
           <motion.div
             key="done-toast"
-            initial={{ opacity: 0, y: 48 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 48 }}
+            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             style={{
               position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
@@ -1837,6 +1972,7 @@ function CaregiverDashboard() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <RequestStoreProvider>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <Switch>
           <Route path="/" component={Home} />
@@ -1854,6 +1990,7 @@ function App() {
           )} />
         </Switch>
       </WouterRouter>
+      </RequestStoreProvider>
     </QueryClientProvider>
   );
 }

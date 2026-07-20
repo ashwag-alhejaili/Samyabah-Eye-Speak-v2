@@ -1,0 +1,105 @@
+Connect the Patient Interface to the Caregiver Dashboard for a single-patient home-care scenario.
+
+Do NOT redesign any page.
+Keep the current Apple-style UI exactly as it is.
+Do not modify images, layouts, typography, routes or dwell-ring styling.
+
+Use one patient profile:
+
+Patient name:
+محمد عبدالله
+
+Requirements:
+
+1. SEND REQUEST
+
+When any patient request completes the existing 2-second dwell selection:
+
+- Create a new request.
+- Show the existing patient confirmation toast:
+  "تم إرسال الطلب"
+- Save the request locally so it appears on the Caregiver Dashboard.
+- Store:
+  - patient name
+  - request title
+  - category
+  - exact creation timestamp
+  - priority
+  - status
+
+2. CAREGIVER DASHBOARD
+
+Each pending request card must display:
+
+- Patient name:
+  محمد عبدالله
+- Request title
+- Relative time in Arabic:
+  "الآن"
+  "قبل 15 ثانية"
+  "قبل دقيقتين"
+  "قبل ساعة"
+- Priority badge
+- Status:
+  "جديد"
+
+Update the relative time automatically without refreshing the page.
+
+Remove:
+- room numbers
+- hospital references
+- nursing-home references
+
+This application is for one elderly patient at home, cared for by a son, daughter, wife or husband.
+
+3. PRIORITY
+
+Mark these requests as urgent:
+
+- متألم
+- غثيان
+- أريد الحمام
+- نادِ الممرضة
+- طلب مساعدة عاجلة
+
+All other requests are normal priority.
+
+Urgent requests should appear at the top.
+
+4. CAREGIVER ACTIONS
+
+When the caregiver presses:
+
+"تم التنفيذ"
+
+- Move the request from pending requests to:
+  "الطلبات المنفذة"
+- Change status to:
+  "تم التنفيذ"
+- Preserve the original request time.
+- Also show the completion time.
+
+When the caregiver presses:
+
+"رفض"
+
+- Move the request to:
+  "الطلبات المرفوضة"
+- Change status to:
+  "مرفوض"
+
+5. PERSISTENCE
+
+Use localStorage for the prototype.
+
+Requests must remain available when navigating between the patient interface and the Caregiver Dashboard.
+
+Do not implement Firebase, backend or real push notifications yet.
+
+6. IMPORTANT
+
+Do not add sample requests after the real patient sends a request.
+Keep mouse interaction working.
+Do not implement eye tracking yet.
+Do not implement voice yet.
+Do not modify any unrelated page.
