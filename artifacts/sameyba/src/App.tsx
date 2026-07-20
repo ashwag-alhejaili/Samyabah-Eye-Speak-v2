@@ -773,10 +773,10 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 38%',
     Icon: Heart,
     items: [
-      { id: 'happy',   label: 'سعيد',             emoji: '😊', Icon: Smile },
-      { id: 'sad',     label: 'حزين',             emoji: '😢', Icon: Frown },
-      { id: 'miss',    label: 'أحبكم',    emoji: '❤️', Icon: HeartHandshake },
-      { id: 'tired',   label: 'متعب',             emoji: '😴', Icon: TiredFaceIcon },
+      { id: 'happy',   label: 'سعيد',    emoji: '😊', Icon: Smile,           image: 'happy.png' },
+      { id: 'sad',     label: 'حزين',    emoji: '😢', Icon: Frown,           image: 'sad.png' },
+      { id: 'miss',    label: 'أحبكم',   emoji: '❤️', Icon: HeartHandshake,  image: 'love-family.png' },
+      { id: 'tired',   label: 'متعب',    emoji: '😴', Icon: TiredFaceIcon,   image: 'sleepy.png' },
     ],
   },
   {
