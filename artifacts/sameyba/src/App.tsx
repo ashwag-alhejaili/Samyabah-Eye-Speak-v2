@@ -734,7 +734,7 @@ const CATEGORIES: Category[] = [
       { id: 'pray',     label: 'أذهب للمسجد',             emoji: '🙏', Icon: PrayingPersonIcon, image: 'prayer.png' },
       { id: 'beads',    label: 'أريد السبحة',             emoji: '📿', Icon: PrayerBeadsIcon,   image: 'tasbeeh.png' },
       { id: 'helppray', label: 'ساعدني على الصلاة',       emoji: '🤲', Icon: HelpPrayIcon,      image: 'prayer-help.png' },
-      { id: 'rug',      label: 'جهّز لي سجادة الصلاة',  emoji: '🕌', Icon: PrayerRugIcon,     image: 'prayer-mat.png' },
+      { id: 'rug',      label: 'أريد سجادة',  emoji: '🕌', Icon: PrayerRugIcon,     image: 'prayer-mat.png' },
     ],
   },
   {
