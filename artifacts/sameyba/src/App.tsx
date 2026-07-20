@@ -1183,16 +1183,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   index: number;
 }) {
   const [active, setActive] = useState(false);
-
-  // Suppress click events for 1 s after a dwell completes so the browser's
-  // synthetic click (fired from the same hover that triggered the dwell) cannot
-  // call onSelect a second time before React has committed the state update.
-  const suppressClickUntilRef = useRef(0);
-
-  const { controls, handlers, onUpdate } = useDwell(() => {
-    suppressClickUntilRef.current = Date.now() + 1000;
-    onSelect(item.id);
-  });
+  const { controls, handlers, onUpdate } = useDwell(() => onSelect(item.id));
 
   const augmented = {
     onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
@@ -1222,7 +1213,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
 
   return (
     <button
-      onClick={() => { if (Date.now() < suppressClickUntilRef.current) return; onSelect(item.id); }}
+      onClick={() => onSelect(item.id)}
       {...augmented}
       style={{
         position: 'relative',
@@ -1466,6 +1457,10 @@ function CategoryPage() {
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const { addRequest } = useRequestStore();
+  // Ref-based lock: prevents a click event that arrives within 1 s of a
+  // successful selection (dwell or click) from submitting a duplicate request.
+  // Using a ref avoids stale-closure issues — the check always reads live.
+  const selectionLockedUntilRef = useRef(0);
 
   const category = CATEGORIES.find(c => c.id === params?.categoryId);
 
@@ -1482,11 +1477,17 @@ function CategoryPage() {
   }
 
   const handleSelect = (id: string) => {
+    // Drop any call that arrives within the 1-second lock window after the
+    // last successful submission — covers the dwell-then-click race and rapid
+    // double-clicks equally.
+    if (Date.now() < selectionLockedUntilRef.current) return;
+
     // Toggling an already-selected card off → no new request
     if (selectedItem === id) { setSelectedItem(null); return; }
 
     const item = category.items.find(i => i.id === id);
     if (item) {
+      selectionLockedUntilRef.current = Date.now() + 1000;
       // Generate the ID here, once, so the store can deduplicate on replay
       const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       addRequest({
