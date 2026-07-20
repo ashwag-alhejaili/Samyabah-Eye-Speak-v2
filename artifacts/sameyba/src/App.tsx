@@ -751,12 +751,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center center',
     Icon: HomeIcon,
     items: [
-      { id: 'bed_up',    label: 'ارفع السرير',        emoji: '🛏️', Icon: BedUpIcon },
-      { id: 'bed_down',  label: 'أنزل السرير',        emoji: '🛏️', Icon: BedDownIcon },
-      { id: 'light_on',  label: 'شغّل النور',         emoji: '💡', Icon: Lightbulb },
-      { id: 'light_off', label: 'أطفئ النور',         emoji: '🌑', Icon: LightbulbOff },
-      { id: 'tv_on',     label: 'شغّل التلفزيون',     emoji: '📺', Icon: Tv },
-      { id: 'tv_off',    label: 'أطفئ التلفزيون',     emoji: '📺', Icon: TvOffIcon },
+      { id: 'bed_up',    label: 'ارفع السرير',        emoji: '🛏️', image: 'room-bed-up.png' },
+      { id: 'bed_down',  label: 'أنزل السرير',        emoji: '🛏️', image: 'room-bed-down.png' },
+      { id: 'light_on',  label: 'شغّل النور',         emoji: '💡', image: 'room-light-on.png' },
+      { id: 'light_off', label: 'أطفئ النور',         emoji: '🌑', image: 'room-light-off.png' },
+      { id: 'tv_on',     label: 'شغّل التلفزيون',     emoji: '📺', image: 'room-tv-on.png' },
+      { id: 'tv_off',    label: 'أطفئ التلفزيون',     emoji: '📺', image: 'room-tv-off.png' },
     ],
   },
   {
