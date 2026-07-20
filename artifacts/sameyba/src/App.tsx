@@ -540,7 +540,7 @@ function useDwell(onComplete: () => void) {
       pathLength: 1,
       opacity: 1,
       transition: {
-        pathLength: { duration: 2, ease: 'linear' },
+        pathLength: { duration: 1, ease: 'linear' },
         opacity:    { duration: 0.15 },
       },
     });
@@ -1205,9 +1205,9 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
       ].join(', ');
 
   const focusShadow = [
-    `0 0 0 2px ${glowColor.replace('0.40', '0.35')}`,
-    `0 0 20px ${glowColor.replace('0.40', '0.22')}`,
-    `0 8px 32px ${glowColor.replace('0.40', '0.15')}`,
+    '0 0 0 3px rgba(0,122,255,0.50)',
+    '0 0 24px rgba(0,122,255,0.32)',
+    '0 8px 32px rgba(0,122,255,0.16)',
     'inset 0 1.5px 0 rgba(255,255,255,1)',
   ].join(', ');
 
@@ -1252,8 +1252,8 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         pointerEvents: 'none',
       }}>
         <DwellRingCircle
-          ringColor={ringColor}
-          glowColor={glowColor}
+          ringColor="#007AFF"
+          glowColor="rgba(0,122,255,0.40)"
           active={active}
           controls={controls}
           onUpdate={onUpdate}
@@ -1297,6 +1297,81 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         {item.label}
       </span>
     </button>
+  );
+}
+
+// ── SuccessDialog — shown after dwell selection, auto-closes after 2 s ────────
+function SuccessDialog({ visible }: { visible: boolean }) {
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key="success-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25, ease: 'easeInOut' }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.28)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.82 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.88 }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            dir="rtl"
+            style={{
+              background: 'rgba(255,255,255,0.96)',
+              backdropFilter: 'blur(28px)',
+              WebkitBackdropFilter: 'blur(28px)',
+              borderRadius: '24px',
+              padding: '40px 48px',
+              textAlign: 'center',
+              boxShadow: [
+                '0 32px 80px rgba(0,0,0,0.18)',
+                '0 8px 24px rgba(0,0,0,0.10)',
+                '0 0 0 1px rgba(255,255,255,0.8)',
+              ].join(', '),
+              maxWidth: '360px',
+              width: '88vw',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            }}
+          >
+            <div style={{ fontSize: '3rem', lineHeight: 1, marginBottom: '16px' }}>👁️</div>
+            <p style={{
+              fontSize: 'clamp(1.05rem, 1.4vw, 1.25rem)',
+              fontWeight: 700,
+              color: '#0A0A0A',
+              marginBottom: '12px',
+              lineHeight: 1.4,
+            }}>
+              تم التعرف على النظرة
+            </p>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              background: 'linear-gradient(135deg, rgba(52,199,89,0.10) 0%, rgba(52,199,89,0.05) 100%)',
+              border: '1.5px solid rgba(52,199,89,0.35)',
+              borderRadius: '999px',
+              padding: '9px 20px',
+            }}>
+              <span style={{ fontSize: '1.1rem' }}>✅</span>
+              <span style={{
+                fontSize: 'clamp(0.84rem, 1.05vw, 0.98rem)',
+                fontWeight: 600,
+                color: '#1C7A3A',
+              }}>
+                تم إرسال الطلب إلى مقدم الرعاية
+              </span>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1471,6 +1546,8 @@ function CategoryPage() {
   const [, params] = useRoute<{ categoryId: string }>('/communicate/:categoryId');
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [showDialog, setShowDialog] = useState(false);
+  const dialogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { addRequest } = useRequestStore();
   // Ref-based lock: prevents a click event that arrives within 1 s of a
   // successful selection (dwell or click) from submitting a duplicate request.
@@ -1514,6 +1591,10 @@ function CategoryPage() {
         categoryLabel: category.label,
         priority:      isUrgent(item.label) ? 'urgent' : 'normal',
       });
+      // Show success dialog, auto-close after 2 s
+      if (dialogTimerRef.current) clearTimeout(dialogTimerRef.current);
+      setShowDialog(true);
+      dialogTimerRef.current = setTimeout(() => setShowDialog(false), 2000);
     }
     setSelectedItem(id);
   };
@@ -1621,6 +1702,8 @@ function CategoryPage() {
           ) : null;
         })()}
       </AnimatePresence>
+
+      <SuccessDialog visible={showDialog} />
     </div>
   );
 }
