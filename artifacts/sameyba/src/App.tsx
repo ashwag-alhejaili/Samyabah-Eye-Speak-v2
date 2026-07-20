@@ -840,8 +840,50 @@ function saveRequests(reqs: PatientRequest[]): void {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(reqs)); } catch { /* quota */ }
 }
 
+const BC_CHANNEL = 'sameyba_requests_sync';
+
 function RequestStoreProvider({ children }: { children: React.ReactNode }) {
   const [requests, setRequests] = useState<PatientRequest[]>(loadRequests);
+  const channel = useRef<BroadcastChannel | null>(null);
+
+  // Open BroadcastChannel once; close on unmount
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel.current = new BroadcastChannel(BC_CHANNEL);
+    }
+    return () => { channel.current?.close(); };
+  }, []);
+
+  // Listen for updates from other tabs (BroadcastChannel + storage event fallback)
+  useEffect(() => {
+    function syncFromStorage() {
+      setRequests(loadRequests());
+    }
+
+    // BroadcastChannel: other tab mutated the store
+    if (channel.current) {
+      channel.current.onmessage = (e: MessageEvent) => {
+        if (e.data?.type === 'update') syncFromStorage();
+      };
+    }
+
+    // storage event: fired in every tab EXCEPT the one that called setItem
+    function onStorage(e: StorageEvent) {
+      if (e.key === STORE_KEY) syncFromStorage();
+    }
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      if (channel.current) channel.current.onmessage = null;
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // Helper: save to localStorage then notify other tabs
+  const broadcast = useCallback((next: PatientRequest[]) => {
+    saveRequests(next);
+    channel.current?.postMessage({ type: 'update' });
+  }, []);
 
   const addRequest = useCallback((data: Omit<PatientRequest, 'id' | 'createdAt' | 'status'>) => {
     const req: PatientRequest = {
@@ -850,28 +892,28 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       status: 'pending',
     };
-    setRequests(prev => { const next = [req, ...prev]; saveRequests(next); return next; });
-  }, []);
+    setRequests(prev => { const next = [req, ...prev]; broadcast(next); return next; });
+  }, [broadcast]);
 
   const completeRequest = useCallback((id: string) => {
     setRequests(prev => {
       const next = prev.map(r =>
         r.id === id ? { ...r, status: 'done' as const, completedAt: new Date().toISOString() } : r,
       );
-      saveRequests(next);
+      broadcast(next);
       return next;
     });
-  }, []);
+  }, [broadcast]);
 
   const rejectRequest = useCallback((id: string) => {
     setRequests(prev => {
       const next = prev.map(r =>
         r.id === id ? { ...r, status: 'rejected' as const, rejectedAt: new Date().toISOString() } : r,
       );
-      saveRequests(next);
+      broadcast(next);
       return next;
     });
-  }, []);
+  }, [broadcast]);
 
   return (
     <RequestContext.Provider value={{ requests, addRequest, completeRequest, rejectRequest }}>
