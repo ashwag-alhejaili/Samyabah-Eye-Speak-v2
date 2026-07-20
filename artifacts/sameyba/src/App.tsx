@@ -1245,6 +1245,21 @@ function Home() {
             <p className="text-[#AEAEB2] text-[0.82rem] font-normal leading-relaxed text-right max-w-sm">
               مصمم لمساعدة مرضى الجلطات وفاقدي القدرة على الكلام للتواصل بسهولة وكرامة.
             </p>
+            <motion.button
+              onClick={() => navigate('/dashboard')}
+              whileHover={{ opacity: 0.8 }}
+              whileTap={{ scale: 0.97 }}
+              className="mt-4"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                color: '#AEAEB2', fontSize: '0.78rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                display: 'flex', alignItems: 'center', gap: '4px', marginRight: 'auto', marginLeft: 0,
+                direction: 'rtl',
+              }}
+            >
+              لوحة مقدم الرعاية
+              <ChevronRight size={13} strokeWidth={2} />
+            </motion.button>
           </motion.div>
         </div>
       </motion.div>
@@ -1440,6 +1455,384 @@ function CategoryPage() {
   );
 }
 
+// ── Caregiver Dashboard ───────────────────────────────────────────────────────
+
+interface CaregiverRequest {
+  id: string;
+  patientName: string;
+  roomNumber: string;
+  requestEmoji: string;
+  requestText: string;
+  receivedAt: Date;
+  priority: 'urgent' | 'normal';
+  completedAt?: Date;
+}
+
+function formatRelativeTime(date: Date): string {
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 60)  return `قبل ${s} ثانية`;
+  const m = Math.floor(s / 60);
+  if (m === 1) return 'قبل دقيقة';
+  if (m < 60)  return `قبل ${m} دقيقة`;
+  const h = Math.floor(m / 60);
+  if (h === 1) return 'قبل ساعة';
+  return `قبل ${h} ساعات`;
+}
+
+const INITIAL_REQUESTS: CaregiverRequest[] = [
+  { id: '1', patientName: 'محمد عبدالله',      roomNumber: '204', requestEmoji: '💧', requestText: 'أريد ماء',       receivedAt: new Date(Date.now() -  10_000), priority: 'urgent' },
+  { id: '2', patientName: 'فاطمة الزهراني',    roomNumber: '301', requestEmoji: '🤕', requestText: 'أشعر بألم',      receivedAt: new Date(Date.now() -  45_000), priority: 'urgent' },
+  { id: '3', patientName: 'إبراهيم السالم',    roomNumber: '118', requestEmoji: '🍽️', requestText: 'أريد الغداء',    receivedAt: new Date(Date.now() - 120_000), priority: 'normal' },
+  { id: '4', patientName: 'سلمى القحطاني',     roomNumber: '212', requestEmoji: '📖', requestText: 'تشغيل القرآن',   receivedAt: new Date(Date.now() - 300_000), priority: 'normal' },
+  { id: '5', patientName: 'عبدالرحمن المطيري', roomNumber: '403', requestEmoji: '📹', requestText: 'مكالمة فيديو',   receivedAt: new Date(Date.now() - 480_000), priority: 'normal' },
+  { id: '6', patientName: 'نورة الحربي',       roomNumber: '115', requestEmoji: '🛏️', requestText: 'ارفع السرير',    receivedAt: new Date(Date.now() - 720_000), priority: 'normal' },
+];
+
+function RequestCard({
+  req, onComplete, onReject,
+}: {
+  req: CaregiverRequest;
+  onComplete: (id: string) => void;
+  onReject:   (id: string) => void;
+}) {
+  const urgent = req.priority === 'urgent';
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0,  scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.2 } }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        background: 'rgba(255,255,255,0.72)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderRadius: '20px',
+        border: urgent ? '1.5px solid rgba(255,59,48,0.22)' : '1.5px solid rgba(0,0,0,0.07)',
+        boxShadow: urgent
+          ? '0 4px 28px rgba(255,59,48,0.10), 0 1px 6px rgba(0,0,0,0.05)'
+          : '0 2px 20px rgba(0,0,0,0.07)',
+        padding: '20px',
+        display: 'flex', flexDirection: 'column' as const, gap: '14px',
+      }}
+    >
+      {/* Priority badge + time */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{
+          background: urgent ? 'rgba(255,59,48,0.09)' : 'rgba(142,142,147,0.10)',
+          color: urgent ? '#FF3B30' : '#6E6E73',
+          borderRadius: '999px', padding: '3px 12px',
+          fontSize: '0.75rem', fontWeight: 700,
+        }}>
+          {urgent ? '⚠️ عاجل' : 'عادي'}
+        </span>
+        <span style={{ color: '#AEAEB2', fontSize: '0.77rem' }}>
+          🕒 {formatRelativeTime(req.receivedAt)}
+        </span>
+      </div>
+
+      {/* Patient info */}
+      <div>
+        <p style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0A0A0A', margin: 0 }}>
+          👤 {req.patientName}
+        </p>
+        <p style={{ color: '#6E6E73', fontSize: '0.87rem', margin: '4px 0 0 0' }}>
+          🏠 غرفة {req.roomNumber}
+        </p>
+      </div>
+
+      {/* Request bubble */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '10px',
+        padding: '12px 16px', borderRadius: '14px',
+        background: 'rgba(10,132,255,0.055)',
+        border: '1px solid rgba(10,132,255,0.10)',
+      }}>
+        <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>{req.requestEmoji}</span>
+        <span style={{ fontWeight: 600, color: '#0A84FF', fontSize: '0.95rem' }}>
+          {req.requestText}
+        </span>
+      </div>
+
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => onComplete(req.id)}
+          style={{
+            flex: 1, padding: '12px 8px', borderRadius: '13px',
+            background: 'linear-gradient(135deg, #34C759 0%, #2DB14E 100%)',
+            color: '#fff', fontWeight: 700, fontSize: '0.9rem',
+            border: 'none', cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            boxShadow: '0 2px 14px rgba(52,199,89,0.30)',
+          }}
+        >
+          ✅ تم التنفيذ
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => onReject(req.id)}
+          style={{
+            flex: 1, padding: '12px 8px', borderRadius: '13px',
+            background: 'rgba(255,59,48,0.07)',
+            color: '#FF3B30', fontWeight: 700, fontSize: '0.9rem',
+            border: '1.5px solid rgba(255,59,48,0.18)', cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          }}
+        >
+          ❌ رفض
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+}
+
+function CompletedCard({ req }: { req: CaregiverRequest }) {
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        background: 'rgba(255,255,255,0.50)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderRadius: '16px',
+        border: '1.5px solid rgba(52,199,89,0.18)',
+        boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
+        padding: '16px 20px',
+        display: 'flex', alignItems: 'center', gap: '14px',
+        opacity: 0.88,
+      }}
+    >
+      <div style={{
+        width: '38px', height: '38px', borderRadius: '50%', flexShrink: 0,
+        background: 'rgba(52,199,89,0.10)',
+        border: '1.5px solid rgba(52,199,89,0.22)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '1rem',
+      }}>
+        ✅
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1C1C1E', margin: 0 }}>
+          {req.patientName}
+        </p>
+        <p style={{ color: '#6E6E73', fontSize: '0.82rem', margin: '3px 0 0 0' }}>
+          {req.requestEmoji} {req.requestText} · غرفة {req.roomNumber}
+        </p>
+      </div>
+      {req.completedAt && (
+        <span style={{ color: '#34C759', fontSize: '0.76rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {formatRelativeTime(req.completedAt)}
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+function CaregiverDashboard() {
+  const [, navigate]       = useLocation();
+  const [pending, setPending]     = useState<CaregiverRequest[]>(INITIAL_REQUESTS);
+  const [completed, setCompleted] = useState<CaregiverRequest[]>([]);
+  const [toastVisible, setToastVisible] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleComplete = useCallback((id: string) => {
+    const req = pending.find(r => r.id === id);
+    if (!req) return;
+    setPending(prev => prev.filter(r => r.id !== id));
+    setCompleted(prev => [{ ...req, completedAt: new Date() }, ...prev]);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastVisible(true);
+    toastTimer.current = setTimeout(() => setToastVisible(false), 2500);
+  }, [pending]);
+
+  const handleReject = useCallback((id: string) => {
+    setPending(prev => prev.filter(r => r.id !== id));
+  }, []);
+
+  return (
+    <div
+      className="min-h-[100dvh] flex flex-col"
+      dir="rtl"
+      style={{
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        background: 'linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)',
+      }}
+    >
+      <AmbientBackground />
+
+      {/* ── Header ── */}
+      <div
+        className="relative z-10 flex items-center justify-between px-6 pt-8 pb-6"
+        style={{ maxWidth: '1100px', width: '100%', margin: '0 auto' }}
+      >
+        <div>
+          <h1 style={{
+            fontSize: 'clamp(1.35rem, 2.8vw, 1.85rem)', fontWeight: 800,
+            color: '#0A0A0A', letterSpacing: '-0.025em', margin: 0,
+          }}>
+            لوحة مقدم الرعاية
+          </h1>
+          <p style={{ color: '#6E6E73', fontSize: '0.87rem', margin: '5px 0 0 0' }}>
+            {pending.length} طلب معلّق
+            {completed.length > 0 && ` · ${completed.length} منجز`}
+          </p>
+        </div>
+
+        <motion.button
+          whileTap={{ scale: 0.96 }}
+          onClick={() => navigate('/')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            padding: '10px 20px', borderRadius: '999px',
+            background: 'rgba(255,255,255,0.75)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            border: '1.5px solid rgba(0,0,0,0.08)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
+            cursor: 'pointer', color: '#0A0A0A', fontWeight: 600,
+            fontSize: '0.9rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          }}
+        >
+          الرئيسية <ChevronRight size={15} strokeWidth={2.5} />
+        </motion.button>
+      </div>
+
+      {/* ── Content ── */}
+      <div
+        className="relative z-10 flex-1 px-6 pb-16"
+        style={{ maxWidth: '1100px', width: '100%', margin: '0 auto' }}
+      >
+        {/* Pending requests */}
+        <section>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+            <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
+              الطلبات الواردة
+            </h2>
+            <AnimatePresence>
+              {pending.length > 0 && (
+                <motion.span
+                  key="pending-badge"
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  style={{
+                    background: '#FF3B30', color: '#fff',
+                    borderRadius: '999px', padding: '2px 10px',
+                    fontSize: '0.75rem', fontWeight: 700,
+                  }}
+                >
+                  {pending.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <AnimatePresence mode="popLayout">
+            {pending.length === 0 ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                style={{
+                  background: 'rgba(255,255,255,0.60)',
+                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                  borderRadius: '20px', border: '1.5px solid rgba(0,0,0,0.06)',
+                  padding: '52px 24px', textAlign: 'center' as const,
+                  color: '#AEAEB2', fontSize: '0.95rem',
+                }}
+              >
+                ✓ لا توجد طلبات معلّقة
+              </motion.div>
+            ) : (
+              <motion.div
+                key="grid"
+                style={{
+                  display: 'grid', gap: '16px',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
+                }}
+              >
+                <AnimatePresence mode="popLayout">
+                  {pending.map(req => (
+                    <RequestCard key={req.id} req={req} onComplete={handleComplete} onReject={handleReject} />
+                  ))}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+
+        {/* Completed requests */}
+        <AnimatePresence>
+          {completed.length > 0 && (
+            <motion.section
+              key="completed-section"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              style={{ marginTop: '48px' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
+                  الطلبات المنجزة
+                </h2>
+                <span style={{
+                  background: '#34C759', color: '#fff',
+                  borderRadius: '999px', padding: '2px 10px',
+                  fontSize: '0.75rem', fontWeight: 700,
+                }}>
+                  {completed.length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <AnimatePresence mode="popLayout">
+                  {completed.map(req => (
+                    <CompletedCard key={req.id} req={req} />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* ── Completion toast ── */}
+      <AnimatePresence>
+        {toastVisible && (
+          <motion.div
+            key="done-toast"
+            initial={{ opacity: 0, y: 48 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 48 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
+              zIndex: 200,
+              display: 'flex', alignItems: 'center', gap: '10px',
+              padding: '13px 28px', borderRadius: '999px',
+              background: 'linear-gradient(135deg, rgba(52,199,89,0.13) 0%, rgba(255,255,255,0.90) 100%)',
+              backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+              border: '1.5px solid rgba(52,199,89,0.36)',
+              boxShadow: '0 8px 32px rgba(52,199,89,0.20)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>✅</span>
+            <span style={{ fontWeight: 700, color: '#2DB14E', fontSize: '0.95rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
+              تم تنفيذ الطلب
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 function App() {
   return (
@@ -1449,6 +1842,7 @@ function App() {
           <Route path="/" component={Home} />
           <Route path="/communicate" component={CommunicationScreen} />
           <Route path="/communicate/:categoryId" component={CategoryPage} />
+          <Route path="/dashboard" component={CaregiverDashboard} />
           <Route component={() => (
             <div
               className="min-h-[100dvh] flex items-center justify-center text-center p-8 bg-[#FAFAFA] text-[#0A0A0A]"
