@@ -729,12 +729,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 55%',
     Icon: Sparkles,
     items: [
-      { id: 'quran',    label: 'أريد قرآن',            emoji: '📖', Icon: BookOpen },
-      { id: 'wudu',     label: 'أريد الوضوء',             emoji: '🚿', Icon: WuduIcon },
-      { id: 'pray',     label: 'أريد الصلاة',             emoji: '🙏', Icon: PrayingPersonIcon },
-      { id: 'beads',    label: 'أريد السبحة',             emoji: '📿', Icon: PrayerBeadsIcon },
-      { id: 'helppray', label: 'ساعدني على الصلاة',       emoji: '🤲', Icon: HelpPrayIcon },
-      { id: 'rug',      label: 'جهّز لي سجادة الصلاة',  emoji: '🕌', Icon: PrayerRugIcon },
+      { id: 'quran',    label: 'أريد قرآن',            emoji: '📖', Icon: BookOpen,         image: 'quran.png' },
+      { id: 'wudu',     label: 'أريد الوضوء',             emoji: '🚿', Icon: WuduIcon,          image: 'wudu.png' },
+      { id: 'pray',     label: 'أريد الصلاة',             emoji: '🙏', Icon: PrayingPersonIcon, image: 'prayer.png' },
+      { id: 'beads',    label: 'أريد السبحة',             emoji: '📿', Icon: PrayerBeadsIcon,   image: 'tasbeeh.png' },
+      { id: 'helppray', label: 'ساعدني على الصلاة',       emoji: '🤲', Icon: HelpPrayIcon,      image: 'prayer-help.png' },
+      { id: 'rug',      label: 'جهّز لي سجادة الصلاة',  emoji: '🕌', Icon: PrayerRugIcon,     image: 'prayer-mat.png' },
     ],
   },
   {
