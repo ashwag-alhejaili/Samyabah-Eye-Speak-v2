@@ -797,7 +797,7 @@ const CATEGORIES: Category[] = [
     items: [
       { id: 'call_son',      label: 'اتصل بابني',            emoji: '📞', Icon: SonCallIcon },
       { id: 'call_daughter', label: 'اتصل بابنتي',           emoji: '📞', Icon: DaughterCallIcon },
-      { id: 'call_friend',   label: 'اتصل بصديقي',           emoji: '📞', Icon: FriendCallIcon },
+      { id: 'call_friend',   label: 'أريد أصحابي',           emoji: '📞', Icon: FriendCallIcon },
       { id: 'message',       label: 'أرسل رسالة لعيالي',     emoji: '💬', Icon: MessageCircle },
       { id: 'video',         label: 'مكالمة فيديو',           emoji: '📹', Icon: Video },
       { id: 'companion',     label: 'نادِ أحدًا يجلس معي',  emoji: '🤝', Icon: CompanionshipIcon },
