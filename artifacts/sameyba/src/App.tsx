@@ -1564,11 +1564,14 @@ function CategoryPage() {
         <BackButton onClick={() => navigate('/communicate')} />
       </motion.div>
 
-      {/* Items 3 × 2 grid */}
+      {/* Items grid — 2 cols for ≤4 items, 3 cols otherwise */}
       <div className="relative z-10 flex-1 flex items-center justify-center px-8 pb-4">
         <div
-          className="grid grid-cols-3 w-full"
-          style={{ gap: 'clamp(10px, 1.8vw, 18px)', maxWidth: '860px' }}
+          className={`grid ${category.items.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'}`}
+          style={{
+            gap: 'clamp(10px, 1.8vw, 18px)',
+            maxWidth: category.items.length <= 4 ? '580px' : '860px',
+          }}
         >
           {category.items.map((item, i) => (
             <ItemCard
