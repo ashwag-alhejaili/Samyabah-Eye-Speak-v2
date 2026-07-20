@@ -825,7 +825,8 @@ interface PatientRequest {
 
 interface RequestStoreShape {
   requests:        PatientRequest[];
-  addRequest:      (data: Omit<PatientRequest, 'id' | 'createdAt' | 'status'>) => void;
+  // Callers may pre-generate `id` so the store can reject duplicates idempotently.
+  addRequest:      (data: Omit<PatientRequest, 'createdAt' | 'status'>) => void;
   completeRequest: (id: string) => void;
   rejectRequest:   (id: string) => void;
 }
@@ -885,14 +886,19 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
     channel.current?.postMessage({ type: 'update' });
   }, []);
 
-  const addRequest = useCallback((data: Omit<PatientRequest, 'id' | 'createdAt' | 'status'>) => {
+  const addRequest = useCallback((data: Omit<PatientRequest, 'createdAt' | 'status'>) => {
+    // Callers must supply a stable `id` so the store can reject re-delivered data.
     const req: PatientRequest = {
       ...data,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString(),
       status: 'pending',
     };
-    setRequests(prev => { const next = [req, ...prev]; broadcast(next); return next; });
+    setRequests(prev => {
+      if (prev.some(r => r.id === req.id)) return prev; // idempotent — already present
+      const next = [req, ...prev];
+      broadcast(next);
+      return next;
+    });
   }, [broadcast]);
 
   const completeRequest = useCallback((id: string) => {
@@ -1478,9 +1484,15 @@ function CategoryPage() {
   }
 
   const handleSelect = (id: string) => {
+    // Toggling an already-selected card off → no new request
+    if (selectedItem === id) { setSelectedItem(null); return; }
+
     const item = category.items.find(i => i.id === id);
     if (item) {
+      // Generate the ID here, once, so the store can deduplicate on replay
+      const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       addRequest({
+        id:            reqId,
         patientName:   PATIENT_NAME,
         requestText:   item.label,
         requestEmoji:  item.emoji,
@@ -1489,7 +1501,7 @@ function CategoryPage() {
         priority:      isUrgent(item.label) ? 'urgent' : 'normal',
       });
     }
-    setSelectedItem(prev => (prev === id ? null : id));
+    setSelectedItem(id);
   };
 
   return (
