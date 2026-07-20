@@ -1,0 +1,1 @@
+- [Dashboard audio design](dashboard-audio.md) — AudioContext in a React ref, not module-level; banner only for first-time users; auto-unlock on first click for returning users.
