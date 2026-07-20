@@ -2246,22 +2246,27 @@ function _scheduleChime(ctx: AudioContext) {
   });
 }
 
+// Keep the AudioContext from being auto-suspended by the browser.
+// Chrome suspends AudioContexts in background tabs; calling resume() via this
+// heartbeat ensures the context is running when a notification arrives.
+function keepAudioWarm() {
+  if (_sharedAudioCtx && _sharedAudioCtx.state === 'suspended') {
+    _sharedAudioCtx.resume().catch(() => {});
+  }
+}
+
 // Play the notification chime.
-// If the AudioContext was auto-suspended by the browser (common when the tab
-// is in the background), we await resume() before scheduling notes so the
-// chime plays the moment the context becomes running again.
+// Always goes through resume().then() so the chime fires correctly regardless
+// of whether the context is already running or was auto-suspended by the browser.
+// ctx.currentTime is read INSIDE the .then() callback so it reflects the
+// actual clock position after the context is running — not a frozen value.
 function playNotificationSound(): boolean {
   try {
     const ctx = getAudioCtx();
     if (!ctx) return false;
-    if (ctx.state === 'suspended') {
-      // Async path: wait for resume to settle, then schedule notes.
-      // The browser allows resume() on a previously-unlocked context even in
-      // background tabs, so this works across cross-tab BroadcastChannel events.
-      ctx.resume().then(() => _scheduleChime(ctx)).catch(() => {});
-    } else {
-      _scheduleChime(ctx);
-    }
+    ctx.resume()
+      .then(() => _scheduleChime(ctx))
+      .catch(() => {});
     return true;
   } catch { return false; }
 }
@@ -2283,8 +2288,19 @@ function CaregiverDashboard() {
   const handleUnlockAudio = () => {
     unlockAudio();
     localStorage.setItem(AUDIO_UNLOCKED_KEY, '1');
+    audioUnlockedRef.current = true; // sync ref immediately, don't wait for effect
     setAudioUnlocked(true);
   };
+
+  // Keep the shared AudioContext warm so it isn't auto-suspended by the browser
+  // while the dashboard tab is in the background. Without this heartbeat, Chrome
+  // suspends the context within ~10 s of the tab being hidden, and the next
+  // resume() call (from a BroadcastChannel event) may be rejected.
+  useEffect(() => {
+    if (!audioUnlocked) return;
+    const id = setInterval(keepAudioWarm, 4000);
+    return () => clearInterval(id);
+  }, [audioUnlocked]);
 
   // ── Flashing badge when a new request arrives ────────────────────────────
   const [badgeFlash, setBadgeFlash] = useState(false);
