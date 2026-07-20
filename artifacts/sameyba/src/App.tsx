@@ -653,8 +653,6 @@ type CategoryItem = {
   Icon?: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
   /** Optional photo — when present, renders instead of Icon/emoji */
   image?: string;
-  /** Controls how the photo fills its frame; defaults to 'cover' */
-  imageFit?: 'cover' | 'contain';
 };
 type Category = {
   id: string;
@@ -753,12 +751,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center center',
     Icon: HomeIcon,
     items: [
-      { id: 'bed_up',    label: 'ارفع السرير',        emoji: '🛏️', image: 'room-bed-up.png',    imageFit: 'contain' },
-      { id: 'bed_down',  label: 'أنزل السرير',        emoji: '🛏️', image: 'room-bed-down.png',  imageFit: 'contain' },
-      { id: 'light_on',  label: 'شغّل النور',         emoji: '💡', image: 'room-light-on.png',  imageFit: 'contain' },
-      { id: 'light_off', label: 'أطفئ النور',         emoji: '🌑', image: 'room-light-off.png', imageFit: 'contain' },
-      { id: 'tv_on',     label: 'شغّل التلفزيون',     emoji: '📺', image: 'room-tv-on.png',     imageFit: 'contain' },
-      { id: 'tv_off',    label: 'أطفئ التلفزيون',     emoji: '📺', image: 'room-tv-off.png',    imageFit: 'contain' },
+      { id: 'bed_up',    label: 'ارفع السرير',        emoji: '🛏️', image: 'room-bed-up.png' },
+      { id: 'bed_down',  label: 'أنزل السرير',        emoji: '🛏️', image: 'room-bed-down.png' },
+      { id: 'light_on',  label: 'شغّل النور',         emoji: '💡', image: 'room-light-on.png' },
+      { id: 'light_off', label: 'أطفئ النور',         emoji: '🌑', image: 'room-light-off.png' },
+      { id: 'tv_on',     label: 'شغّل التلفزيون',     emoji: '📺', image: 'room-tv-on.png' },
+      { id: 'tv_off',    label: 'أطفئ التلفزيون',     emoji: '📺', image: 'room-tv-off.png' },
     ],
   },
   {
@@ -1271,13 +1269,12 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
           style={{
             width: 'calc(100% - 4px)',
             height: 'clamp(80px, 11vh, 102px)',
-            objectFit: item.imageFit ?? 'cover',
+            objectFit: 'cover',
             objectPosition: 'center center',
             borderRadius: '12px',
             display: 'block',
             flexShrink: 0,
             imageRendering: 'auto',
-            background: item.imageFit === 'contain' ? '#ffffff' : undefined,
           }}
         />
       ) : item.Icon ? (
