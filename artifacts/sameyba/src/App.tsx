@@ -1167,10 +1167,20 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
 // ── Shared: Emergency button (always visible, always pulsing) ─────────────────
 function EmergencyButton() {
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(false);
+  const { controls, handlers, onUpdate } = useDwell(() => setOpen(true));
+
+  const augmented = {
+    onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
+    onMouseLeave: () => { setActive(false); handlers.onMouseLeave(); },
+    onFocus:      () => { setActive(true);  handlers.onFocus(); },
+    onBlur:       () => { setActive(false); handlers.onBlur(); },
+  };
+
   return (
     <>
       <motion.button
-        onClick={() => setOpen(true)}
+        {...augmented}
         whileTap={{ scale: 0.94 }}
         animate={{
           boxShadow: [
@@ -1194,6 +1204,24 @@ function EmergencyButton() {
         }}
         aria-label="طوارئ"
       >
+        {/* Dwell ring — centered on the button */}
+        <div style={{
+          position: 'absolute',
+          top: '50%', left: '50%',
+          width: 'clamp(72px, 11vh, 96px)',
+          height: 'clamp(72px, 11vh, 96px)',
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+        }}>
+          <DwellRingCircle
+            ringColor="#007AFF"
+            glowColor="rgba(0,122,255,0.40)"
+            active={active}
+            controls={controls}
+            onUpdate={onUpdate}
+          />
+        </div>
+
         <span role="img" aria-hidden>🚨</span>
         <span>طوارئ</span>
       </motion.button>
