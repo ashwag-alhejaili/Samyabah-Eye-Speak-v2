@@ -2202,35 +2202,26 @@ function HistoryCard({ req }: { req: PatientRequest }) {
 // browsers. We keep one shared instance and resume() it before playing so
 // that a single user interaction (the unlock banner click) covers all future
 // playback in this tab, even if the tab is hidden at notification time.
-let _sharedAudioCtx: AudioContext | null = null;
+// ── Audio system ─────────────────────────────────────────────────────────────
+//
+// KEY DESIGN CONSTRAINT — browser autoplay policy:
+//   AudioContext MUST be created/resumed inside a synchronous user-gesture
+//   handler (click / touchend).  Module-level variables reset on every page
+//   load, so even when localStorage says "audio was enabled", we must get a
+//   new gesture each session.
+//
+// _audioCtx          — the shared context; null until first gesture this session
+// _audioSessionReady — true only after the caregiver has tapped the banner in
+//                      the current page session; resets to false on reload
 
-function getAudioCtx(): AudioContext | null {
-  try {
-    if (_sharedAudioCtx && _sharedAudioCtx.state !== 'closed') return _sharedAudioCtx;
-    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return null;
-    _sharedAudioCtx = new Ctor();
-    return _sharedAudioCtx;
-  } catch { return null; }
-}
+let _audioCtx: AudioContext | null = null;
+let _audioSessionReady = false;
 
-// Called once from the banner click (user gesture) to warm up the context.
-function unlockAudio() {
-  const ctx = getAudioCtx();
-  if (!ctx) return;
-  ctx.resume().catch(() => {});
-  // Play a 1-sample silent buffer — fully satisfies the autoplay policy check.
-  const buf = ctx.createBuffer(1, 1, 22050);
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  src.connect(ctx.destination);
-  src.start(0);
-}
-
-// ── Soft notification chime (Web Audio, no file dependency) ──────────────────
-// Schedule the two-tone chime on an already-running context.
+// ── Two-tone chime (no external file required) ────────────────────────────────
+// Uses positive time offsets so notes land in the future even when ctx.currentTime
+// is frozen (suspended context) — they play the moment the context starts running.
 function _scheduleChime(ctx: AudioContext) {
-  const notes: [number, number][] = [[1318.5, 0], [1046.5, 0.13]];
+  const notes: [number, number][] = [[1318.5, 0.04], [1046.5, 0.17]];
   notes.forEach(([freq, offset]) => {
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -2238,37 +2229,53 @@ function _scheduleChime(ctx: AudioContext) {
     gain.connect(ctx.destination);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
-    gain.gain.setValueAtTime(0, ctx.currentTime + offset);
-    gain.gain.linearRampToValueAtTime(0.16, ctx.currentTime + offset + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.22);
+    gain.gain.setValueAtTime(0,    ctx.currentTime + offset);
+    gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + offset + 0.014);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.24);
     osc.start(ctx.currentTime + offset);
-    osc.stop(ctx.currentTime + offset + 0.23);
+    osc.stop(ctx.currentTime  + offset + 0.25);
   });
 }
 
-// Keep the AudioContext from being auto-suspended by the browser.
-// Chrome suspends AudioContexts in background tabs; calling resume() via this
-// heartbeat ensures the context is running when a notification arrives.
+// Called from the banner click — MUST stay fully synchronous so Safari/iOS can
+// validate the gesture.  Creates (or reuses) the context, resumes it, schedules
+// a confirmation chime, and marks the session as audio-ready.
+function unlockAudio(): boolean {
+  try {
+    const Ctor = window.AudioContext
+      ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return false;
+    // Reuse existing context unless it was closed.
+    if (!_audioCtx || _audioCtx.state === 'closed') {
+      _audioCtx = new Ctor();
+    }
+    // resume() is synchronous-enough for browsers' gesture check.
+    _audioCtx.resume().catch(() => {});
+    // Schedule the chime — positive offsets handle the frozen-clock edge case.
+    _scheduleChime(_audioCtx);
+    _audioSessionReady = true;
+    return true;
+  } catch { return false; }
+}
+
+// Keep the context from being auto-suspended while the dashboard tab is
+// in the background (Chrome suspends after ~10 s of inactivity).
 function keepAudioWarm() {
-  if (_sharedAudioCtx && _sharedAudioCtx.state === 'suspended') {
-    _sharedAudioCtx.resume().catch(() => {});
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    _audioCtx.resume().catch(() => {});
   }
 }
 
-// Play the notification chime.
-// Always goes through resume().then() so the chime fires correctly regardless
-// of whether the context is already running or was auto-suspended by the browser.
-// ctx.currentTime is read INSIDE the .then() callback so it reflects the
-// actual clock position after the context is running — not a frozen value.
-function playNotificationSound(): boolean {
-  try {
-    const ctx = getAudioCtx();
-    if (!ctx) return false;
-    ctx.resume()
-      .then(() => _scheduleChime(ctx))
-      .catch(() => {});
-    return true;
-  } catch { return false; }
+// Play the notification chime — no-op if audio was not initialized this session.
+function playNotificationSound() {
+  if (!_audioSessionReady || !_audioCtx) return;
+  const ctx = _audioCtx;
+  if (ctx.state === 'closed') return;
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(() => _scheduleChime(ctx)).catch(() => {});
+  } else {
+    _scheduleChime(ctx);
+  }
 }
 
 function CaregiverDashboard() {
@@ -2278,29 +2285,32 @@ function CaregiverDashboard() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setTick] = useState(0);
 
-  // ── Audio unlock banner ───────────────────────────────────────────────────
-  const [audioUnlocked, setAudioUnlocked] = useState(
-    () => localStorage.getItem(AUDIO_UNLOCKED_KEY) === '1',
-  );
-  const audioUnlockedRef = useRef(audioUnlocked);
-  useEffect(() => { audioUnlockedRef.current = audioUnlocked; }, [audioUnlocked]);
+  // ── Audio — per-session readiness ────────────────────────────────────────
+  // _audioSessionReady (module-level) resets to false on every page load.
+  // We therefore ALWAYS show the banner until the caregiver taps it in the
+  // current session, regardless of what localStorage says.
+  // audioWanted (localStorage) is used only to adjust the banner label.
+  const audioWanted = localStorage.getItem(AUDIO_UNLOCKED_KEY) === '1';
+  const [audioSessionReady, setAudioSessionReady] = useState(false);
+  const audioSessionReadyRef = useRef(false);
 
+  // Fully synchronous handler — must NOT be async so that Safari/iOS
+  // can validate the user gesture when AudioContext.resume() is called.
   const handleUnlockAudio = () => {
-    unlockAudio();
-    localStorage.setItem(AUDIO_UNLOCKED_KEY, '1');
-    audioUnlockedRef.current = true; // sync ref immediately, don't wait for effect
-    setAudioUnlocked(true);
+    const ok = unlockAudio(); // creates ctx + resume() + schedules test chime
+    if (ok) {
+      localStorage.setItem(AUDIO_UNLOCKED_KEY, '1');
+      audioSessionReadyRef.current = true;
+      setAudioSessionReady(true);
+    }
   };
 
-  // Keep the shared AudioContext warm so it isn't auto-suspended by the browser
-  // while the dashboard tab is in the background. Without this heartbeat, Chrome
-  // suspends the context within ~10 s of the tab being hidden, and the next
-  // resume() call (from a BroadcastChannel event) may be rejected.
+  // Keep the context from being auto-suspended while the tab is backgrounded.
   useEffect(() => {
-    if (!audioUnlocked) return;
+    if (!audioSessionReady) return;
     const id = setInterval(keepAudioWarm, 4000);
     return () => clearInterval(id);
-  }, [audioUnlocked]);
+  }, [audioSessionReady]);
 
   // ── Flashing badge when a new request arrives ────────────────────────────
   const [badgeFlash, setBadgeFlash] = useState(false);
@@ -2359,10 +2369,8 @@ function CaregiverDashboard() {
       }
     });
 
-    // Attempt sound — only if the user has clicked the unlock banner.
-    // playNotificationSound() returns false when the context is still suspended;
-    // we show the visual fallback in both cases to be safe.
-    if (audioUnlockedRef.current) {
+    // Play chime — only if audio was initialized this session.
+    if (audioSessionReadyRef.current) {
       playNotificationSound();
     }
 
@@ -2413,9 +2421,11 @@ function CaregiverDashboard() {
     >
       <AmbientBackground />
 
-      {/* ── Audio-unlock banner (one-time) ── */}
+      {/* ── Audio-unlock banner ── */}
+      {/* Shown every page load until tapped — required because AudioContext
+          must be created inside a user-gesture handler each session. */}
       <AnimatePresence>
-        {!audioUnlocked && (
+        {!audioSessionReady && (
           <motion.div
             key="audio-banner"
             initial={{ opacity: 0, y: -16 }}
@@ -2440,16 +2450,16 @@ function CaregiverDashboard() {
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
               style={{ fontSize: '1.15rem', lineHeight: 1 }}
             >
-              🔔
+              🔊
             </motion.span>
             <span style={{ fontWeight: 600, fontSize: '0.93rem', color: '#92600A' }}>
-              اضغط لتفعيل صوت التنبيهات
+              {audioWanted ? 'اضغط لإعادة تفعيل صوت التنبيهات' : 'تفعيل صوت التنبيهات'}
             </span>
             <span style={{
               marginRight: 'auto', marginLeft: 0,
               fontSize: '0.78rem', color: 'rgba(146,96,10,0.65)', fontWeight: 500,
             }}>
-              مطلوب مرة واحدة فقط
+              {audioWanted ? 'مطلوب عند كل فتح للصفحة' : 'اضغط مرة واحدة للتفعيل'}
             </span>
           </motion.div>
         )}
