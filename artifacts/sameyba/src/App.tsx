@@ -795,12 +795,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center center',
     Icon: Users,
     items: [
-      { id: 'call_son',      label: 'اتصل بابني',            emoji: '📞', Icon: SonCallIcon },
-      { id: 'call_daughter', label: 'اتصل بابنتي',           emoji: '📞', Icon: DaughterCallIcon },
-      { id: 'call_friend',   label: 'أريد أصحابي',           emoji: '📞', Icon: FriendCallIcon },
-      { id: 'message',       label: 'أرسل رسالة لعيالي',     emoji: '💬', Icon: MessageCircle },
-      { id: 'video',         label: 'مكالمة فيديو',           emoji: '📹', Icon: Video },
-      { id: 'companion',     label: 'نادِ أحدًا يجلس معي',  emoji: '🤝', Icon: CompanionshipIcon },
+      { id: 'call_son',      label: 'اتصل بابني',            emoji: '📞', Icon: SonCallIcon,        image: 'call-son.png' },
+      { id: 'call_daughter', label: 'اتصل بابنتي',           emoji: '📞', Icon: DaughterCallIcon,   image: 'call-daughter.png' },
+      { id: 'call_friend',   label: 'أريد أصحابي',           emoji: '📞', Icon: FriendCallIcon,     image: 'friends.png' },
+      { id: 'message',       label: 'أرسل رسالة لعيالي',     emoji: '💬', Icon: MessageCircle,      image: 'send-message.png' },
+      { id: 'video',         label: 'مكالمة فيديو',           emoji: '📹', Icon: Video,              image: 'video-call.png' },
+      { id: 'companion',     label: 'نادِ أحدًا يجلس معي',  emoji: '🤝', Icon: CompanionshipIcon,  image: 'sit-with-me.png' },
     ],
   },
 ];
