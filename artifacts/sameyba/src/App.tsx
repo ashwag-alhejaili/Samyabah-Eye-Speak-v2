@@ -806,7 +806,9 @@ const CATEGORIES: Category[] = [
 
 // ── Request store (localStorage-backed, shared between patient & dashboard) ───
 
-const PATIENT_NAME   = 'محمد عبدالله';
+const PATIENT_NAME      = 'محمد عبدالله';
+const CAREGIVER_NAME    = 'سارة الأحمد';
+const CAREGIVER_PHONE   = '+966 50 123 4567';
 const STORE_KEY      = 'sameyba_requests_v1';
 const URGENT_LABELS  = ['متألم', 'غثيان', 'أريد الحمام', 'نادِ الممرضة', 'طلب مساعدة عاجلة'];
 
@@ -984,18 +986,10 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
     if (!open) { setStep(0); return; }
     setStep(1);
     const t1 = setTimeout(() => setStep(2), 1000);
-    const t2 = setTimeout(() => setStep(3), 1700);
-    const t3 = setTimeout(() => setStep(4), 2400);
-    const t4 = setTimeout(() => onClose(),  5400); // 2400 ms sequence + 3000 ms hold
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+    const t2 = setTimeout(() => setStep(3), 2000);
+    const t3 = setTimeout(() => onClose(),  5000); // 2000 ms sequence + 3000 ms hold
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [open]);
-
-  const STEPS = [
-    { icon: '🚨', text: 'جاري إرسال تنبيه الطوارئ...' },
-    { icon: '✅', text: 'تم إشعار مقدم الرعاية' },
-    { icon: '👨‍👩‍👧‍👦', text: 'تم إشعار أفراد العائلة' },
-    { icon: '📍', text: 'تم إرسال موقع المريض' },
-  ];
 
   return createPortal(
     <AnimatePresence>
@@ -1060,64 +1054,108 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
               </div>
             </div>
 
-            {/* Sequential steps */}
+            {/* Step 1 — sending alert */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
-              {STEPS.slice(0, step).map((s, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    gap: '10px',
-                    padding: '11px 20px',
-                    borderRadius: '14px',
-                    background: i === 0
-                      ? 'rgba(255,48,36,0.14)'
-                      : 'rgba(255,255,255,0.06)',
-                    border: i === 0
-                      ? '1px solid rgba(255,48,36,0.28)'
-                      : '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>{s.icon}</span>
-                  <span style={{
-                    color: i === 0 ? '#FF6B63' : 'rgba(255,255,255,0.88)',
-                    fontWeight: i === 0 ? 700 : 600,
-                    fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)',
-                    lineHeight: 1.4,
-                  }}>
-                    {s.text}
-                  </span>
-                </motion.div>
-              ))}
-            </div>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: '10px', padding: '11px 20px', borderRadius: '14px',
+                background: 'rgba(255,48,36,0.14)',
+                border: '1px solid rgba(255,48,36,0.28)',
+              }}>
+                <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>🚨</span>
+                <span style={{ color: '#FF6B63', fontWeight: 700, fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)', lineHeight: 1.4 }}>
+                  جاري إرسال تنبيه الطوارئ...
+                </span>
+              </div>
 
-            {/* Green confirmation checkmark — appears after all steps */}
-            <AnimatePresence>
-              {step >= 4 && (
-                <motion.div
-                  key="checkmark"
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
-                  style={{ marginTop: '24px' }}
-                >
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    width: '52px', height: '52px',
-                    borderRadius: '50%',
-                    background: 'linear-gradient(145deg, #30D158, #25A244)',
-                    boxShadow: '0 8px 28px rgba(48,209,88,0.45)',
-                    fontSize: '1.55rem',
-                  }}>
-                    ✓
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+              {/* Step 2 — caregiver notified + info card */}
+              <AnimatePresence>
+                {step >= 2 && (
+                  <motion.div
+                    key="step2"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                  >
+                    {/* Notified row */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      gap: '10px', padding: '11px 20px', borderRadius: '14px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}>
+                      <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>✅</span>
+                      <span style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 600, fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)', lineHeight: 1.4 }}>
+                        تم إشعار مقدم الرعاية
+                      </span>
+                    </div>
+                    {/* Caregiver info card */}
+                    <div style={{
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.10)',
+                      padding: '12px 18px',
+                      display: 'flex', flexDirection: 'column', gap: '6px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1rem' }}>👤</span>
+                        <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.80rem, 1vw, 0.90rem)', fontWeight: 500 }}>
+                          {CAREGIVER_NAME}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1rem' }}>📞</span>
+                        <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.80rem, 1vw, 0.90rem)', fontWeight: 500, direction: 'ltr' }}>
+                          {CAREGIVER_PHONE}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Step 3 — final confirmation + green checkmark */}
+              <AnimatePresence>
+                {step >= 3 && (
+                  <motion.div
+                    key="step3"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}
+                  >
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      gap: '10px', padding: '11px 20px', borderRadius: '14px',
+                      width: '100%',
+                      background: 'rgba(48,209,88,0.12)',
+                      border: '1px solid rgba(48,209,88,0.28)',
+                    }}>
+                      <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>✅</span>
+                      <span style={{ color: '#4CD964', fontWeight: 700, fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)', lineHeight: 1.4 }}>
+                        تم إرسال التنبيه بنجاح
+                      </span>
+                    </div>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+                    >
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: '52px', height: '52px', borderRadius: '50%',
+                        background: 'linear-gradient(145deg, #30D158, #25A244)',
+                        boxShadow: '0 8px 28px rgba(48,209,88,0.45)',
+                        fontSize: '1.55rem',
+                      }}>
+                        ✓
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </motion.div>
         </motion.div>
       )}
