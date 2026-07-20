@@ -836,7 +836,8 @@ function useProfile()       { return useContext(ProfileContext); }
 function useUpdateProfile() { return useContext(ProfileUpdateContext); }
 
 // ─────────────────────────────────────────────────────────────────────────────
-const STORE_KEY      = 'sameyba_requests_v1';
+const STORE_KEY           = 'sameyba_requests_v1';
+const AUDIO_UNLOCKED_KEY  = 'sameyba_audio_unlocked_v1';
 const URGENT_LABELS  = ['متألم', 'غثيان', 'أريد الحمام', 'نادِ الممرضة', 'طلب مساعدة عاجلة'];
 
 function isUrgent(label: string): boolean {
@@ -2180,13 +2181,46 @@ function HistoryCard({ req }: { req: PatientRequest }) {
   );
 }
 
-// ── Soft notification chime (Web Audio, no file dependency) ──────────────────
-function playNotificationSound() {
+// ── Shared AudioContext — created once, reused forever ───────────────────────
+// A fresh AudioContext created outside a user gesture is suspended on most
+// browsers. We keep one shared instance and resume() it before playing so
+// that a single user interaction (the unlock banner click) covers all future
+// playback in this tab, even if the tab is hidden at notification time.
+let _sharedAudioCtx: AudioContext | null = null;
+
+function getAudioCtx(): AudioContext | null {
   try {
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    // Two-tone descending chime: ~E6 → ~C#6, resembling a soft iOS ping
+    if (_sharedAudioCtx && _sharedAudioCtx.state !== 'closed') return _sharedAudioCtx;
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    _sharedAudioCtx = new Ctor();
+    return _sharedAudioCtx;
+  } catch { return null; }
+}
+
+// Called once from the banner click (user gesture) to warm up the context.
+function unlockAudio() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  ctx.resume().catch(() => {});
+  // Play a 1-sample silent buffer — fully satisfies the autoplay policy check.
+  const buf = ctx.createBuffer(1, 1, 22050);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start(0);
+}
+
+// ── Soft notification chime (Web Audio, no file dependency) ──────────────────
+// Returns true if sound was dispatched, false if the context is still blocked.
+function playNotificationSound(): boolean {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return false;
+    // Resume is idempotent — safe to call even if already running.
+    ctx.resume().catch(() => {});
+    if (ctx.state === 'suspended') return false;
+
     const notes: [number, number][] = [[1318.5, 0], [1046.5, 0.13]];
     notes.forEach(([freq, offset]) => {
       const osc  = ctx.createOscillator();
@@ -2201,8 +2235,8 @@ function playNotificationSound() {
       osc.start(ctx.currentTime + offset);
       osc.stop(ctx.currentTime + offset + 0.23);
     });
-    setTimeout(() => ctx.close(), 900);
-  } catch { /* AudioContext not supported or blocked */ }
+    return true;
+  } catch { return false; }
 }
 
 function CaregiverDashboard() {
@@ -2212,9 +2246,46 @@ function CaregiverDashboard() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setTick] = useState(0);
 
+  // ── Audio unlock banner ───────────────────────────────────────────────────
+  const [audioUnlocked, setAudioUnlocked] = useState(
+    () => localStorage.getItem(AUDIO_UNLOCKED_KEY) === '1',
+  );
+  const audioUnlockedRef = useRef(audioUnlocked);
+  useEffect(() => { audioUnlockedRef.current = audioUnlocked; }, [audioUnlocked]);
+
+  const handleUnlockAudio = () => {
+    unlockAudio();
+    localStorage.setItem(AUDIO_UNLOCKED_KEY, '1');
+    setAudioUnlocked(true);
+  };
+
+  // ── Flashing badge when a new request arrives ────────────────────────────
+  const [badgeFlash, setBadgeFlash] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Seed with all IDs present at mount — we only notify about requests that
   // arrive while the dashboard is open, not ones already in localStorage.
   const notifiedIds = useRef<Set<string>>(new Set(requests.map(r => r.id)));
+
+  // ── Set page title on mount; restore on unmount ───────────────────────────
+  useEffect(() => {
+    const prev = document.title;
+    document.title = 'سَم يبه — لوحة مقدم الرعاية';
+    return () => { document.title = prev; };
+  }, []);
+
+  // ── Clear flashing title when this tab regains focus ─────────────────────
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden) {
+        document.title = 'سَم يبه — لوحة مقدم الرعاية';
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        setBadgeFlash(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   // Request browser-notification permission once, silently
   useEffect(() => {
@@ -2223,19 +2294,15 @@ function CaregiverDashboard() {
     }
   }, []);
 
-  // Detect newly arriving pending requests → chime + browser notification
+  // Detect newly arriving pending requests → sound + badge flash + title
   useEffect(() => {
     const fresh = requests.filter(
       r => r.status === 'pending' && !notifiedIds.current.has(r.id),
     );
     if (fresh.length === 0) return;
 
-    // Sound fires once per batch regardless of how many cards arrived
-    playNotificationSound();
-
     fresh.forEach(req => {
       notifiedIds.current.add(req.id);
-      // Browser notification only when this tab is not in focus
       if (
         typeof Notification !== 'undefined' &&
         Notification.permission === 'granted' &&
@@ -2248,6 +2315,22 @@ function CaregiverDashboard() {
         });
       }
     });
+
+    // Attempt sound — only if the user has clicked the unlock banner.
+    // playNotificationSound() returns false when the context is still suspended;
+    // we show the visual fallback in both cases to be safe.
+    if (audioUnlockedRef.current) {
+      playNotificationSound();
+    }
+
+    // Visual fallback: flash the badge + update page title (works even when
+    // the tab is backgrounded or audio is blocked by the browser).
+    if (document.hidden) {
+      document.title = '🔔 طلب جديد';
+    }
+    setBadgeFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setBadgeFlash(false), 4000);
   }, [requests]);
 
   // Refresh all relative timestamps every 10 s
@@ -2286,6 +2369,48 @@ function CaregiverDashboard() {
       }}
     >
       <AmbientBackground />
+
+      {/* ── Audio-unlock banner (one-time) ── */}
+      <AnimatePresence>
+        {!audioUnlocked && (
+          <motion.div
+            key="audio-banner"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            onClick={handleUnlockAudio}
+            style={{
+              position: 'relative', zIndex: 20,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              gap: '10px',
+              padding: '13px 24px',
+              background: 'linear-gradient(135deg, rgba(255,159,10,0.18) 0%, rgba(255,204,0,0.12) 100%)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              borderBottom: '1px solid rgba(255,159,10,0.25)',
+              cursor: 'pointer',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            }}
+          >
+            <motion.span
+              animate={{ scale: [1, 1.18, 1] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ fontSize: '1.15rem', lineHeight: 1 }}
+            >
+              🔔
+            </motion.span>
+            <span style={{ fontWeight: 600, fontSize: '0.93rem', color: '#92600A' }}>
+              اضغط لتفعيل صوت التنبيهات
+            </span>
+            <span style={{
+              marginRight: 'auto', marginLeft: 0,
+              fontSize: '0.78rem', color: 'rgba(146,96,10,0.65)', fontWeight: 500,
+            }}>
+              مطلوب مرة واحدة فقط
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Header ── */}
       <div
@@ -2339,12 +2464,21 @@ function CaregiverDashboard() {
                 <motion.span
                   key="pending-badge"
                   initial={{ scale: 0.6, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
+                  animate={badgeFlash
+                    ? {
+                        scale:           [1, 1.28, 1, 1.28, 1, 1.28, 1],
+                        opacity:         1,
+                        backgroundColor: ['#FF3B30','#FF6900','#FF3B30','#FF6900','#FF3B30','#FF6900','#FF3B30'],
+                      }
+                    : { scale: 1, opacity: 1, backgroundColor: '#FF3B30' }}
                   exit={{ scale: 0.6, opacity: 0 }}
+                  transition={badgeFlash
+                    ? { duration: 1.6, ease: 'easeInOut' }
+                    : { duration: 0.25 }}
                   style={{
-                    background: '#FF3B30', color: '#fff',
+                    display: 'inline-block',
                     borderRadius: '999px', padding: '2px 10px',
-                    fontSize: '0.75rem', fontWeight: 700,
+                    fontSize: '0.75rem', fontWeight: 700, color: '#fff',
                   }}
                 >
                   {pending.length}
