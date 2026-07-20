@@ -830,7 +830,10 @@ const ProfileContext = createContext<ProfileData>({
   caregiverPhone: '',
 });
 
-function useProfile() { return useContext(ProfileContext); }
+const ProfileUpdateContext = createContext<(data: ProfileData) => void>(() => {});
+
+function useProfile()       { return useContext(ProfileContext); }
+function useUpdateProfile() { return useContext(ProfileUpdateContext); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 const STORE_KEY      = 'sameyba_requests_v1';
@@ -1638,10 +1641,41 @@ function Home() {
 
   return (
     <div
-      className="min-h-[100dvh] w-full flex flex-col md:flex-row bg-[#FAFAFA] overflow-x-hidden"
+      className="relative min-h-[100dvh] w-full flex flex-col md:flex-row bg-[#FAFAFA] overflow-x-hidden"
       dir="rtl"
       style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
     >
+      {/* ── Settings button — upper-left corner ── */}
+      <motion.button
+        onClick={() => navigate('/settings')}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.93 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+        aria-label="الإعدادات"
+        style={{
+          position: 'absolute',
+          top: '20px',
+          insetInlineEnd: '20px',   /* visual left in RTL */
+          zIndex: 30,
+          display: 'flex', alignItems: 'center', gap: '6px',
+          height: '40px',
+          padding: '0 16px',
+          borderRadius: '999px',
+          background: 'rgba(255,255,255,0.78)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(0,0,0,0.08)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.09), inset 0 1px 0 rgba(255,255,255,0.9)',
+          cursor: 'pointer',
+          fontSize: '0.82rem',
+          fontWeight: 600,
+          color: '#3C3C43',
+          fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        }}
+      >
+        <span style={{ fontSize: '0.92rem' }}>⚙️</span>
+        <span>الإعدادات</span>
+      </motion.button>
       {/* Right Column (Hero Image) */}
       <motion.div
         className="w-full md:w-[55%] relative h-[55vw] md:h-[100dvh] p-4 md:p-0 md:py-6 md:pl-6 shrink-0"
@@ -2443,6 +2477,319 @@ function CaregiverDashboard() {
   );
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+function SettingsPage() {
+  const profile      = useProfile();
+  const updateProfile = useUpdateProfile();
+  const [, navigate] = useLocation();
+
+  const [patientName,    setPatientName]    = useState(profile.patientName);
+  const [caregiverName,  setCaregiverName]  = useState(profile.caregiverName);
+  const [caregiverPhone, setCaregiverPhone] = useState(profile.caregiverPhone);
+  const [errors,  setErrors]  = useState<Record<string, string>>({});
+  const [saved,   setSaved]   = useState(false);
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المريض';
+    if (!caregiverName.trim())  e.caregiverName  = 'يرجى إدخال اسم مقدم الرعاية';
+    if (!caregiverPhone.trim()) e.caregiverPhone = 'يرجى إدخال رقم الجوال';
+    return e;
+  };
+
+  const handleSave = () => {
+    const e = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setSaved(true);
+    updateProfile({
+      patientName:   patientName.trim(),
+      caregiverName: caregiverName.trim(),
+      caregiverPhone: caregiverPhone.trim(),
+    });
+    setTimeout(() => navigate('/'), 1100);
+  };
+
+  const clearError = (key: string) =>
+    setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+
+  const fieldBox: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '7px' };
+  const labelStyle: React.CSSProperties = {
+    fontSize: '0.93rem', fontWeight: 600, color: '#3A3A3C',
+    display: 'flex', alignItems: 'center', gap: '6px',
+  };
+  const inputStyle = (hasError: boolean): React.CSSProperties => ({
+    width: '100%', boxSizing: 'border-box',
+    background: hasError ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.72)',
+    border: `1.5px solid ${hasError ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'}`,
+    borderRadius: '14px',
+    padding: '15px 18px',
+    fontSize: '1.08rem',
+    fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+    color: '#1C1C1E',
+    outline: 'none',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
+    WebkitAppearance: 'none',
+    direction: 'rtl',
+  });
+  const errorStyle: React.CSSProperties = {
+    fontSize: '0.80rem', color: '#FF3B30', fontWeight: 500,
+    display: 'flex', alignItems: 'center', gap: '4px', margin: 0,
+  };
+
+  return (
+    <div
+      dir="rtl"
+      style={{
+        minHeight: '100dvh', width: '100%',
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        background: 'linear-gradient(145deg, #F0F4FF 0%, #EBF0FD 35%, #E8EEF9 65%, #EDF2FF 100%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '24px 16px',
+        position: 'relative', overflow: 'hidden',
+      }}
+    >
+      {/* Ambient blobs */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        <div style={{
+          position: 'absolute', top: '-12%', right: '-8%',
+          width: 'clamp(260px,40vw,520px)', height: 'clamp(260px,40vw,520px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(0,122,255,0.13) 0%, transparent 70%)',
+          filter: 'blur(48px)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-10%', left: '-6%',
+          width: 'clamp(200px,32vw,420px)', height: 'clamp(200px,32vw,420px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(88,86,214,0.11) 0%, transparent 70%)',
+          filter: 'blur(48px)',
+        }} />
+      </div>
+
+      {/* Glass card */}
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          position: 'relative', zIndex: 1,
+          width: '100%', maxWidth: '520px',
+          background: 'rgba(255,255,255,0.82)',
+          backdropFilter: 'blur(40px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+          borderRadius: '28px',
+          border: '1.5px solid rgba(255,255,255,0.95)',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)',
+          padding: 'clamp(28px,5vw,48px)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header row — back button + title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '28px' }}>
+          <motion.button
+            onClick={() => navigate('/')}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.93 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+            aria-label="رجوع"
+            style={{
+              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '36px', height: '36px', borderRadius: '50%',
+              background: 'rgba(0,0,0,0.06)',
+              border: '1px solid rgba(0,0,0,0.07)',
+              cursor: 'pointer',
+              fontSize: '1rem',
+            }}
+          >
+            ←
+          </motion.button>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <h1 style={{
+              fontSize: 'clamp(1.25rem,3vw,1.55rem)',
+              fontWeight: 800, color: '#1C1C1E', margin: 0,
+              letterSpacing: '-0.02em', lineHeight: 1.2,
+            }}>
+              ⚙️ الإعدادات
+            </h1>
+            <p style={{
+              fontSize: '0.83rem', color: '#6E6E73', fontWeight: 500,
+              margin: '4px 0 0', lineHeight: 1.4,
+            }}>
+              تعديل بيانات المريض ومقدم الرعاية
+            </p>
+          </div>
+          {/* Spacer to balance the back button */}
+          <div style={{ width: '36px', flexShrink: 0 }} />
+        </div>
+
+        {/* Divider */}
+        <div style={{
+          height: '1px',
+          background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent)',
+          marginBottom: '28px',
+        }} />
+
+        {/* Form */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+
+          {/* Patient name */}
+          <div style={fieldBox}>
+            <label style={labelStyle}>
+              <span>👤</span><span>اسم المريض</span>
+            </label>
+            <input
+              type="text"
+              placeholder="مثال: أحمد"
+              value={patientName}
+              onChange={e => { setPatientName(e.target.value); clearError('patientName'); }}
+              style={inputStyle(!!errors.patientName)}
+              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = errors.patientName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+            />
+            <AnimatePresence>
+              {errors.patientName && (
+                <motion.p key="e-pn"
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }} style={errorStyle}
+                >
+                  <span>⚠️</span> {errors.patientName}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Caregiver name */}
+          <div style={fieldBox}>
+            <label style={labelStyle}>
+              <span>👤</span><span>اسم مقدم الرعاية</span>
+            </label>
+            <input
+              type="text"
+              placeholder="مثال: سارة الأحمد"
+              value={caregiverName}
+              onChange={e => { setCaregiverName(e.target.value); clearError('caregiverName'); }}
+              style={inputStyle(!!errors.caregiverName)}
+              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+            />
+            <AnimatePresence>
+              {errors.caregiverName && (
+                <motion.p key="e-cn"
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }} style={errorStyle}
+                >
+                  <span>⚠️</span> {errors.caregiverName}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Caregiver phone */}
+          <div style={fieldBox}>
+            <label style={labelStyle}>
+              <span>📞</span><span>رقم جوال مقدم الرعاية</span>
+            </label>
+            <input
+              type="tel"
+              placeholder="05XXXXXXXX"
+              value={caregiverPhone}
+              onChange={e => { setCaregiverPhone(e.target.value); clearError('caregiverPhone'); }}
+              style={{ ...inputStyle(!!errors.caregiverPhone), direction: 'ltr', textAlign: 'right' }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverPhone ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+            />
+            <AnimatePresence>
+              {errors.caregiverPhone && (
+                <motion.p key="e-cp"
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }} style={errorStyle}
+                >
+                  <span>⚠️</span> {errors.caregiverPhone}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Save button */}
+        <motion.button
+          onClick={handleSave}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+          style={{
+            marginTop: '32px',
+            width: '100%',
+            background: 'linear-gradient(145deg, #007AFF, #0062E6)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '16px',
+            padding: '17px',
+            fontSize: '1.08rem',
+            fontWeight: 700,
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            cursor: 'pointer',
+            boxShadow: '0 8px 28px rgba(0,122,255,0.38)',
+            letterSpacing: '0.01em',
+          }}
+        >
+          حفظ التغييرات
+        </motion.button>
+
+        {/* Success overlay */}
+        <AnimatePresence>
+          {saved && (
+            <motion.div
+              key="saved"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.28 }}
+              style={{
+                position: 'absolute', inset: 0,
+                background: 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                borderRadius: '28px',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                gap: '16px',
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.42, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+                style={{
+                  width: '64px', height: '64px', borderRadius: '50%',
+                  background: 'linear-gradient(145deg, #30D158, #25A244)',
+                  boxShadow: '0 10px 32px rgba(48,209,88,0.40)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.7rem', color: '#fff',
+                }}
+              >
+                ✓
+              </motion.div>
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.2 }}
+                style={{
+                  margin: 0, fontSize: '1.08rem', fontWeight: 700, color: '#1C1C1E',
+                  fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                }}
+              >
+                ✅ تم حفظ التغييرات بنجاح
+              </motion.p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Onboarding ────────────────────────────────────────────────────────────────
 function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => void }) {
   const [patientName,   setPatientName]   = useState('');
@@ -2766,18 +3113,20 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
 function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<ProfileData | null>(loadProfile);
 
-  const handleComplete = (data: ProfileData) => {
+  const handleSave = (data: ProfileData) => {
     saveProfile(data);
     setProfile(data);
   };
 
   if (!profile) {
-    return <OnboardingPage onComplete={handleComplete} />;
+    return <OnboardingPage onComplete={handleSave} />;
   }
 
   return (
     <ProfileContext.Provider value={profile}>
-      {children}
+      <ProfileUpdateContext.Provider value={handleSave}>
+        {children}
+      </ProfileUpdateContext.Provider>
     </ProfileContext.Provider>
   );
 }
@@ -2791,6 +3140,7 @@ function App() {
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <Switch>
               <Route path="/" component={Home} />
+              <Route path="/settings" component={SettingsPage} />
               <Route path="/communicate" component={CommunicationScreen} />
               <Route path="/communicate/:categoryId" component={CategoryPage} />
               <Route path="/dashboard" component={CaregiverDashboard} />
