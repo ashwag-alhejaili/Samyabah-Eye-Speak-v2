@@ -1257,7 +1257,7 @@ function Home() {
                 direction: 'rtl',
               }}
             >
-              لوحة مقدم الرعاية
+              فتح لوحة مقدم الرعاية
               <ChevronRight size={13} strokeWidth={2} />
             </motion.button>
           </motion.div>
