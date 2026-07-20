@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
@@ -968,6 +969,16 @@ function AmbientBackground() {
 // ── Emergency dialog — animated step-by-step simulation ──────────────────────
 function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState(0);
+  // Stable portal container — created once after mount, removed on unmount.
+  // Using useState initializer avoids the "document is not defined" SSR pitfall
+  // and gives createPortal a real DOM node rather than document.body directly.
+  const [portalEl] = useState<HTMLDivElement>(() => {
+    const el = document.createElement('div');
+    el.setAttribute('data-emergency-portal', '1');
+    document.body.appendChild(el);
+    return el;
+  });
+  useEffect(() => () => { document.body.removeChild(portalEl); }, [portalEl]);
 
   useEffect(() => {
     if (!open) { setStep(0); return; }
@@ -986,7 +997,7 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
     { icon: '📍', text: 'تم إرسال موقع المريض' },
   ];
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -1110,7 +1121,8 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
 
