@@ -965,36 +965,190 @@ function AmbientBackground() {
   );
 }
 
+// ── Emergency dialog — animated step-by-step simulation ──────────────────────
+function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (!open) { setStep(0); return; }
+    setStep(1);
+    const t1 = setTimeout(() => setStep(2), 1000);
+    const t2 = setTimeout(() => setStep(3), 1700);
+    const t3 = setTimeout(() => setStep(4), 2400);
+    const t4 = setTimeout(() => onClose(),  5400); // 2400 ms sequence + 3000 ms hold
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+  }, [open]);
+
+  const STEPS = [
+    { icon: '🚨', text: 'جاري إرسال تنبيه الطوارئ...' },
+    { icon: '✅', text: 'تم إشعار مقدم الرعاية' },
+    { icon: '👨‍👩‍👧‍👦', text: 'تم إشعار أفراد العائلة' },
+    { icon: '📍', text: 'تم إرسال موقع المريض' },
+  ];
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="emergency-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.28, ease: 'easeInOut' }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.82 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.90 }}
+            transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+            dir="rtl"
+            style={{
+              background: 'rgba(24,24,26,0.97)',
+              backdropFilter: 'blur(36px)',
+              WebkitBackdropFilter: 'blur(36px)',
+              borderRadius: '28px',
+              padding: '44px 48px 40px',
+              textAlign: 'center',
+              boxShadow: [
+                '0 48px 120px rgba(0,0,0,0.50)',
+                '0 0 0 1px rgba(255,255,255,0.07)',
+                '0 0 0 4px rgba(255,48,36,0.18)',
+              ].join(', '),
+              maxWidth: '390px',
+              width: '88vw',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            }}
+          >
+            {/* Pulsing red beacon */}
+            <div style={{ position: 'relative', width: '64px', height: '64px', margin: '0 auto 28px' }}>
+              <motion.div
+                animate={{ scale: [1, 1.55, 1], opacity: [0.55, 0, 0.55] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                style={{
+                  position: 'absolute', inset: 0,
+                  borderRadius: '50%',
+                  background: 'rgba(255,48,36,0.35)',
+                }}
+              />
+              <div style={{
+                position: 'absolute', inset: '10px',
+                borderRadius: '50%',
+                background: 'linear-gradient(145deg, #FF3B30, #FF1A0F)',
+                boxShadow: '0 6px 24px rgba(255,48,36,0.60)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.45rem',
+              }}>
+                🚨
+              </div>
+            </div>
+
+            {/* Sequential steps */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
+              {STEPS.slice(0, step).map((s, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    gap: '10px',
+                    padding: '11px 20px',
+                    borderRadius: '14px',
+                    background: i === 0
+                      ? 'rgba(255,48,36,0.14)'
+                      : 'rgba(255,255,255,0.06)',
+                    border: i === 0
+                      ? '1px solid rgba(255,48,36,0.28)'
+                      : '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>{s.icon}</span>
+                  <span style={{
+                    color: i === 0 ? '#FF6B63' : 'rgba(255,255,255,0.88)',
+                    fontWeight: i === 0 ? 700 : 600,
+                    fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)',
+                    lineHeight: 1.4,
+                  }}>
+                    {s.text}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Green confirmation checkmark — appears after all steps */}
+            <AnimatePresence>
+              {step >= 4 && (
+                <motion.div
+                  key="checkmark"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+                  style={{ marginTop: '24px' }}
+                >
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: '52px', height: '52px',
+                    borderRadius: '50%',
+                    background: 'linear-gradient(145deg, #30D158, #25A244)',
+                    boxShadow: '0 8px 28px rgba(48,209,88,0.45)',
+                    fontSize: '1.55rem',
+                  }}>
+                    ✓
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ── Shared: Emergency button (always visible, always pulsing) ─────────────────
 function EmergencyButton() {
+  const [open, setOpen] = useState(false);
   return (
-    <motion.button
-      whileTap={{ scale: 0.94 }}
-      animate={{
-        boxShadow: [
-          '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
-          '0 10px 36px rgba(255,59,48,0.70), 0 3px 10px rgba(255,59,48,0.38)',
-          '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
-        ],
-      }}
-      transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-      className="absolute text-white font-semibold rounded-full flex items-center gap-[7px]"
-      style={{
-        insetInlineStart: '24px',
-        background: 'rgba(255,48,36,0.92)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        border: '1px solid rgba(255,110,100,0.30)',
-        padding: '11px 20px',
-        fontSize: '0.92rem',
-        cursor: 'pointer',
-        zIndex: 20,
-      }}
-      aria-label="طوارئ"
-    >
-      <span role="img" aria-hidden>🚨</span>
-      <span>طوارئ</span>
-    </motion.button>
+    <>
+      <motion.button
+        onClick={() => setOpen(true)}
+        whileTap={{ scale: 0.94 }}
+        animate={{
+          boxShadow: [
+            '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
+            '0 10px 36px rgba(255,59,48,0.70), 0 3px 10px rgba(255,59,48,0.38)',
+            '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
+          ],
+        }}
+        transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute text-white font-semibold rounded-full flex items-center gap-[7px]"
+        style={{
+          insetInlineStart: '24px',
+          background: 'rgba(255,48,36,0.92)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(255,110,100,0.30)',
+          padding: '11px 20px',
+          fontSize: '0.92rem',
+          cursor: 'pointer',
+          zIndex: 20,
+        }}
+        aria-label="طوارئ"
+      >
+        <span role="img" aria-hidden>🚨</span>
+        <span>طوارئ</span>
+      </motion.button>
+      <EmergencyDialog open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
