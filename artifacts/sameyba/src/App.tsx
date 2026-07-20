@@ -729,7 +729,7 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 55%',
     Icon: Sparkles,
     items: [
-      { id: 'quran',    label: 'تشغيل القرآن',            emoji: '📖', Icon: BookOpen },
+      { id: 'quran',    label: 'أريد قرآن',            emoji: '📖', Icon: BookOpen },
       { id: 'wudu',     label: 'أريد الوضوء',             emoji: '🚿', Icon: WuduIcon },
       { id: 'pray',     label: 'أريد الصلاة',             emoji: '🙏', Icon: PrayingPersonIcon },
       { id: 'beads',    label: 'أريد السبحة',             emoji: '📿', Icon: PrayerBeadsIcon },
