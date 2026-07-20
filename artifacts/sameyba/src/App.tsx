@@ -651,6 +651,8 @@ type CategoryItem = {
   emoji: string;
   /** Optional icon component — when present, renders instead of the emoji */
   Icon?: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  /** Optional photo — when present, renders instead of Icon/emoji */
+  image?: string;
 };
 type Category = {
   id: string;
@@ -705,12 +707,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center center',
     Icon: Utensils,
     items: [
-      { id: 'water',    label: 'أريد ماء',         emoji: '💧', Icon: Droplets },
-      { id: 'food',     label: 'أريد طعامًا',      emoji: '🍽️', Icon: UtensilsCrossed },
-      { id: 'bathroom', label: 'أريد الحمام',      emoji: '🚻', Icon: ToiletIcon },
-      { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', Icon: ChairIcon },
-      { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', Icon: BellOff },
-      { id: 'position', label: 'غيّر وضعيتي',     emoji: '🧍', Icon: RepositionIcon },
+      { id: 'water',    label: 'أريد ماء',         emoji: '💧', image: 'needs-water.png' },
+      { id: 'food',     label: 'أريد طعامًا',      emoji: '🍽️', image: 'needs-food.jpg' },
+      { id: 'bathroom', label: 'أريد الحمام',      emoji: '🚻', image: 'needs-toilet.jpg' },
+      { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', image: 'needs-chair.jpg' },
+      { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', image: 'needs-quiet.png' },
+      { id: 'position', label: 'غيّر وضعيتي',     emoji: '🧍', image: 'needs-reposition.jpg' },
     ],
   },
   {
@@ -1260,7 +1262,22 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         />
       </div>
 
-      {item.Icon ? (
+      {item.image ? (
+        <img
+          src={import.meta.env.BASE_URL + item.image}
+          alt={item.label}
+          style={{
+            width: 'calc(100% - 4px)',
+            height: 'clamp(80px, 11vh, 102px)',
+            objectFit: 'cover',
+            objectPosition: 'center center',
+            borderRadius: '12px',
+            display: 'block',
+            flexShrink: 0,
+            imageRendering: 'auto',
+          }}
+        />
+      ) : item.Icon ? (
         <item.Icon
           size={44}
           color={selected ? ringColor : '#3C3C43'}
