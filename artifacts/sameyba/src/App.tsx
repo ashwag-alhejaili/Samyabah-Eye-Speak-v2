@@ -1183,7 +1183,16 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   index: number;
 }) {
   const [active, setActive] = useState(false);
-  const { controls, handlers, onUpdate } = useDwell(() => onSelect(item.id));
+
+  // Suppress click events for 1 s after a dwell completes so the browser's
+  // synthetic click (fired from the same hover that triggered the dwell) cannot
+  // call onSelect a second time before React has committed the state update.
+  const suppressClickUntilRef = useRef(0);
+
+  const { controls, handlers, onUpdate } = useDwell(() => {
+    suppressClickUntilRef.current = Date.now() + 1000;
+    onSelect(item.id);
+  });
 
   const augmented = {
     onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
@@ -1213,7 +1222,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
 
   return (
     <button
-      onClick={() => onSelect(item.id)}
+      onClick={() => { if (Date.now() < suppressClickUntilRef.current) return; onSelect(item.id); }}
       {...augmented}
       style={{
         position: 'relative',
