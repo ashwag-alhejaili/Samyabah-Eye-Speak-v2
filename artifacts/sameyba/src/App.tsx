@@ -806,9 +806,33 @@ const CATEGORIES: Category[] = [
 
 // ── Request store (localStorage-backed, shared between patient & dashboard) ───
 
-const PATIENT_NAME      = 'محمد عبدالله';
-const CAREGIVER_NAME    = 'سارة الأحمد';
-const CAREGIVER_PHONE   = '+966 50 123 4567';
+// ── Profile (onboarding, localStorage) ───────────────────────────────────────
+const PROFILE_KEY = 'sameyba_profile_v1';
+
+interface ProfileData {
+  patientName:   string;
+  caregiverName:  string;
+  caregiverPhone: string;
+}
+
+function loadProfile(): ProfileData | null {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as ProfileData | null; }
+  catch { return null; }
+}
+
+function saveProfile(data: ProfileData): void {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data)); } catch { /* quota */ }
+}
+
+const ProfileContext = createContext<ProfileData>({
+  patientName:   'المريض',
+  caregiverName:  'مقدم الرعاية',
+  caregiverPhone: '',
+});
+
+function useProfile() { return useContext(ProfileContext); }
+
+// ─────────────────────────────────────────────────────────────────────────────
 const STORE_KEY      = 'sameyba_requests_v1';
 const URGENT_LABELS  = ['متألم', 'غثيان', 'أريد الحمام', 'نادِ الممرضة', 'طلب مساعدة عاجلة'];
 
@@ -970,6 +994,7 @@ function AmbientBackground() {
 
 // ── Emergency dialog — animated step-by-step simulation ──────────────────────
 function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { caregiverName, caregiverPhone } = useProfile();
   const [step, setStep] = useState(0);
   // Stable portal container — created once after mount, removed on unmount.
   // Using useState initializer avoids the "document is not defined" SSR pitfall
@@ -1101,13 +1126,13 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '1rem' }}>👤</span>
                         <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.80rem, 1vw, 0.90rem)', fontWeight: 500 }}>
-                          {CAREGIVER_NAME}
+                          {caregiverName}
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '1rem' }}>📞</span>
                         <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.80rem, 1vw, 0.90rem)', fontWeight: 500, direction: 'ltr' }}>
-                          {CAREGIVER_PHONE}
+                          {caregiverPhone}
                         </span>
                       </div>
                     </div>
@@ -1775,6 +1800,7 @@ function CommunicationScreen() {
 
 // ── CategoryPage — shared layout for all 6 category pages ────────────────────
 function CategoryPage() {
+  const { patientName } = useProfile();
   const [, params] = useRoute<{ categoryId: string }>('/communicate/:categoryId');
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -1816,7 +1842,7 @@ function CategoryPage() {
       const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       addRequest({
         id:            reqId,
-        patientName:   PATIENT_NAME,
+        patientName:   patientName,
         requestText:   item.label,
         requestEmoji:  item.emoji,
         categoryId:    category.id,
@@ -2417,29 +2443,370 @@ function CaregiverDashboard() {
   );
 }
 
+// ── Onboarding ────────────────────────────────────────────────────────────────
+function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => void }) {
+  const [patientName,   setPatientName]   = useState('');
+  const [caregiverName, setCaregiverName] = useState('');
+  const [caregiverPhone, setCaregiverPhone] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saved,  setSaved]  = useState(false);
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المريض';
+    if (!caregiverName.trim())  e.caregiverName  = 'يرجى إدخال اسم مقدم الرعاية';
+    if (!caregiverPhone.trim()) e.caregiverPhone = 'يرجى إدخال رقم الجوال';
+    return e;
+  };
+
+  const handleSave = () => {
+    const e = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setSaved(true);
+    setTimeout(() => {
+      onComplete({
+        patientName:   patientName.trim(),
+        caregiverName: caregiverName.trim(),
+        caregiverPhone: caregiverPhone.trim(),
+      });
+    }, 1200);
+  };
+
+  const clearError = (key: string) =>
+    setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+
+  // Shared field style
+  const fieldBox: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', gap: '7px',
+  };
+  const labelStyle: React.CSSProperties = {
+    fontSize: '0.93rem', fontWeight: 600, color: '#3A3A3C',
+    display: 'flex', alignItems: 'center', gap: '6px',
+  };
+  const inputStyle = (hasError: boolean): React.CSSProperties => ({
+    width: '100%', boxSizing: 'border-box',
+    background: hasError ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.72)',
+    border: `1.5px solid ${hasError ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'}`,
+    borderRadius: '14px',
+    padding: '15px 18px',
+    fontSize: '1.08rem',
+    fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+    color: '#1C1C1E',
+    outline: 'none',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
+    WebkitAppearance: 'none',
+    direction: 'rtl',
+  });
+  const errorStyle: React.CSSProperties = {
+    fontSize: '0.80rem', color: '#FF3B30', fontWeight: 500,
+    display: 'flex', alignItems: 'center', gap: '4px',
+  };
+
+  return (
+    <div
+      dir="rtl"
+      style={{
+        minHeight: '100dvh', width: '100%',
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        background: 'linear-gradient(145deg, #F0F4FF 0%, #EBF0FD 35%, #E8EEF9 65%, #EDF2FF 100%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '24px 16px',
+        position: 'relative', overflow: 'hidden',
+      }}
+    >
+      {/* Ambient blobs */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute', top: '-12%', right: '-8%',
+          width: 'clamp(260px, 40vw, 520px)', height: 'clamp(260px, 40vw, 520px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(0,122,255,0.13) 0%, transparent 70%)',
+          filter: 'blur(48px)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-10%', left: '-6%',
+          width: 'clamp(200px, 32vw, 420px)', height: 'clamp(200px, 32vw, 420px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(88,86,214,0.11) 0%, transparent 70%)',
+          filter: 'blur(48px)',
+        }} />
+        <div style={{
+          position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: 'clamp(300px, 50vw, 600px)', height: 'clamp(300px, 50vw, 600px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(52,199,89,0.07) 0%, transparent 70%)',
+          filter: 'blur(60px)',
+        }} />
+      </div>
+
+      {/* Glass card */}
+      <motion.div
+        initial={{ opacity: 0, y: 28, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          position: 'relative', zIndex: 1,
+          width: '100%', maxWidth: '520px',
+          background: 'rgba(255,255,255,0.82)',
+          backdropFilter: 'blur(40px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+          borderRadius: '28px',
+          border: '1.5px solid rgba(255,255,255,0.95)',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)',
+          padding: 'clamp(28px, 5vw, 48px)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+          {/* Icon badge */}
+          <motion.div
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.45, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: '68px', height: '68px', borderRadius: '22px',
+              background: 'linear-gradient(145deg, #007AFF, #0055CC)',
+              boxShadow: '0 12px 32px rgba(0,122,255,0.35)',
+              fontSize: '2rem', marginBottom: '20px',
+            }}
+          >
+            🏥
+          </motion.div>
+
+          <h1 style={{
+            fontSize: 'clamp(1.45rem, 3.5vw, 1.85rem)',
+            fontWeight: 800, color: '#1C1C1E', margin: '0 0 10px',
+            letterSpacing: '-0.02em', lineHeight: 1.2,
+          }}>
+            تسجيل بيانات المريض
+          </h1>
+          <p style={{
+            fontSize: 'clamp(0.88rem, 2vw, 0.98rem)',
+            color: '#6E6E73', fontWeight: 500, margin: 0, lineHeight: 1.5,
+          }}>
+            أدخل البيانات مرة واحدة لتفعيل التطبيق.
+          </p>
+        </div>
+
+        {/* Divider */}
+        <div style={{
+          height: '1px',
+          background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent)',
+          marginBottom: '32px',
+        }} />
+
+        {/* Form fields */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+
+          {/* Patient name */}
+          <div style={fieldBox}>
+            <label style={labelStyle}>
+              <span>👤</span>
+              <span>اسم المريض</span>
+            </label>
+            <input
+              type="text"
+              placeholder="مثال: أحمد"
+              value={patientName}
+              onChange={e => { setPatientName(e.target.value); clearError('patientName'); }}
+              style={inputStyle(!!errors.patientName)}
+              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = errors.patientName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+            />
+            <AnimatePresence>
+              {errors.patientName && (
+                <motion.p key="err-pn"
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }} style={{ ...errorStyle, margin: 0 }}
+                >
+                  <span>⚠️</span> {errors.patientName}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Caregiver name */}
+          <div style={fieldBox}>
+            <label style={labelStyle}>
+              <span>👤</span>
+              <span>اسم مقدم الرعاية</span>
+            </label>
+            <input
+              type="text"
+              placeholder="مثال: سارة الأحمد"
+              value={caregiverName}
+              onChange={e => { setCaregiverName(e.target.value); clearError('caregiverName'); }}
+              style={inputStyle(!!errors.caregiverName)}
+              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+            />
+            <AnimatePresence>
+              {errors.caregiverName && (
+                <motion.p key="err-cn"
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }} style={{ ...errorStyle, margin: 0 }}
+                >
+                  <span>⚠️</span> {errors.caregiverName}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Caregiver phone */}
+          <div style={fieldBox}>
+            <label style={labelStyle}>
+              <span>📞</span>
+              <span>رقم جوال مقدم الرعاية</span>
+            </label>
+            <input
+              type="tel"
+              placeholder="05XXXXXXXX"
+              value={caregiverPhone}
+              onChange={e => { setCaregiverPhone(e.target.value); clearError('caregiverPhone'); }}
+              style={{ ...inputStyle(!!errors.caregiverPhone), direction: 'ltr', textAlign: 'right' }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#007AFF'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.15)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverPhone ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+            />
+            <AnimatePresence>
+              {errors.caregiverPhone && (
+                <motion.p key="err-cp"
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }} style={{ ...errorStyle, margin: 0 }}
+                >
+                  <span>⚠️</span> {errors.caregiverPhone}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Save button */}
+        <motion.button
+          onClick={handleSave}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+          style={{
+            marginTop: '32px',
+            width: '100%',
+            background: 'linear-gradient(145deg, #007AFF, #0062E6)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '16px',
+            padding: '17px',
+            fontSize: '1.08rem',
+            fontWeight: 700,
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            cursor: 'pointer',
+            boxShadow: '0 8px 28px rgba(0,122,255,0.38)',
+            letterSpacing: '0.01em',
+          }}
+        >
+          حفظ وبدء الاستخدام
+        </motion.button>
+
+        {/* Success overlay */}
+        <AnimatePresence>
+          {saved && (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                position: 'absolute', inset: 0,
+                background: 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                borderRadius: '28px',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                gap: '18px',
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.45, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+                style={{
+                  width: '72px', height: '72px', borderRadius: '50%',
+                  background: 'linear-gradient(145deg, #30D158, #25A244)',
+                  boxShadow: '0 12px 36px rgba(48,209,88,0.42)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '2rem',
+                }}
+              >
+                ✓
+              </motion.div>
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.38, delay: 0.25 }}
+                style={{
+                  margin: 0, fontSize: '1.12rem', fontWeight: 700, color: '#1C1C1E',
+                  fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                }}
+              >
+                ✅ تم حفظ البيانات بنجاح
+              </motion.p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Profile gate ──────────────────────────────────────────────────────────────
+function ProfileProvider({ children }: { children: React.ReactNode }) {
+  const [profile, setProfile] = useState<ProfileData | null>(loadProfile);
+
+  const handleComplete = (data: ProfileData) => {
+    saveProfile(data);
+    setProfile(data);
+  };
+
+  if (!profile) {
+    return <OnboardingPage onComplete={handleComplete} />;
+  }
+
+  return (
+    <ProfileContext.Provider value={profile}>
+      {children}
+    </ProfileContext.Provider>
+  );
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RequestStoreProvider>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-        <Switch>
-          <Route path="/" component={Home} />
-          <Route path="/communicate" component={CommunicationScreen} />
-          <Route path="/communicate/:categoryId" component={CategoryPage} />
-          <Route path="/dashboard" component={CaregiverDashboard} />
-          <Route component={() => (
-            <div
-              className="min-h-[100dvh] flex items-center justify-center text-center p-8 bg-[#FAFAFA] text-[#0A0A0A]"
-              dir="rtl"
-              style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
-            >
-              الصفحة غير موجودة
-            </div>
-          )} />
-        </Switch>
-      </WouterRouter>
-      </RequestStoreProvider>
+      <ProfileProvider>
+        <RequestStoreProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+            <Switch>
+              <Route path="/" component={Home} />
+              <Route path="/communicate" component={CommunicationScreen} />
+              <Route path="/communicate/:categoryId" component={CategoryPage} />
+              <Route path="/dashboard" component={CaregiverDashboard} />
+              <Route component={() => (
+                <div
+                  className="min-h-[100dvh] flex items-center justify-center text-center p-8 bg-[#FAFAFA] text-[#0A0A0A]"
+                  dir="rtl"
+                  style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
+                >
+                  الصفحة غير موجودة
+                </div>
+              )} />
+            </Switch>
+          </WouterRouter>
+        </RequestStoreProvider>
+      </ProfileProvider>
     </QueryClientProvider>
   );
 }
