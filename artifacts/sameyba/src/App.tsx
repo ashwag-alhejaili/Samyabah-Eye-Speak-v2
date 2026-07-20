@@ -775,7 +775,7 @@ const CATEGORIES: Category[] = [
     items: [
       { id: 'happy',   label: 'سعيد',             emoji: '😊', Icon: Smile },
       { id: 'sad',     label: 'حزين',             emoji: '😢', Icon: Frown },
-      { id: 'miss',    label: 'أشتاق لعيالي',    emoji: '❤️', Icon: HeartHandshake },
+      { id: 'miss',    label: 'أحبكم',    emoji: '❤️', Icon: HeartHandshake },
       { id: 'tired',   label: 'متعب',             emoji: '😴', Icon: TiredFaceIcon },
     ],
   },
