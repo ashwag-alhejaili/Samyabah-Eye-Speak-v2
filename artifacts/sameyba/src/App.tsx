@@ -527,6 +527,7 @@ const queryClient = new QueryClient();
 function useDwell(onComplete: () => void) {
   const controls  = useAnimation();
   const activeRef = useRef(false);
+  const firedRef  = useRef(false); // latched per hover cycle; reset only by start()
   const cbRef     = useRef(onComplete);
   cbRef.current   = onComplete;
 
@@ -534,6 +535,7 @@ function useDwell(onComplete: () => void) {
 
   const start = useCallback(() => {
     activeRef.current = true;
+    firedRef.current  = false; // new hover cycle — arm the trigger
     controls.start({
       pathLength: 1,
       opacity: 1,
@@ -556,10 +558,12 @@ function useDwell(onComplete: () => void) {
     });
   }, [controls]);
 
-  // Attach to motion.circle via onUpdate to fire onComplete at the right moment
+  // onUpdate fires every animation frame; both guards must pass to complete once.
+  // firedRef prevents a re-render from re-arming activeRef between frames.
   const onUpdate = useCallback((latest: Record<string, number>) => {
-    if (activeRef.current && (latest.pathLength ?? 0) >= 0.999) {
-      activeRef.current = false; // prevent double-fire
+    if (activeRef.current && !firedRef.current && (latest.pathLength ?? 0) >= 0.999) {
+      activeRef.current = false;
+      firedRef.current  = true; // latch — survives re-renders until next start()
       cbRef.current();
     }
   }, []);
@@ -571,7 +575,7 @@ function useDwell(onComplete: () => void) {
     onBlur:       stop,
   };
 
-  return { controls, handlers, activeRef };
+  return { controls, handlers, onUpdate };
 }
 
 // ── DwellRingCircle — shared circular progress ring ──────────────────────────
@@ -845,81 +849,82 @@ const BC_CHANNEL = 'sameyba_requests_sync';
 
 function RequestStoreProvider({ children }: { children: React.ReactNode }) {
   const [requests, setRequests] = useState<PatientRequest[]>(loadRequests);
-  const channel = useRef<BroadcastChannel | null>(null);
+  const channelRef = useRef<BroadcastChannel | null>(null);
 
-  // Open BroadcastChannel once; close on unmount
+  // Single effect — opens the channel AND wires listeners in one cleanup scope.
+  // Merging them prevents the two-effect ordering hazard where the listener
+  // effect reads channelRef.current before the channel-open effect has run.
   useEffect(() => {
-    if (typeof BroadcastChannel !== 'undefined') {
-      channel.current = new BroadcastChannel(BC_CHANNEL);
-    }
-    return () => { channel.current?.close(); };
-  }, []);
+    const ch = typeof BroadcastChannel !== 'undefined'
+      ? new BroadcastChannel(BC_CHANNEL)
+      : null;
+    channelRef.current = ch;
 
-  // Listen for updates from other tabs (BroadcastChannel + storage event fallback)
-  useEffect(() => {
     function syncFromStorage() {
+      // Replace state from localStorage (source of truth).
+      // This only runs in *other* tabs — never in the tab that wrote.
       setRequests(loadRequests());
     }
 
-    // BroadcastChannel: other tab mutated the store
-    if (channel.current) {
-      channel.current.onmessage = (e: MessageEvent) => {
+    if (ch) {
+      ch.onmessage = (e: MessageEvent) => {
         if (e.data?.type === 'update') syncFromStorage();
       };
     }
 
-    // storage event: fired in every tab EXCEPT the one that called setItem
+    // storage event fires in every tab except the one that called setItem
     function onStorage(e: StorageEvent) {
       if (e.key === STORE_KEY) syncFromStorage();
     }
     window.addEventListener('storage', onStorage);
 
     return () => {
-      if (channel.current) channel.current.onmessage = null;
+      ch?.close();
+      channelRef.current = null;
       window.removeEventListener('storage', onStorage);
     };
   }, []);
 
-  // Helper: save to localStorage then notify other tabs
-  const broadcast = useCallback((next: PatientRequest[]) => {
-    saveRequests(next);
-    channel.current?.postMessage({ type: 'update' });
-  }, []);
+  // All three mutators follow the same safe pattern:
+  //   1. Read current truth from localStorage (avoids stale-closure state)
+  //   2. Compute next array (pure)
+  //   3. Persist + broadcast (side effect, outside any state updater)
+  //   4. setRequests (just schedules a re-render)
+  // Nothing touches a state updater function beyond returning the next value.
 
   const addRequest = useCallback((data: Omit<PatientRequest, 'createdAt' | 'status'>) => {
-    // Callers must supply a stable `id` so the store can reject re-delivered data.
+    const current = loadRequests();
+    if (current.some(r => r.id === data.id)) return; // idempotent by UUID
     const req: PatientRequest = {
       ...data,
       createdAt: new Date().toISOString(),
       status: 'pending',
     };
-    setRequests(prev => {
-      if (prev.some(r => r.id === req.id)) return prev; // idempotent — already present
-      const next = [req, ...prev];
-      broadcast(next);
-      return next;
-    });
-  }, [broadcast]);
+    const next = [req, ...current];
+    saveRequests(next);
+    channelRef.current?.postMessage({ type: 'update' });
+    setRequests(next);
+  }, []);
 
   const completeRequest = useCallback((id: string) => {
-    setRequests(prev => {
-      const next = prev.map(r =>
-        r.id === id ? { ...r, status: 'done' as const, completedAt: new Date().toISOString() } : r,
-      );
-      broadcast(next);
-      return next;
-    });
-  }, [broadcast]);
+    const current = loadRequests();
+    const next = current.map(r =>
+      r.id === id ? { ...r, status: 'done' as const, completedAt: new Date().toISOString() } : r,
+    );
+    saveRequests(next);
+    channelRef.current?.postMessage({ type: 'update' });
+    setRequests(next);
+  }, []);
 
   const rejectRequest = useCallback((id: string) => {
-    setRequests(prev => {
-      const next = prev.map(r =>
-        r.id === id ? { ...r, status: 'rejected' as const, rejectedAt: new Date().toISOString() } : r,
-      );
-      broadcast(next);
-      return next;
-    });
-  }, [broadcast]);
+    const current = loadRequests();
+    const next = current.map(r =>
+      r.id === id ? { ...r, status: 'rejected' as const, rejectedAt: new Date().toISOString() } : r,
+    );
+    saveRequests(next);
+    channelRef.current?.postMessage({ type: 'update' });
+    setRequests(next);
+  }, []);
 
   return (
     <RequestContext.Provider value={{ requests, addRequest, completeRequest, rejectRequest }}>
@@ -1032,7 +1037,7 @@ function GazeCard({ card, onClick }: {
   onClick: () => void;
 }) {
   const [active, setActive] = useState(false);
-  const { controls, handlers, activeRef } = useDwell(onClick);
+  const { controls, handlers, onUpdate } = useDwell(onClick);
 
   const augmented = {
     onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
@@ -1058,9 +1063,6 @@ function GazeCard({ card, onClick }: {
     'inset 0 0 48px rgba(255,255,255,0.65)',
   ].join(', ');
 
-  // Keep activeRef in sync so useDwell's onUpdate fires correctly
-  activeRef.current = active;
-
   return (
     <div className="flex flex-col items-center" style={{ gap: 'clamp(10px, 1.5vh, 18px)' }}>
 
@@ -1076,12 +1078,7 @@ function GazeCard({ card, onClick }: {
             glowColor={card.glowColor}
             active={active}
             controls={controls}
-            onUpdate={(latest) => {
-              if (activeRef.current && (latest.pathLength ?? 0) >= 0.999) {
-                activeRef.current = false;
-                onClick();
-              }
-            }}
+            onUpdate={onUpdate}
           />
         </div>
 
@@ -1186,7 +1183,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   index: number;
 }) {
   const [active, setActive] = useState(false);
-  const { controls, handlers, activeRef } = useDwell(() => onSelect(item.id));
+  const { controls, handlers, onUpdate } = useDwell(() => onSelect(item.id));
 
   const augmented = {
     onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
@@ -1194,9 +1191,6 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
     onFocus:      () => { setActive(true);  handlers.onFocus(); },
     onBlur:       () => { setActive(false); handlers.onBlur(); },
   };
-
-  // Keep activeRef in sync so useDwell's onUpdate fires correctly
-  activeRef.current = active;
 
   const restShadow = selected
     ? [
@@ -1262,12 +1256,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
           glowColor={glowColor}
           active={active}
           controls={controls}
-          onUpdate={(latest) => {
-            if (activeRef.current && (latest.pathLength ?? 0) >= 0.999) {
-              activeRef.current = false;
-              onSelect(item.id);
-            }
-          }}
+          onUpdate={onUpdate}
         />
       </div>
 
