@@ -3047,15 +3047,13 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
             initial={{ scale: 0.7, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.45, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: '68px', height: '68px', borderRadius: '22px',
-              background: 'linear-gradient(145deg, #007AFF, #0055CC)',
-              boxShadow: '0 12px 32px rgba(0,122,255,0.35)',
-              fontSize: '2rem', marginBottom: '20px',
-            }}
+            style={{ marginBottom: '20px' }}
           >
-            🏥
+            <img
+              src={import.meta.env.BASE_URL + 'sameyba-logo.png'}
+              alt="سَم يبه"
+              style={{ height: '90px', width: 'auto', display: 'block', margin: '0 auto' }}
+            />
           </motion.div>
 
           <h1 style={{
