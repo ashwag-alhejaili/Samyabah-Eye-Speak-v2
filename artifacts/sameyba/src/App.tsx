@@ -2228,29 +2228,40 @@ function unlockAudio() {
 }
 
 // ── Soft notification chime (Web Audio, no file dependency) ──────────────────
-// Returns true if sound was dispatched, false if the context is still blocked.
+// Schedule the two-tone chime on an already-running context.
+function _scheduleChime(ctx: AudioContext) {
+  const notes: [number, number][] = [[1318.5, 0], [1046.5, 0.13]];
+  notes.forEach(([freq, offset]) => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
+    gain.gain.setValueAtTime(0, ctx.currentTime + offset);
+    gain.gain.linearRampToValueAtTime(0.16, ctx.currentTime + offset + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.22);
+    osc.start(ctx.currentTime + offset);
+    osc.stop(ctx.currentTime + offset + 0.23);
+  });
+}
+
+// Play the notification chime.
+// If the AudioContext was auto-suspended by the browser (common when the tab
+// is in the background), we await resume() before scheduling notes so the
+// chime plays the moment the context becomes running again.
 function playNotificationSound(): boolean {
   try {
     const ctx = getAudioCtx();
     if (!ctx) return false;
-    // Resume is idempotent — safe to call even if already running.
-    ctx.resume().catch(() => {});
-    if (ctx.state === 'suspended') return false;
-
-    const notes: [number, number][] = [[1318.5, 0], [1046.5, 0.13]];
-    notes.forEach(([freq, offset]) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
-      gain.gain.setValueAtTime(0, ctx.currentTime + offset);
-      gain.gain.linearRampToValueAtTime(0.16, ctx.currentTime + offset + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.22);
-      osc.start(ctx.currentTime + offset);
-      osc.stop(ctx.currentTime + offset + 0.23);
-    });
+    if (ctx.state === 'suspended') {
+      // Async path: wait for resume to settle, then schedule notes.
+      // The browser allows resume() on a previously-unlocked context even in
+      // background tabs, so this works across cross-tab BroadcastChannel events.
+      ctx.resume().then(() => _scheduleChime(ctx)).catch(() => {});
+    } else {
+      _scheduleChime(ctx);
+    }
     return true;
   } catch { return false; }
 }
