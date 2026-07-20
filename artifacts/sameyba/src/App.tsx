@@ -1197,7 +1197,23 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
 function EmergencyButton() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(false);
-  const { controls, handlers, onUpdate } = useDwell(() => setOpen(true));
+  const { addRequest } = useRequestStore();
+  const { patientName } = useProfile();
+
+  const { controls, handlers, onUpdate } = useDwell(() => {
+    // Create the emergency request in the shared store so it broadcasts to
+    // the Caregiver Dashboard via BroadcastChannel + storage-event sync.
+    addRequest({
+      id:            `emergency-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      patientName,
+      requestText:   'طوارئ',
+      requestEmoji:  '🚨',
+      categoryId:    'emergency',
+      categoryLabel: 'طوارئ',
+      priority:      'urgent',
+    });
+    setOpen(true);
+  });
 
   const augmented = {
     onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
