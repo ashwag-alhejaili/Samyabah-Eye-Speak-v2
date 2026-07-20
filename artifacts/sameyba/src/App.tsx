@@ -685,12 +685,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 42%',
     Icon: HeartPulse,
     items: [
-      { id: 'pain',    label: 'متألم',               emoji: '🤒',  Icon: Cross },
-      { id: 'nausea',  label: 'غثيان',              emoji: '🤢',  Icon: NauseaIcon },
-      { id: 'shower',  label: 'أريد الاستحمام',     emoji: '🛁',  Icon: ShowerIcon },
-      { id: 'walk',    label: 'أريد المشي قليلًا',  emoji: '🚶',  Icon: Footprints },
-      { id: 'standup', label: 'ساعدني على الوقوف',  emoji: '🪑',  Icon: HelpStandIcon },
-      { id: 'nurse',   label: 'نادِ الممرضة',        emoji: '👩‍⚕️', Icon: Stethoscope },
+      { id: 'pain',    label: 'متألم',               emoji: '🤒',  image: 'health-pain.jpg' },
+      { id: 'nausea',  label: 'غثيان',              emoji: '🤢',  image: 'health-nausea.jpg' },
+      { id: 'shower',  label: 'أريد الاستحمام',     emoji: '🛁',  image: 'health-shower.jpg' },
+      { id: 'walk',    label: 'أريد المشي قليلًا',  emoji: '🚶',  image: 'health-walk.jpg' },
+      { id: 'standup', label: 'ساعدني على الوقوف',  emoji: '🪑',  image: 'health-standup.png' },
+      { id: 'nurse',   label: 'نادِ الممرضة',        emoji: '👩‍⚕️', image: 'health-caregiver.png' },
     ],
   },
   {
