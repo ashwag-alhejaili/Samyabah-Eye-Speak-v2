@@ -685,12 +685,12 @@ const CATEGORIES: Category[] = [
     imgPosition: 'center 42%',
     Icon: HeartPulse,
     items: [
-      { id: 'pain',    label: 'متألم',               emoji: '🤒',  image: 'health-pain.jpg' },
-      { id: 'nausea',  label: 'غثيان',              emoji: '🤢',  image: 'health-nausea.jpg' },
-      { id: 'shower',  label: 'أريد الاستحمام',     emoji: '🛁',  image: 'health-shower.jpg' },
-      { id: 'walk',    label: 'أريد المشي قليلًا',  emoji: '🚶',  image: 'health-walk.jpg' },
-      { id: 'standup', label: 'ساعدني على الوقوف',  emoji: '🪑',  image: 'health-standup.png' },
-      { id: 'nurse',   label: 'نادِ الممرضة',        emoji: '👩‍⚕️', image: 'health-caregiver.png' },
+      { id: 'pain',     label: 'متألم',               emoji: '🤒',  image: 'health-pain.jpg' },
+      { id: 'nausea',   label: 'غثيان',              emoji: '🤢',  image: 'health-nausea.jpg' },
+      { id: 'nurse',    label: 'نادِ الممرضة',        emoji: '👩‍⚕️', image: 'health-caregiver.png' },
+      { id: 'standup',  label: 'ساعدني على الوقوف',  emoji: '🪑',  image: 'health-standup.png' },
+      { id: 'walk',     label: 'أريد المشي قليلًا',  emoji: '🚶',  image: 'health-walk.jpg' },
+      { id: 'position', label: 'غيّر وضعيتي',        emoji: '🧍',  image: 'needs-reposition.jpg' },
     ],
   },
   {
@@ -712,7 +712,7 @@ const CATEGORIES: Category[] = [
       { id: 'bathroom', label: 'أريد الحمام',      emoji: '🚻', image: 'needs-toilet.jpg' },
       { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', image: 'needs-chair.jpg' },
       { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', image: 'needs-quiet.png' },
-      { id: 'position', label: 'غيّر وضعيتي',     emoji: '🧍', image: 'needs-reposition.jpg' },
+      { id: 'shower',   label: 'أريد الاستحمام',   emoji: '🛁', image: 'health-shower.jpg' },
     ],
   },
   {
