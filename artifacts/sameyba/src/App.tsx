@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
 import { GazeContext, GazeProvider, useGazeContext } from './gazeTracking';
+import { AIAssistantButton } from './aiAssistant';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
@@ -863,7 +864,7 @@ function isUrgent(label: string): boolean {
   return URGENT_LABELS.some(kw => label.includes(kw) || kw.includes(label));
 }
 
-interface PatientRequest {
+export interface PatientRequest {
   id:            string;
   patientName:   string;
   requestText:   string;
@@ -983,7 +984,7 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function useRequestStore(): RequestStoreShape {
+export function useRequestStore(): RequestStoreShape {
   const ctx = useContext(RequestContext);
   if (!ctx) throw new Error('useRequestStore must be used inside RequestStoreProvider');
   return ctx;
@@ -1772,7 +1773,7 @@ function Home() {
               </div>
             </motion.div>
 
-            <motion.div variants={itemVariants} className="pt-4">
+            <motion.div variants={itemVariants} className="pt-4 flex flex-col gap-3">
               <motion.button
                 onClick={() => navigate('/communicate')}
                 whileHover={{ scale: 1.05, boxShadow: '0 8px 36px rgba(10,132,255,0.45)' }}
@@ -1784,6 +1785,7 @@ function Home() {
               >
                 ابدأ التواصل
               </motion.button>
+              <AIAssistantButton />
             </motion.div>
 
           </div>
