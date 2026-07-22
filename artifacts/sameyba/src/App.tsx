@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
+import { GazeContext, GazeProvider, useGazeContext } from './gazeTracking';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
@@ -520,28 +521,34 @@ function CompanionshipIcon({
 
 const queryClient = new QueryClient();
 
-// ── useDwell — shared 2-second gaze-dwell hook ───────────────────────────────
+// ── useDwell — shared gaze-dwell hook ────────────────────────────────────────
 // Drives a Framer Motion AnimationControls that any SVG circle can bind to.
-// • start(): ring fills from current progress → 1 over 2 s (linear)
+// • start(): ring fills from current progress → 1 (linear, duration depends on source)
 // • stop():  ring resets smoothly → 0 over 0.4 s (ease-out)
 // • onUpdate: call this on the motion.circle so completion triggers onComplete
-function useDwell(onComplete: () => void) {
+// • gazeId: when provided, eye tracking auto-triggers start/stop for this element
+function useDwell(onComplete: () => void, gazeId?: string) {
   const controls  = useAnimation();
   const activeRef = useRef(false);
   const firedRef  = useRef(false); // latched per hover cycle; reset only by start()
   const cbRef     = useRef(onComplete);
   cbRef.current   = onComplete;
 
+  const { gazeEnabled, gazeTargetId } = useGazeContext();
+  // True when camera is on AND this element is currently being gazed at
+  const isGazeActive = gazeEnabled && !!gazeId && gazeTargetId === gazeId;
+
   useEffect(() => () => { controls.stop(); }, [controls]);
 
-  const start = useCallback(() => {
+  const start = useCallback((fromGaze = false) => {
     activeRef.current = true;
     firedRef.current  = false; // new hover cycle — arm the trigger
     controls.start({
       pathLength: 1,
       opacity: 1,
       transition: {
-        pathLength: { duration: 1, ease: 'linear' },
+        // Gaze dwell = 2 s, mouse dwell = 1 s
+        pathLength: { duration: fromGaze ? 2 : 1, ease: 'linear' },
         opacity:    { duration: 0.15 },
       },
     });
@@ -559,6 +566,17 @@ function useDwell(onComplete: () => void) {
     });
   }, [controls]);
 
+  // Eye-tracking: start/stop based on gaze position
+  useEffect(() => {
+    if (!gazeEnabled || !gazeId) return;
+    if (gazeTargetId === gazeId) {
+      start(true);
+    } else {
+      stop();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gazeTargetId, gazeEnabled, gazeId]);
+
   // onUpdate fires every animation frame; both guards must pass to complete once.
   // firedRef prevents a re-render from re-arming activeRef between frames.
   const onUpdate = useCallback((latest: Record<string, number>) => {
@@ -570,13 +588,14 @@ function useDwell(onComplete: () => void) {
   }, []);
 
   const handlers = {
-    onMouseEnter: start,
-    onMouseLeave: stop,
-    onFocus:      start,
+    // When gaze is active, mouse hover doesn't drive dwell (gaze takes over)
+    onMouseEnter: gazeEnabled ? (() => {}) : (() => start(false)),
+    onMouseLeave: gazeEnabled ? (() => {}) : stop,
+    onFocus:      () => start(false),
     onBlur:       stop,
   };
 
-  return { controls, handlers, onUpdate };
+  return { controls, handlers, onUpdate, isGazeActive };
 }
 
 // ── DwellRingCircle — shared circular progress ring ──────────────────────────
@@ -642,7 +661,7 @@ const containerVariants = {
 };
 const itemVariants = {
   hidden: { y: 20, opacity: 0 },
-  visible: { y: 0, opacity: 1, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] } },
+  visible: { y: 0, opacity: 1, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } },
 };
 
 // ── Data ─────────────────────────────────────────────────────────────────────
@@ -1196,11 +1215,11 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
 // ── Shared: Emergency button (always visible, always pulsing) ─────────────────
 function EmergencyButton() {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(false);
+  const [mouseActive, setMouseActive] = useState(false);
   const { addRequest } = useRequestStore();
   const { patientName } = useProfile();
 
-  const { controls, handlers, onUpdate } = useDwell(() => {
+  const { controls, handlers, onUpdate, isGazeActive } = useDwell(() => {
     // Create the emergency request in the shared store so it broadcasts to
     // the Caregiver Dashboard via BroadcastChannel + storage-event sync.
     addRequest({
@@ -1213,19 +1232,22 @@ function EmergencyButton() {
       priority:      'urgent',
     });
     setOpen(true);
-  });
+  }, 'emergency');
+
+  const active = isGazeActive || mouseActive;
 
   const augmented = {
-    onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
-    onMouseLeave: () => { setActive(false); handlers.onMouseLeave(); },
-    onFocus:      () => { setActive(true);  handlers.onFocus(); },
-    onBlur:       () => { setActive(false); handlers.onBlur(); },
+    onMouseEnter: () => { setMouseActive(true);  handlers.onMouseEnter(); },
+    onMouseLeave: () => { setMouseActive(false); handlers.onMouseLeave(); },
+    onFocus:      () => { setMouseActive(true);  handlers.onFocus(); },
+    onBlur:       () => { setMouseActive(false); handlers.onBlur(); },
   };
 
   return (
     <>
       <motion.button
         {...augmented}
+        data-gaze-id="emergency"
         whileTap={{ scale: 0.94 }}
         animate={{
           boxShadow: [
@@ -1313,14 +1335,15 @@ function GazeCard({ card, onClick }: {
   index: number;
   onClick: () => void;
 }) {
-  const [active, setActive] = useState(false);
-  const { controls, handlers, onUpdate } = useDwell(onClick);
+  const [mouseActive, setMouseActive] = useState(false);
+  const { controls, handlers, onUpdate, isGazeActive } = useDwell(onClick, card.id);
+  const active = isGazeActive || mouseActive;
 
   const augmented = {
-    onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
-    onMouseLeave: () => { setActive(false); handlers.onMouseLeave(); },
-    onFocus:      () => { setActive(true);  handlers.onFocus(); },
-    onBlur:       () => { setActive(false); handlers.onBlur(); },
+    onMouseEnter: () => { setMouseActive(true);  handlers.onMouseEnter(); },
+    onMouseLeave: () => { setMouseActive(false); handlers.onMouseLeave(); },
+    onFocus:      () => { setMouseActive(true);  handlers.onFocus(); },
+    onBlur:       () => { setMouseActive(false); handlers.onBlur(); },
   };
 
   const restShadow = [
@@ -1459,14 +1482,15 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   selected: boolean;
   index: number;
 }) {
-  const [active, setActive] = useState(false);
-  const { controls, handlers, onUpdate } = useDwell(() => onSelect(item.id));
+  const [mouseActive, setMouseActive] = useState(false);
+  const { controls, handlers, onUpdate, isGazeActive } = useDwell(() => onSelect(item.id), `item-${item.id}`);
+  const active = isGazeActive || mouseActive;
 
   const augmented = {
-    onMouseEnter: () => { setActive(true);  handlers.onMouseEnter(); },
-    onMouseLeave: () => { setActive(false); handlers.onMouseLeave(); },
-    onFocus:      () => { setActive(true);  handlers.onFocus(); },
-    onBlur:       () => { setActive(false); handlers.onBlur(); },
+    onMouseEnter: () => { setMouseActive(true);  handlers.onMouseEnter(); },
+    onMouseLeave: () => { setMouseActive(false); handlers.onMouseLeave(); },
+    onFocus:      () => { setMouseActive(true);  handlers.onFocus(); },
+    onBlur:       () => { setMouseActive(false); handlers.onBlur(); },
   };
 
   const restShadow = selected
@@ -1491,6 +1515,7 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   return (
     <button
       onClick={() => onSelect(item.id)}
+      data-gaze-id={`item-${item.id}`}
       {...augmented}
       style={{
         position: 'relative',
@@ -3347,6 +3372,7 @@ function ProfileProvider({ children }: { children: React.ReactNode }) {
 // ── Router ────────────────────────────────────────────────────────────────────
 function App() {
   return (
+    <GazeProvider>
     <QueryClientProvider client={queryClient}>
       <ProfileProvider>
         <RequestStoreProvider>
@@ -3371,6 +3397,7 @@ function App() {
         </RequestStoreProvider>
       </ProfileProvider>
     </QueryClientProvider>
+    </GazeProvider>
   );
 }
 
