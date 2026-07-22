@@ -2478,7 +2478,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
             margin: '0 0 20px', lineHeight: 1.2, letterSpacing: '-0.02em',
           }}
         >
-          مرحبًا بك في سم يبه
+          مرحبًا بك في تطبيق سم يبه
         </motion.h1>
 
         {/* Divider */}
@@ -2511,7 +2511,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
             color: '#3A3A3C', fontWeight: 500,
             margin: '0 0 12px', lineHeight: 1.7,
           }}>
-            يساعدك تطبيق سم يبه على التواصل باستخدام حركة العين إذا كنت غير قادر على الكلام.
+            يساعدك تطبيق سم يبه على التعبير عن احتياجاتك والتواصل بسهولة مع عائلتك أو مقدم الرعاية باستخدام حركة العين، إذا كنت غير قادر على الكلام.
           </p>
           <p style={{
             fontSize: 'clamp(0.82rem, 2vw, 0.90rem)',
@@ -2520,7 +2520,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
             display: 'flex', alignItems: 'flex-start', gap: '7px',
           }}>
             <span style={{ flexShrink: 0, marginTop: '1px' }}>🔒</span>
-            <span>يستخدم التطبيق الكاميرا فقط لتتبع حركة العين، ولا يتم حفظ أي صور أو مقاطع فيديو.</span>
+            <span><strong style={{ color: '#3A3A3C', fontWeight: 600 }}>خصوصيتك محفوظة —</strong> تُستخدم الكاميرا فقط لتتبع حركة العين أثناء استخدام التطبيق، ولا يتم حفظ أو تسجيل أي صور أو مقاطع فيديو.</span>
           </p>
         </motion.div>
 
@@ -2619,7 +2619,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
             margin: '18px 0 0', fontWeight: 400,
           }}
         >
-          للمرضى وذويهم · يعمل بدون إنترنت
+          مصمم لخدمة المرضى وأسرهم · يعمل دون الحاجة إلى اتصال دائم بالإنترنت
         </motion.p>
       </motion.div>
     </motion.div>
