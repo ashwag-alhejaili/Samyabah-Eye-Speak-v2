@@ -19,8 +19,47 @@ declare global {
       showFaceFeedbackBox?(show: boolean): Window['webgazer'];
       setPause(pause: boolean): Window['webgazer'];
       clearData(): Window['webgazer'];
+      /** Mutable params object — includes faceMeshSolutionPath */
+      params?: Record<string, unknown>;
     };
   }
+}
+
+// ── MediaPipe asset CDN redirect ───────────────────────────────────────────────
+// WebGazer's default faceMeshSolutionPath is "./mediapipe/face_mesh" (relative),
+// which resolves to the local dev server and returns HTML instead of JS/WASM.
+// We intercept every fetch for those filenames and redirect to jsDelivr.
+const MEDIAPIPE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh';
+const FACE_MESH_FILENAMES = new Set([
+  'face_mesh_solution_packed_assets_loader.js',
+  'face_mesh_solution_simd_wasm_bin.js',
+  'face_mesh_solution_wasm_bin.js',
+  'face_mesh_solution_simd_wasm_bin.wasm',
+  'face_mesh_solution_wasm_bin.wasm',
+  'face_mesh_solution_packed_assets.data',
+  'face_mesh.binarypb',
+]);
+
+let fetchPatched = false;
+
+function installMediaPipeFetchPatch() {
+  if (fetchPatched) return;
+  fetchPatched = true;
+  const _orig = window.fetch.bind(window);
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const raw =
+      typeof input === 'string' ? input
+      : input instanceof URL    ? input.href
+      : (input as Request).url;
+    const filename = raw.split('/').pop()?.split('?')[0] ?? '';
+    if (FACE_MESH_FILENAMES.has(filename) && !raw.startsWith(MEDIAPIPE_CDN)) {
+      const cdnUrl = `${MEDIAPIPE_CDN}/${filename}`;
+      console.log(`[Sameyba/Gaze] 🔀 fetch redirect: ${raw} → ${cdnUrl}`);
+      return _orig(cdnUrl, init);
+    }
+    return _orig(input, init);
+  };
+  console.log('[Sameyba/Gaze] fetch interceptor installed for MediaPipe assets');
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -218,6 +257,25 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     // ── 5. Initialise WebGazer ───────────────────────────────────────────────
     try {
       const wg = window.webgazer!;
+
+      // ── 5a. Override the default relative MediaPipe asset path ─────────────
+      // WebGazer ships with faceMeshSolutionPath:"./mediapipe/face_mesh".
+      // That relative URL resolves to the local dev server → returns HTML → crash.
+      // Setting it to the jsDelivr CDN fixes asset loading on every platform.
+      if (wg.params) {
+        const oldPath = wg.params.faceMeshSolutionPath;
+        wg.params.faceMeshSolutionPath = MEDIAPIPE_CDN;
+        console.log(
+          `[Sameyba/Gaze] params.faceMeshSolutionPath: "${String(oldPath)}" → "${MEDIAPIPE_CDN}"`,
+        );
+      } else {
+        console.warn('[Sameyba/Gaze] wg.params not found — relying on fetch interceptor only');
+      }
+
+      // ── 5b. Install fetch interceptor as a safety net ──────────────────────
+      // Catches any face_mesh asset URLs that still slip through with wrong origin.
+      installMediaPipeFetchPatch();
+
       wg.setGazeListener((data) => {
         if (data) rawRef.current = { x: data.x, y: data.y };
       });
