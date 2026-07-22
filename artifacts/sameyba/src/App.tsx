@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
 import { GazeContext, GazeProvider, useGazeContext } from './gazeTracking';
 import { AIAssistantButton } from './aiAssistant';
+import { CaregiverDashboard } from './caregiverDashboard';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
@@ -852,7 +853,7 @@ const ProfileContext = createContext<ProfileData>({
 
 const ProfileUpdateContext = createContext<(data: ProfileData) => void>(() => {});
 
-function useProfile()       { return useContext(ProfileContext); }
+export function useProfile() { return useContext(ProfileContext); }
 function useUpdateProfile() { return useContext(ProfileUpdateContext); }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2046,679 +2047,6 @@ function CategoryPage() {
 
 // ── Caregiver Dashboard ───────────────────────────────────────────────────────
 
-function formatRelativeTime(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 10)  return 'الآن';
-  if (s < 60)  return `قبل ${s} ثانية`;
-  const m = Math.floor(s / 60);
-  if (m === 1) return 'قبل دقيقة';
-  if (m === 2) return 'قبل دقيقتين';
-  if (m < 11)  return `قبل ${m} دقائق`;
-  if (m < 60)  return `قبل ${m} دقيقة`;
-  const h = Math.floor(m / 60);
-  if (h === 1) return 'قبل ساعة';
-  if (h === 2) return 'قبل ساعتين';
-  return `قبل ${h} ساعات`;
-}
-
-function RequestCard({
-  req, onComplete, onReject,
-}: {
-  req: PatientRequest;
-  onComplete: (id: string) => void;
-  onReject:   (id: string) => void;
-}) {
-  const urgent = req.priority === 'urgent';
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 16, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0,  scale: 1 }}
-      exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.2 } }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      style={{
-        background: 'rgba(255,255,255,0.72)',
-        backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
-        borderRadius: '20px',
-        border: urgent ? '1.5px solid rgba(255,59,48,0.22)' : '1.5px solid rgba(0,0,0,0.07)',
-        boxShadow: urgent
-          ? '0 4px 28px rgba(255,59,48,0.10), 0 1px 6px rgba(0,0,0,0.05)'
-          : '0 2px 20px rgba(0,0,0,0.07)',
-        padding: '20px',
-        display: 'flex', flexDirection: 'column' as const, gap: '14px',
-      }}
-    >
-      {/* Priority + status badges, time */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' as const }}>
-          <span style={{
-            background: urgent ? 'rgba(255,59,48,0.09)' : 'rgba(142,142,147,0.10)',
-            color: urgent ? '#FF3B30' : '#6E6E73',
-            borderRadius: '999px', padding: '3px 10px',
-            fontSize: '0.74rem', fontWeight: 700,
-          }}>
-            {urgent ? '⚠️ عاجل' : 'عادي'}
-          </span>
-          <span style={{
-            background: 'rgba(10,132,255,0.09)', color: '#0A84FF',
-            borderRadius: '999px', padding: '3px 10px',
-            fontSize: '0.74rem', fontWeight: 700,
-          }}>
-            جديد
-          </span>
-        </div>
-        <span style={{ color: '#AEAEB2', fontSize: '0.77rem', whiteSpace: 'nowrap' }}>
-          🕒 {formatRelativeTime(req.createdAt)}
-        </span>
-      </div>
-
-      {/* Patient name + category */}
-      <div>
-        <p style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0A0A0A', margin: 0 }}>
-          👤 {req.patientName}
-        </p>
-        <p style={{ color: '#6E6E73', fontSize: '0.82rem', margin: '3px 0 0 0' }}>
-          {req.categoryLabel}
-        </p>
-      </div>
-
-      {/* Request bubble */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '10px',
-        padding: '12px 16px', borderRadius: '14px',
-        background: 'rgba(10,132,255,0.055)',
-        border: '1px solid rgba(10,132,255,0.10)',
-      }}>
-        <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>{req.requestEmoji}</span>
-        <span style={{ fontWeight: 600, color: '#0A84FF', fontSize: '0.95rem' }}>
-          {req.requestText}
-        </span>
-      </div>
-
-      {/* Action buttons */}
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={() => onComplete(req.id)}
-          style={{
-            flex: 1, padding: '12px 8px', borderRadius: '13px',
-            background: 'linear-gradient(135deg, #34C759 0%, #2DB14E 100%)',
-            color: '#fff', fontWeight: 700, fontSize: '0.9rem',
-            border: 'none', cursor: 'pointer',
-            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-            boxShadow: '0 2px 14px rgba(52,199,89,0.30)',
-          }}
-        >
-          ✅ تم التنفيذ
-        </motion.button>
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={() => onReject(req.id)}
-          style={{
-            flex: 1, padding: '12px 8px', borderRadius: '13px',
-            background: 'rgba(255,59,48,0.07)',
-            color: '#FF3B30', fontWeight: 700, fontSize: '0.9rem',
-            border: '1.5px solid rgba(255,59,48,0.18)', cursor: 'pointer',
-            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-          }}
-        >
-          ❌ رفض
-        </motion.button>
-      </div>
-    </motion.div>
-  );
-}
-
-function HistoryCard({ req }: { req: PatientRequest }) {
-  const done      = req.status === 'done';
-  const actionISO = done ? req.completedAt : req.rejectedAt;
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      style={{
-        background: 'rgba(255,255,255,0.50)',
-        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-        borderRadius: '16px',
-        border: done ? '1.5px solid rgba(52,199,89,0.18)' : '1.5px solid rgba(255,59,48,0.15)',
-        boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
-        padding: '16px 20px',
-        display: 'flex', alignItems: 'center', gap: '14px',
-        opacity: 0.88,
-      }}
-    >
-      <div style={{
-        width: '38px', height: '38px', borderRadius: '50%', flexShrink: 0,
-        background: done ? 'rgba(52,199,89,0.10)' : 'rgba(255,59,48,0.08)',
-        border: done ? '1.5px solid rgba(52,199,89,0.22)' : '1.5px solid rgba(255,59,48,0.18)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem',
-      }}>
-        {done ? '✅' : '❌'}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' as const }}>
-          <p style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1C1C1E', margin: 0 }}>
-            {req.patientName}
-          </p>
-          <span style={{
-            fontSize: '0.72rem', fontWeight: 700,
-            color: done ? '#34C759' : '#FF3B30',
-            background: done ? 'rgba(52,199,89,0.09)' : 'rgba(255,59,48,0.09)',
-            borderRadius: '999px', padding: '1px 8px',
-          }}>
-            {done ? 'تم التنفيذ' : 'مرفوض'}
-          </span>
-        </div>
-        <p style={{ color: '#6E6E73', fontSize: '0.82rem', margin: '3px 0 0 0' }}>
-          {req.requestEmoji} {req.requestText}
-        </p>
-        <p style={{ color: '#AEAEB2', fontSize: '0.75rem', margin: '2px 0 0 0' }}>
-          طُلب {formatRelativeTime(req.createdAt)}
-          {actionISO && ` · ${done ? 'نُفِّذ' : 'رُفض'} ${formatRelativeTime(actionISO)}`}
-        </p>
-      </div>
-    </motion.div>
-  );
-}
-
-// ── Notification chime (Web Audio, no external files) ────────────────────────
-// Tone 1: 880 Hz / 180 ms  →  Tone 2: 1175 Hz / 220 ms
-// ctx MUST be in 'running' state before calling.
-function playChime(ctx: AudioContext) {
-  const now = ctx.currentTime;
-  const tone = (freq: number, startOffset: number, durationSec: number, peak: number) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, now + startOffset);
-    gain.gain.setValueAtTime(0, now + startOffset);
-    gain.gain.linearRampToValueAtTime(peak, now + startOffset + 0.015);
-    gain.gain.setValueAtTime(peak, now + startOffset + Math.max(durationSec - 0.03, 0.02));
-    gain.gain.exponentialRampToValueAtTime(0.001, now + startOffset + durationSec);
-    osc.start(now + startOffset);
-    osc.stop(now  + startOffset + durationSec + 0.01);
-  };
-  tone(880,  0.01, 0.18, 0.28);  // first tone  — 880 Hz, 180 ms
-  tone(1175, 0.22, 0.22, 0.24);  // second tone — 1175 Hz, 220 ms
-}
-
-function CaregiverDashboard() {
-  const [, navigate] = useLocation();
-  const { requests, completeRequest, rejectRequest } = useRequestStore();
-  const [toastVisible, setToastVisible] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [, setTick] = useState(0);
-
-  // ── Audio ─────────────────────────────────────────────────────────────────
-  // AudioContext lives in a ref: one instance per mount, created only inside
-  // a real user-gesture handler (required by browser autoplay policy).
-  const audioCtxRef    = useRef<AudioContext | null>(null);
-  const audioActiveRef = useRef(false); // true once ctx is running this session
-
-  const [audioEnabled,    setAudioEnabled]    = useState(
-    () => localStorage.getItem(CAREGIVER_AUDIO_KEY) === 'true',
-  );
-  const [audioJustActivated, setAudioJustActivated] = useState(false);
-  const audioEnabledRef = useRef(audioEnabled);
-  useEffect(() => { audioEnabledRef.current = audioEnabled; }, [audioEnabled]);
-
-  // Helper (sync inside gesture): create or reuse the AudioContext.
-  const getOrCreateCtx = (): AudioContext | null => {
-    const Ctor = window.AudioContext
-      ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return null;
-    const existing = audioCtxRef.current;
-    if (existing && existing.state !== 'closed') return existing;
-    const ctx = new Ctor();
-    audioCtxRef.current = ctx;
-    return ctx;
-  };
-
-  // Banner click — synchronous creation + resume(), chime plays in .then().
-  const handleActivateAudio = () => {
-    const ctx = getOrCreateCtx();
-    if (!ctx) return;
-    ctx.resume().then(() => {
-      const c = audioCtxRef.current;
-      if (!c || c.state !== 'running') return;
-      playChime(c);                              // audible confirmation
-      localStorage.setItem(CAREGIVER_AUDIO_KEY, 'true');
-      audioEnabledRef.current = true;
-      audioActiveRef.current  = true;
-      setAudioEnabled(true);
-      setAudioJustActivated(true);
-      setTimeout(() => setAudioJustActivated(false), 3500);
-    }).catch(() => {});
-  };
-
-  // Returning users: auto-unlock on first click anywhere in the page.
-  // No banner shown — the context is created silently within the gesture.
-  useEffect(() => {
-    if (!audioEnabled) return;
-    const onFirstClick = () => {
-      const ctx = getOrCreateCtx();
-      if (!ctx) return;
-      ctx.resume().then(() => {
-        if (audioCtxRef.current?.state === 'running') {
-          audioActiveRef.current = true;
-        } else {
-          // resume() failed — clear flag so the banner shows on next load
-          localStorage.removeItem(CAREGIVER_AUDIO_KEY);
-          audioEnabledRef.current = false;
-          setAudioEnabled(false);
-        }
-      }).catch(() => {
-        localStorage.removeItem(CAREGIVER_AUDIO_KEY);
-        audioEnabledRef.current = false;
-        setAudioEnabled(false);
-      });
-    };
-    document.addEventListener('click', onFirstClick, { once: true });
-    return () => document.removeEventListener('click', onFirstClick);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioEnabled]);
-
-  // On tab focus / visibility restore: resume the existing context if suspended.
-  // Never recreate it — recreation requires a user gesture.
-  useEffect(() => {
-    const onFocus = () => {
-      const ctx = audioCtxRef.current;
-      if (audioEnabledRef.current && ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-    };
-    document.addEventListener('visibilitychange', onFocus);
-    window.addEventListener('focus', onFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', onFocus);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, []);
-
-  // ── Flashing badge when a new request arrives ────────────────────────────
-  const [badgeFlash, setBadgeFlash] = useState(false);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Seed with all IDs present at mount — we only notify about requests that
-  // arrive while the dashboard is open, not ones already in localStorage.
-  const notifiedIds = useRef<Set<string>>(new Set(requests.map(r => r.id)));
-
-  // ── Set page title on mount; restore on unmount ───────────────────────────
-  useEffect(() => {
-    const prev = document.title;
-    document.title = 'سَم يبه — لوحة مقدم الرعاية';
-    return () => { document.title = prev; };
-  }, []);
-
-  // ── Clear flashing title when this tab regains focus ─────────────────────
-  useEffect(() => {
-    const onVisible = () => {
-      if (!document.hidden) {
-        document.title = 'سَم يبه — لوحة مقدم الرعاية';
-        if (flashTimer.current) clearTimeout(flashTimer.current);
-        setBadgeFlash(false);
-      }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, []);
-
-  // Request browser-notification permission once, silently
-  useEffect(() => {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
-
-  // Detect newly arriving pending requests → sound + badge flash + title
-  useEffect(() => {
-    const fresh = requests.filter(
-      r => r.status === 'pending' && !notifiedIds.current.has(r.id),
-    );
-    if (fresh.length === 0) return;
-
-    fresh.forEach(req => {
-      notifiedIds.current.add(req.id);
-      if (
-        typeof Notification !== 'undefined' &&
-        Notification.permission === 'granted' &&
-        document.hidden
-      ) {
-        new Notification('طلب جديد', {
-          body: `${req.patientName} - ${req.requestText}`,
-          dir: 'rtl',
-          lang: 'ar',
-        });
-      }
-    });
-
-    // Play chime — only if audio is active this session.
-    if (audioActiveRef.current && audioCtxRef.current) {
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'running') {
-        playChime(ctx);
-      } else if (ctx.state === 'suspended') {
-        ctx.resume().then(() => {
-          if (audioCtxRef.current?.state === 'running') playChime(audioCtxRef.current);
-        }).catch(() => {});
-      }
-    }
-
-    // Visual fallback: flash the badge + update page title (works even when
-    // the tab is backgrounded or audio is blocked by the browser).
-    if (document.hidden) {
-      document.title = '🔔 طلب جديد';
-    }
-    setBadgeFlash(true);
-    if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setBadgeFlash(false), 4000);
-  }, [requests]);
-
-  // Refresh all relative timestamps every 10 s
-  useEffect(() => {
-    const iv = setInterval(() => setTick(n => n + 1), 10_000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const pending = [...requests.filter(r => r.status === 'pending')].sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority === 'urgent' ? -1 : 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-  const done = [...requests.filter(r => r.status === 'done')]
-    .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime());
-  const rejected = [...requests.filter(r => r.status === 'rejected')]
-    .sort((a, b) => new Date(b.rejectedAt!).getTime() - new Date(a.rejectedAt!).getTime());
-
-  const handleComplete = useCallback((id: string) => {
-    completeRequest(id);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToastVisible(true);
-    toastTimer.current = setTimeout(() => setToastVisible(false), 2500);
-  }, [completeRequest]);
-
-  const handleReject = useCallback((id: string) => {
-    rejectRequest(id);
-  }, [rejectRequest]);
-
-  return (
-    <div
-      className="min-h-[100dvh] flex flex-col"
-      dir="rtl"
-      style={{
-        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)',
-      }}
-    >
-      <AmbientBackground />
-
-      {/* ── Audio banner / success strip ── */}
-      <AnimatePresence mode="wait">
-        {audioJustActivated ? (
-          /* Success strip — shown for 3.5 s after the chime plays */
-          <motion.div
-            key="audio-success"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3 }}
-            style={{
-              position: 'relative', zIndex: 20,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: '8px', padding: '11px 24px',
-              background: 'linear-gradient(135deg, rgba(52,199,89,0.14) 0%, rgba(52,199,89,0.07) 100%)',
-              borderBottom: '1px solid rgba(52,199,89,0.28)',
-              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-            }}
-          >
-            <span style={{ fontSize: '1.05rem' }}>✅</span>
-            <span style={{ fontWeight: 600, fontSize: '0.92rem', color: '#1A6E34' }}>
-              تم تفعيل صوت التنبيهات
-            </span>
-          </motion.div>
-        ) : !audioEnabled ? (
-          /* Activation banner — only shown if audio was never enabled */
-          <motion.div
-            key="audio-banner"
-            initial={{ opacity: 0, y: -16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            onClick={handleActivateAudio}
-            style={{
-              position: 'relative', zIndex: 20,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: '10px', padding: '13px 24px',
-              background: 'linear-gradient(135deg, rgba(255,159,10,0.18) 0%, rgba(255,204,0,0.12) 100%)',
-              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-              borderBottom: '1px solid rgba(255,159,10,0.25)',
-              cursor: 'pointer',
-              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-            }}
-          >
-            <motion.span
-              animate={{ scale: [1, 1.18, 1] }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ fontSize: '1.15rem', lineHeight: 1 }}
-            >
-              🔔
-            </motion.span>
-            <span style={{ fontWeight: 600, fontSize: '0.93rem', color: '#92600A' }}>
-              تفعيل صوت التنبيهات
-            </span>
-            <span style={{
-              marginRight: 'auto', marginLeft: 0,
-              fontSize: '0.78rem', color: 'rgba(146,96,10,0.65)', fontWeight: 500,
-            }}>
-              اضغط مرة واحدة للتفعيل
-            </span>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      {/* ── Header ── */}
-      <div
-        className="relative z-10 flex items-center justify-between px-6 pt-8 pb-6"
-        style={{ maxWidth: '1100px', width: '100%', margin: '0 auto' }}
-      >
-        <div>
-          <h1 style={{
-            fontSize: 'clamp(1.35rem, 2.8vw, 1.85rem)', fontWeight: 800,
-            color: '#0A0A0A', letterSpacing: '-0.025em', margin: 0,
-          }}>
-            لوحة مقدم الرعاية
-          </h1>
-          <p style={{ color: '#6E6E73', fontSize: '0.87rem', margin: '5px 0 0 0' }}>
-            {pending.length > 0 ? `${pending.length} طلب معلّق` : 'لا توجد طلبات معلّقة'}
-            {(done.length + rejected.length) > 0 && ` · ${done.length + rejected.length} منتهٍ`}
-          </p>
-        </div>
-
-        <motion.button
-          whileTap={{ scale: 0.96 }}
-          onClick={() => navigate('/')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '4px',
-            padding: '10px 20px', borderRadius: '999px',
-            background: 'rgba(255,255,255,0.75)',
-            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            border: '1.5px solid rgba(0,0,0,0.08)',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
-            cursor: 'pointer', color: '#0A0A0A', fontWeight: 600,
-            fontSize: '0.9rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-          }}
-        >
-          الرئيسية <ChevronRight size={15} strokeWidth={2.5} />
-        </motion.button>
-      </div>
-
-      {/* ── Content ── */}
-      <div
-        className="relative z-10 flex-1 px-6 pb-16"
-        style={{ maxWidth: '1100px', width: '100%', margin: '0 auto' }}
-      >
-        {/* ─ Pending ─ */}
-        <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-            <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
-              الطلبات الواردة
-            </h2>
-            <AnimatePresence>
-              {pending.length > 0 && (
-                <motion.span
-                  key="pending-badge"
-                  initial={{ scale: 0.6, opacity: 0 }}
-                  animate={badgeFlash
-                    ? {
-                        scale:           [1, 1.28, 1, 1.28, 1, 1.28, 1],
-                        opacity:         1,
-                        backgroundColor: ['#FF3B30','#FF6900','#FF3B30','#FF6900','#FF3B30','#FF6900','#FF3B30'],
-                      }
-                    : { scale: 1, opacity: 1, backgroundColor: '#FF3B30' }}
-                  exit={{ scale: 0.6, opacity: 0 }}
-                  transition={badgeFlash
-                    ? { duration: 1.6, ease: 'easeInOut' }
-                    : { duration: 0.25 }}
-                  style={{
-                    display: 'inline-block',
-                    borderRadius: '999px', padding: '2px 10px',
-                    fontSize: '0.75rem', fontWeight: 700, color: '#fff',
-                  }}
-                >
-                  {pending.length}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <AnimatePresence mode="popLayout">
-            {pending.length === 0 ? (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                style={{
-                  background: 'rgba(255,255,255,0.60)',
-                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-                  borderRadius: '20px', border: '1.5px solid rgba(0,0,0,0.06)',
-                  padding: '52px 24px', textAlign: 'center' as const,
-                  color: '#AEAEB2', fontSize: '0.95rem',
-                }}
-              >
-                ✓ لا توجد طلبات معلّقة
-              </motion.div>
-            ) : (
-              <motion.div
-                key="grid"
-                style={{
-                  display: 'grid', gap: '16px',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
-                }}
-              >
-                <AnimatePresence mode="popLayout">
-                  {pending.map(req => (
-                    <RequestCard key={req.id} req={req} onComplete={handleComplete} onReject={handleReject} />
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </section>
-
-        {/* ─ Done ─ */}
-        <AnimatePresence>
-          {done.length > 0 && (
-            <motion.section
-              key="done-section"
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              style={{ marginTop: '48px' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
-                  الطلبات المنفذة
-                </h2>
-                <span style={{
-                  background: '#34C759', color: '#fff',
-                  borderRadius: '999px', padding: '2px 10px',
-                  fontSize: '0.75rem', fontWeight: 700,
-                }}>
-                  {done.length}
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <AnimatePresence mode="popLayout">
-                  {done.map(req => <HistoryCard key={req.id} req={req} />)}
-                </AnimatePresence>
-              </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
-
-        {/* ─ Rejected ─ */}
-        <AnimatePresence>
-          {rejected.length > 0 && (
-            <motion.section
-              key="rejected-section"
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              style={{ marginTop: '40px' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1C1C1E', margin: 0 }}>
-                  الطلبات المرفوضة
-                </h2>
-                <span style={{
-                  background: '#FF3B30', color: '#fff',
-                  borderRadius: '999px', padding: '2px 10px',
-                  fontSize: '0.75rem', fontWeight: 700,
-                }}>
-                  {rejected.length}
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <AnimatePresence mode="popLayout">
-                  {rejected.map(req => <HistoryCard key={req.id} req={req} />)}
-                </AnimatePresence>
-              </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* ── Completion toast ── */}
-      <AnimatePresence>
-        {toastVisible && (
-          <motion.div
-            key="done-toast"
-            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-              position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
-              zIndex: 200,
-              display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '13px 28px', borderRadius: '999px',
-              background: 'linear-gradient(135deg, rgba(52,199,89,0.13) 0%, rgba(255,255,255,0.90) 100%)',
-              backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
-              border: '1.5px solid rgba(52,199,89,0.36)',
-              boxShadow: '0 8px 32px rgba(52,199,89,0.20)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>✅</span>
-            <span style={{ fontWeight: 700, color: '#2DB14E', fontSize: '0.95rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
-              تم تنفيذ الطلب
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 // ── Settings ──────────────────────────────────────────────────────────────────
 function SettingsPage() {
   const profile      = useProfile();
@@ -3371,6 +2699,70 @@ function ProfileProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── Patient-side completion notification ──────────────────────────────────────
+const PATIENT_NOTIFY_CHANNEL = 'sameyba_patient_notify';
+
+function PatientConfirmationOverlay() {
+  const [visible, setVisible] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel(PATIENT_NOTIFY_CHANNEL);
+      bc.onmessage = (e: MessageEvent) => {
+        if (e.data?.type === 'caregiver_completed') {
+          setVisible(true);
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => setVisible(false), 4500);
+        }
+      };
+    } catch { /* BroadcastChannel not supported */ }
+    return () => { bc?.close(); };
+  }, []);
+
+  return createPortal(
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key="patient-confirm"
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 99999,
+            display: 'flex', alignItems: 'center', gap: '10px',
+            padding: '14px 28px', borderRadius: '999px',
+            background: 'linear-gradient(135deg, rgba(52,199,89,0.15) 0%, rgba(255,255,255,0.96) 100%)',
+            backdropFilter: 'blur(28px)',
+            WebkitBackdropFilter: 'blur(28px)',
+            border: '1.5px solid rgba(52,199,89,0.42)',
+            boxShadow: '0 8px 36px rgba(52,199,89,0.22), 0 2px 12px rgba(0,0,0,0.08)',
+            whiteSpace: 'nowrap' as const,
+            direction: 'rtl',
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          }}
+        >
+          <motion.span
+            initial={{ scale: 0.5 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            style={{ fontSize: '1.2rem' }}
+          >
+            ✅
+          </motion.span>
+          <span style={{ fontWeight: 700, fontSize: '0.96rem', color: '#1A6E34' }}>
+            تم استلام طلبك وسيتم تنفيذه
+          </span>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 function App() {
   return (
@@ -3378,6 +2770,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ProfileProvider>
         <RequestStoreProvider>
+          {/* Patient-side confirmation overlay — listens for caregiver completions */}
+          <PatientConfirmationOverlay />
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <Switch>
               <Route path="/" component={Home} />
