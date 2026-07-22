@@ -2361,6 +2361,271 @@ function SettingsPage() {
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
+// ── Welcome Screen ────────────────────────────────────────────────────────────
+function WelcomeScreen({ onStart }: { onStart: () => void }) {
+  const [pressed, setPressed] = useState(false);
+
+  const handleStart = () => {
+    setPressed(true);
+    setTimeout(onStart, 420);
+  };
+
+  const features: { icon: string; label: string }[] = [
+    { icon: '👁️', label: 'تتبع العين' },
+    { icon: '🔒', label: 'خصوصية تامة' },
+    { icon: '❤️', label: 'تواصل بسهولة' },
+  ];
+
+  return (
+    <motion.div
+      key="welcome"
+      dir="rtl"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        minHeight: '100dvh', width: '100%',
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        background: 'linear-gradient(145deg, #F0F4FF 0%, #EBF0FD 35%, #E8EEF9 65%, #EDF2FF 100%)',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: '24px 16px',
+        position: 'relative', overflow: 'hidden',
+      }}
+    >
+      {/* Ambient blobs — identical to OnboardingPage */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        <div style={{
+          position: 'absolute', top: '-12%', right: '-8%',
+          width: 'clamp(260px, 40vw, 520px)', height: 'clamp(260px, 40vw, 520px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)',
+          filter: 'blur(48px)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-10%', left: '-6%',
+          width: 'clamp(200px, 32vw, 420px)', height: 'clamp(200px, 32vw, 420px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)',
+          filter: 'blur(48px)',
+        }} />
+        <div style={{
+          position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: 'clamp(300px, 50vw, 600px)', height: 'clamp(300px, 50vw, 600px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.10) 0%, transparent 70%)',
+          filter: 'blur(60px)',
+        }} />
+        {/* Extra warm blob top-left for depth */}
+        <div style={{
+          position: 'absolute', top: '10%', left: '-5%',
+          width: 'clamp(180px, 28vw, 360px)', height: 'clamp(180px, 28vw, 360px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,190,100,0.07) 0%, transparent 70%)',
+          filter: 'blur(40px)',
+        }} />
+      </div>
+
+      {/* Glass card */}
+      <motion.div
+        initial={{ opacity: 0, y: 32, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          position: 'relative', zIndex: 1,
+          width: '100%', maxWidth: '480px',
+          background: 'rgba(255,255,255,0.84)',
+          backdropFilter: 'blur(40px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+          borderRadius: '32px',
+          border: '1.5px solid rgba(255,255,255,0.95)',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)',
+          padding: 'clamp(32px, 6vw, 52px) clamp(24px, 5vw, 44px)',
+          overflow: 'hidden',
+          textAlign: 'center',
+        }}
+      >
+        {/* Top accent bar */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
+          background: 'linear-gradient(90deg, #5E7E35, #7BA043, #A8C070, #7BA043, #5E7E35)',
+          backgroundSize: '200% 100%',
+        }} />
+
+        {/* Logo */}
+        <motion.div
+          initial={{ scale: 0.72, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+          style={{ marginBottom: '28px' }}
+        >
+          <img
+            src={import.meta.env.BASE_URL + 'sameyba-logo.png'}
+            alt="سَم يبه"
+            style={{ height: '96px', width: 'auto', display: 'block', margin: '0 auto' }}
+          />
+        </motion.div>
+
+        {/* Title */}
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            fontSize: 'clamp(1.55rem, 4vw, 2rem)',
+            fontWeight: 800, color: '#1C1C1E',
+            margin: '0 0 20px', lineHeight: 1.2, letterSpacing: '-0.02em',
+          }}
+        >
+          مرحبًا بك في سم يبه
+        </motion.h1>
+
+        {/* Divider */}
+        <motion.div
+          initial={{ scaleX: 0, opacity: 0 }}
+          animate={{ scaleX: 1, opacity: 1 }}
+          transition={{ duration: 0.45, delay: 0.28 }}
+          style={{
+            height: '2px', width: '48px', margin: '0 auto 24px',
+            background: 'linear-gradient(90deg, #5E7E35, #A8C070)',
+            borderRadius: '999px',
+          }}
+        />
+
+        {/* Description */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            background: 'rgba(94,126,53,0.06)',
+            borderRadius: '16px',
+            padding: '18px 20px',
+            marginBottom: '28px',
+            border: '1px solid rgba(94,126,53,0.12)',
+          }}
+        >
+          <p style={{
+            fontSize: 'clamp(0.88rem, 2.2vw, 0.97rem)',
+            color: '#3A3A3C', fontWeight: 500,
+            margin: '0 0 12px', lineHeight: 1.7,
+          }}>
+            يساعدك تطبيق سم يبه على التواصل باستخدام حركة العين إذا كنت غير قادر على الكلام.
+          </p>
+          <p style={{
+            fontSize: 'clamp(0.82rem, 2vw, 0.90rem)',
+            color: '#6E6E73', fontWeight: 400,
+            margin: 0, lineHeight: 1.65,
+            display: 'flex', alignItems: 'flex-start', gap: '7px',
+          }}>
+            <span style={{ flexShrink: 0, marginTop: '1px' }}>🔒</span>
+            <span>يستخدم التطبيق الكاميرا فقط لتتبع حركة العين، ولا يتم حفظ أي صور أو مقاطع فيديو.</span>
+          </p>
+        </motion.div>
+
+        {/* Feature pills */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.40, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            display: 'flex', justifyContent: 'center',
+            gap: '10px', flexWrap: 'wrap',
+            marginBottom: '36px',
+          }}
+        >
+          {features.map((f, i) => (
+            <motion.div
+              key={f.label}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.38, delay: 0.46 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '10px 18px',
+                borderRadius: '999px',
+                background: 'rgba(255,255,255,0.90)',
+                border: '1.5px solid rgba(94,126,53,0.20)',
+                boxShadow: '0 2px 12px rgba(94,126,53,0.10)',
+              }}
+            >
+              <span style={{ fontSize: '1.15rem', lineHeight: 1 }}>{f.icon}</span>
+              <span style={{
+                fontSize: '0.88rem', fontWeight: 600,
+                color: '#2D4A1E', letterSpacing: '-0.01em',
+              }}>
+                {f.label}
+              </span>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* CTA button */}
+        <motion.button
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.58, ease: [0.22, 1, 0.36, 1] }}
+          whileTap={{ scale: 0.97 }}
+          onClick={handleStart}
+          disabled={pressed}
+          style={{
+            width: '100%',
+            padding: '18px 24px',
+            borderRadius: '18px',
+            border: 'none',
+            background: pressed
+              ? 'rgba(94,126,53,0.55)'
+              : 'linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)',
+            color: '#FFFFFF',
+            fontSize: 'clamp(1.05rem, 2.5vw, 1.18rem)',
+            fontWeight: 700,
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            cursor: pressed ? 'default' : 'pointer',
+            letterSpacing: '-0.01em',
+            boxShadow: pressed
+              ? 'none'
+              : '0 8px 28px rgba(94,126,53,0.38), 0 2px 8px rgba(94,126,53,0.22)',
+            transition: 'background 0.25s, box-shadow 0.25s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+          }}
+        >
+          {pressed ? (
+            <>
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ duration: 0.7, ease: 'linear', repeat: Infinity }}
+                style={{ display: 'inline-block', fontSize: '1.1rem' }}
+              >
+                ⏳
+              </motion.span>
+              <span>جارٍ التحميل…</span>
+            </>
+          ) : (
+            <>
+              <span>ابدأ</span>
+              <span style={{ fontSize: '1.1rem' }}>←</span>
+            </>
+          )}
+        </motion.button>
+
+        {/* Bottom hint */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.72 }}
+          style={{
+            fontSize: '0.78rem', color: '#AEAEB2',
+            margin: '18px 0 0', fontWeight: 400,
+          }}
+        >
+          للمرضى وذويهم · يعمل بدون إنترنت
+        </motion.p>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => void }) {
   const [patientName,   setPatientName]   = useState('');
   const [caregiverName, setCaregiverName] = useState('');
@@ -2680,6 +2945,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
 // ── Profile gate ──────────────────────────────────────────────────────────────
 function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<ProfileData | null>(loadProfile);
+  const [showWelcome, setShowWelcome] = useState(true);
 
   const handleSave = (data: ProfileData) => {
     saveProfile(data);
@@ -2687,7 +2953,22 @@ function ProfileProvider({ children }: { children: React.ReactNode }) {
   };
 
   if (!profile) {
-    return <OnboardingPage onComplete={handleSave} />;
+    return (
+      <AnimatePresence mode="wait">
+        {showWelcome ? (
+          <WelcomeScreen key="welcome" onStart={() => setShowWelcome(false)} />
+        ) : (
+          <motion.div
+            key="onboarding"
+            initial={{ opacity: 0, x: -24 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <OnboardingPage onComplete={handleSave} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
   }
 
   return (
