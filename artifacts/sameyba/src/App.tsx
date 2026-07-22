@@ -536,9 +536,9 @@ function useDwell(onComplete: () => void, gazeId?: string) {
   const cbRef     = useRef(onComplete);
   cbRef.current   = onComplete;
 
-  const { gazeEnabled, gazeTargetId } = useGazeContext();
-  // True when camera is on AND this element is currently being gazed at
-  const isGazeActive = gazeEnabled && !!gazeId && gazeTargetId === gazeId;
+  const { gazeEnabled, gazeTargetId, calibrated } = useGazeContext();
+  // True when camera is on, calibration complete, AND this element is being gazed at
+  const isGazeActive = gazeEnabled && calibrated && !!gazeId && gazeTargetId === gazeId;
 
   useEffect(() => () => { controls.stop(); }, [controls]);
 
@@ -568,16 +568,16 @@ function useDwell(onComplete: () => void, gazeId?: string) {
     });
   }, [controls]);
 
-  // Eye-tracking: start/stop based on gaze position
+  // Eye-tracking: start/stop based on gaze position (only after calibration)
   useEffect(() => {
-    if (!gazeEnabled || !gazeId) return;
+    if (!gazeEnabled || !calibrated || !gazeId) return;
     if (gazeTargetId === gazeId) {
       start(true);
     } else {
       stop();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gazeTargetId, gazeEnabled, gazeId]);
+  }, [gazeTargetId, gazeEnabled, calibrated, gazeId]);
 
   // onUpdate fires every animation frame; both guards must pass to complete once.
   // firedRef prevents a re-render from re-arming activeRef between frames.
@@ -590,9 +590,9 @@ function useDwell(onComplete: () => void, gazeId?: string) {
   }, []);
 
   const handlers = {
-    // When gaze is active, mouse hover doesn't drive dwell (gaze takes over)
-    onMouseEnter: gazeEnabled ? (() => {}) : (() => start(false)),
-    onMouseLeave: gazeEnabled ? (() => {}) : stop,
+    // When gaze is active and calibrated, mouse hover doesn't drive dwell (gaze takes over)
+    onMouseEnter: (gazeEnabled && calibrated) ? (() => {}) : (() => start(false)),
+    onMouseLeave: (gazeEnabled && calibrated) ? (() => {}) : stop,
     onFocus:      () => start(false),
     onBlur:       stop,
   };
