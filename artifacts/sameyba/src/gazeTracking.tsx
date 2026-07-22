@@ -47,17 +47,65 @@ export function useGazeContext() {
   return useContext(GazeContext);
 }
 
+// ── Helper: human-readable error reason ───────────────────────────────────────
+type ErrorKind =
+  | 'permission-denied'
+  | 'no-camera'
+  | 'camera-in-use'
+  | 'aborted'
+  | 'overconstrained'
+  | 'security'
+  | 'no-mediadevices'
+  | 'webgazer-not-loaded'
+  | 'webgazer-failed'
+  | 'unknown';
+
+interface GazeError {
+  kind: ErrorKind;
+  /** Short Arabic label shown in the banner */
+  label: string;
+  /** Extra detail (technical) */
+  detail: string;
+}
+
+function classifyGetUserMediaError(err: unknown): GazeError {
+  const e = err as DOMException;
+  const name = e?.name ?? '';
+  const msg  = e?.message ?? String(err);
+
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return { kind: 'permission-denied', label: 'تم رفض الكاميرا — يعمل التطبيق بالفأرة', detail: msg };
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return { kind: 'no-camera', label: 'لم يتم العثور على كاميرا — تأكد من توصيل الكاميرا', detail: msg };
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return { kind: 'camera-in-use', label: 'الكاميرا مستخدمة من تطبيق آخر — أغلقه ثم أعد المحاولة', detail: msg };
+  }
+  if (name === 'AbortError') {
+    return { kind: 'aborted', label: 'تم إلغاء تشغيل الكاميرا — أعد المحاولة', detail: msg };
+  }
+  if (name === 'OverconstrainedError') {
+    return { kind: 'overconstrained', label: 'مواصفات الكاميرا غير مدعومة — أعد المحاولة', detail: msg };
+  }
+  if (name === 'SecurityError') {
+    return { kind: 'security', label: 'تم حظر الكاميرا بإعدادات الأمان', detail: msg };
+  }
+  return { kind: 'unknown', label: `خطأ في الكاميرا: ${name || msg}`, detail: msg };
+}
+
 // ── GazeProvider ──────────────────────────────────────────────────────────────
 export function GazeProvider({ children }: { children: React.ReactNode }) {
   const [permissionState, setPermissionState] = useState<PermissionState>('idle');
   const [gazeEnabled, setGazeEnabled]         = useState(false);
   const [gazePos, setGazePos]                 = useState<{ x: number; y: number } | null>(null);
   const [gazeTargetId, setGazeTargetId]       = useState<string | null>(null);
+  const [errorLabel, setErrorLabel]           = useState<string | null>(null);
 
-  const rawRef         = useRef<{ x: number; y: number } | null>(null);
-  const smoothRef      = useRef<{ x: number; y: number } | null>(null);
-  const gazeTargetRef  = useRef<string | null>(null);
-  const gazePosRef     = useRef<{ x: number; y: number } | null>(null);
+  const rawRef        = useRef<{ x: number; y: number } | null>(null);
+  const smoothRef     = useRef<{ x: number; y: number } | null>(null);
+  const gazeTargetRef = useRef<string | null>(null);
+  const gazePosRef    = useRef<{ x: number; y: number } | null>(null);
 
   // RAF loop — runs only when gazeEnabled
   useEffect(() => {
@@ -75,17 +123,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         }
         const { x, y } = smoothRef.current;
 
-        // Update cursor via direct DOM style to avoid React re-render on every frame
         const cursorEl = document.getElementById('sameyba-gaze-cursor');
         if (cursorEl) {
           cursorEl.style.transform = `translate(${x - 14}px, ${y - 14}px)`;
-          cursorEl.style.opacity = '1';
+          cursorEl.style.opacity   = '1';
         }
 
         gazePosRef.current = { x, y };
         setGazePos({ x, y });
 
-        // Hit-test — find the deepest element with data-gaze-id
         const el     = document.elementFromPoint(x, y);
         const target = el?.closest('[data-gaze-id]') as HTMLElement | null;
         const id     = target?.dataset.gazeId ?? null;
@@ -101,28 +147,77 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     return () => { running = false; };
   }, [gazeEnabled]);
 
-  // Request camera permission and start WebGazer
+  // ── Request camera permission and start WebGazer ────────────────────────────
   const requestCamera = useCallback(async () => {
     if (permissionState === 'requesting' || permissionState === 'granted') return;
     setPermissionState('requesting');
+    setErrorLabel(null);
 
-    // Wait up to 10 s for the CDN script to load
-    let attempts = 0;
-    while (!window.webgazer && attempts < 100) {
-      await new Promise(r => setTimeout(r, 100));
-      attempts++;
-    }
+    // ── 0. Environment diagnostics ──────────────────────────────────────────
+    console.group('[Sameyba/Gaze] Camera initialisation started');
+    console.log('navigator.mediaDevices       :', navigator.mediaDevices ?? 'UNDEFINED');
+    console.log('getUserMedia available       :', typeof navigator.mediaDevices?.getUserMedia);
+    console.log('window.webgazer at start     :', window.webgazer ? 'loaded' : 'not yet loaded');
+    console.log('location.protocol            :', location.protocol);
+    console.log('userAgent                    :', navigator.userAgent);
 
-    if (!window.webgazer) {
+    // ── 1. Check mediaDevices API support ───────────────────────────────────
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      const label = 'المتصفح لا يدعم الوصول إلى الكاميرا — جرّب Chrome أو Safari الحديث';
+      console.error('[Sameyba/Gaze] navigator.mediaDevices not available');
+      console.groupEnd();
+      setErrorLabel(label);
       setPermissionState('denied');
       return;
     }
 
+    // ── 2. Probe getUserMedia to verify permission ───────────────────────────
+    //    This isolates camera permission errors from WebGazer init errors.
+    let probeStream: MediaStream | null = null;
     try {
-      // Non-null assertion safe: we checked window.webgazer above
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      console.log('[Sameyba/Gaze] Probing getUserMedia({ video: true })...');
+      probeStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      console.log('[Sameyba/Gaze] getUserMedia ✓  stream id:', probeStream.id,
+        '| tracks:', probeStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(', '));
+    } catch (err: unknown) {
+      const gaze = classifyGetUserMediaError(err);
+      console.error('[Sameyba/Gaze] getUserMedia ✗  kind:', gaze.kind, '| detail:', gaze.detail, err);
+      console.groupEnd();
+      // Only set errorLabel for non-permission-denied errors;
+      // the banner already has a fixed label for the denied state.
+      setErrorLabel(gaze.kind === 'permission-denied' ? null : gaze.label);
+      setPermissionState('denied');
+      return;
+    }
+
+    // ── 3. Check WebGazer CDN script (wait up to 10 s) ──────────────────────
+    let attempts = 0;
+    while (!window.webgazer && attempts < 100) {
+      await new Promise<void>(r => setTimeout(r, 100));
+      attempts++;
+    }
+    console.log('[Sameyba/Gaze] webgazer script:', window.webgazer ? '✓ loaded' : '✗ NOT loaded',
+      `(waited ${attempts * 100} ms)`);
+
+    if (!window.webgazer) {
+      // Camera works fine — WebGazer CDN didn't load
+      probeStream.getTracks().forEach(t => t.stop());
+      const label = 'تم تشغيل الكاميرا ولكن تعذر تحميل نظام تتبع العين — تحقق من اتصال الإنترنت';
+      console.error('[Sameyba/Gaze] WebGazer script missing after 10 s');
+      console.groupEnd();
+      setErrorLabel(label);
+      setPermissionState('denied');
+      return;
+    }
+
+    // ── 4. Release probe stream — WebGazer will open its own ────────────────
+    probeStream.getTracks().forEach(t => t.stop());
+    console.log('[Sameyba/Gaze] Probe stream stopped; pausing 250 ms before wg.begin()...');
+    await new Promise<void>(r => setTimeout(r, 250));
+
+    // ── 5. Initialise WebGazer ───────────────────────────────────────────────
+    try {
       const wg = window.webgazer!;
-      // Avoid method chaining — return types include undefined and break the chain
       wg.setGazeListener((data) => {
         if (data) rawRef.current = { x: data.x, y: data.y };
       });
@@ -131,18 +226,29 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       wg.showFaceOverlay?.(false);
       wg.showFaceFeedbackBox?.(false);
 
-      await wg.begin();
+      console.log('[Sameyba/Gaze] Calling wg.begin()...');
+      const result = await wg.begin();
+      console.log('[Sameyba/Gaze] wg.begin() ✓  resolved with:', result);
+
       setPermissionState('granted');
       setGazeEnabled(true);
-    } catch {
+      console.log('[Sameyba/Gaze] Eye tracking active ✓');
+    } catch (err: unknown) {
+      const e = err as Error;
+      // At this point getUserMedia succeeded, so this is a WebGazer-internal failure.
+      const label = `تم تشغيل الكاميرا ولكن تعذر تشغيل تتبع العين. (${e?.name ?? ''}: ${e?.message ?? String(err)})`;
+      console.error('[Sameyba/Gaze] wg.begin() ✗ ', e?.name, e?.message, err);
+      setErrorLabel(label);
       setPermissionState('denied');
     }
+
+    console.groupEnd();
   }, [permissionState]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (gazeEnabled) { try { window.webgazer?.end(); } catch {} }
+      if (gazeEnabled) { try { window.webgazer?.end(); } catch { /* ignore */ } }
     };
   }, [gazeEnabled]);
 
@@ -157,10 +263,8 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           aria-hidden
           style={{
             position: 'fixed',
-            top: 0,
-            left: 0,
-            width: 28,
-            height: 28,
+            top: 0, left: 0,
+            width: 28, height: 28,
             borderRadius: '50%',
             background: 'rgba(0,122,255,0.22)',
             border: '2.5px solid rgba(0,122,255,0.80)',
@@ -176,7 +280,14 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Camera permission / status banner */}
-      {createPortal(<CameraPermissionBanner permissionState={permissionState} requestCamera={requestCamera} />, document.body)}
+      {createPortal(
+        <CameraPermissionBanner
+          permissionState={permissionState}
+          errorLabel={errorLabel}
+          requestCamera={requestCamera}
+        />,
+        document.body,
+      )}
     </GazeContext.Provider>
   );
 }
@@ -184,12 +295,23 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 // ── CameraPermissionBanner ────────────────────────────────────────────────────
 function CameraPermissionBanner({
   permissionState,
+  errorLabel,
   requestCamera,
 }: {
   permissionState: PermissionState;
+  errorLabel: string | null;
   requestCamera: () => void;
 }) {
   const visible = permissionState !== 'granted';
+
+  // Compose the display label
+  const displayLabel =
+    permissionState === 'denied'
+      // Use specific error if available, fall back to generic "denied" text
+      ? (errorLabel ?? 'تم رفض الكاميرا — يعمل التطبيق بالفأرة')
+      : permissionState === 'requesting'
+      ? 'جارٍ تفعيل تتبع العيون…'
+      : 'فعّل تتبع العيون بالكاميرا';
 
   return (
     <AnimatePresence>
@@ -220,22 +342,25 @@ function CameraPermissionBanner({
             direction: 'rtl',
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
             whiteSpace: 'nowrap',
+            maxWidth: 'min(92vw, 640px)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
-          {/* Eye icon SVG (no lucide dependency here) */}
+          {/* Eye icon */}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ color: '#007AFF', flexShrink: 0 }}>
+            style={{ color: permissionState === 'denied' ? '#FF3B30' : '#007AFF', flexShrink: 0 }}>
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
             <circle cx="12" cy="12" r="3" />
           </svg>
 
-          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1C1C1E' }}>
-            {permissionState === 'denied'
-              ? 'تم رفض الكاميرا — يعمل التطبيق بالفأرة'
-              : permissionState === 'requesting'
-              ? 'جارٍ تفعيل تتبع العيون…'
-              : 'فعّل تتبع العيون بالكاميرا'}
+          <span style={{
+            fontSize: '0.88rem', fontWeight: 600,
+            color: permissionState === 'denied' ? '#C0392B' : '#1C1C1E',
+            overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {displayLabel}
           </span>
 
           {permissionState === 'idle' && (
