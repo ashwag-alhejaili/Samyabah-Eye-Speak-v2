@@ -1688,18 +1688,19 @@ function Home() {
   const menuItems: {
     icon: string;
     label: string;
+    sublabel?: string;
     action?: () => void;
     badge?: string;
     disabled?: boolean;
   }[] = [
     {
       icon: '👨‍⚕️',
-      label: 'لوحة مقدم الرعاية',
+      label: 'لوحة المشرف',
       action: () => { setMenuOpen(false); navigate('/dashboard'); },
     },
     {
       icon: '🎯',
-      label: 'إعادة معايرة تتبع العين',
+      label: 'إعادة المعايرة',
       action: () => { setMenuOpen(false); navigate('/settings'); },
     },
     {
@@ -1710,8 +1711,13 @@ function Home() {
     {
       icon: '🌐',
       label: 'اللغة',
-      badge: 'قريبًا',
+      sublabel: 'العربية ✓  ·  English (Coming Soon)',
       disabled: true,
+    },
+    {
+      icon: '✏️',
+      label: 'تعديل بيانات المريض',
+      action: () => { setMenuOpen(false); navigate('/settings'); },
     },
   ];
 
@@ -1840,14 +1846,25 @@ function Home() {
                 <span style={{ fontSize: '1.15rem', flexShrink: 0, lineHeight: 1 }}>
                   {item.icon}
                 </span>
-                <span style={{
-                  flex: 1,
-                  fontSize: '0.9rem',
-                  fontWeight: 600,
-                  color: '#1C1C1E',
-                  letterSpacing: '-0.01em',
-                }}>
-                  {item.label}
+                <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    color: '#1C1C1E',
+                    letterSpacing: '-0.01em',
+                  }}>
+                    {item.label}
+                  </span>
+                  {item.sublabel && (
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 500,
+                      color: '#AEAEB2',
+                      letterSpacing: '0.01em',
+                    }}>
+                      {item.sublabel}
+                    </span>
+                  )}
                 </span>
                 {item.badge && (
                   <span style={{
