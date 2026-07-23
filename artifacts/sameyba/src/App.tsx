@@ -1684,6 +1684,7 @@ function SuccessDialog({ visible }: { visible: boolean }) {
 function Home() {
   const [, navigate] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { recalibrate } = useGazeContext();
 
   const menuItems: {
     icon: string;
@@ -1701,7 +1702,7 @@ function Home() {
     {
       icon: '🎯',
       label: 'إعادة المعايرة',
-      action: () => { setMenuOpen(false); navigate('/settings'); },
+      action: () => { setMenuOpen(false); recalibrate(); },
     },
     {
       icon: '🔊',
