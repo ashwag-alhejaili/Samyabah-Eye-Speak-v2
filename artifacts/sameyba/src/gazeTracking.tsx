@@ -73,6 +73,8 @@ export type GazeContextShape = {
   calibrated:      boolean;
   /** current state of the gaze system */
   gazeStatus:      GazeStatus;
+  /** restart the 9-point calibration flow */
+  recalibrate:     () => void;
 };
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ export const GazeContext = createContext<GazeContextShape>({
   requestCamera:   () => {},
   calibrated:      false,
   gazeStatus:      'idle',
+  recalibrate:     () => {},
 });
 export function useGazeContext() { return useContext(GazeContext); }
 
@@ -115,10 +118,16 @@ const CAL_POINTS: [number, number][] = [
 const CLICKS_PER_POINT = 3;
 
 // ── Filter / smoothing constants ──────────────────────────────────────────────
-const EMA_ALPHA      = 0.15;   // weight on raw (higher = more responsive, less smooth)
-const JUMP_THRESHOLD = 180;    // px — discard raw jumps larger than this
-const STAB_RADIUS    = 70;     // px — must stay inside this radius…
-const STAB_MS        = 1200;   // ms  — …for this long before dwell begins
+/** 0.30 weight on raw → responsive but still smooth */
+const EMA_ALPHA             = 0.30;
+/** Rolling window for dwell-vote sampling */
+const DWELL_WINDOW_MS       = 2000;
+/** Fraction of window samples that must be on the same card */
+const DWELL_THRESHOLD       = 0.70;
+/** Gaps shorter than this (ms) are forgiven — counts as still on card */
+const DEPARTURE_TOLERANCE_MS = 200;
+/** Minimum window age (ms) before a vote can fire — avoids false positives */
+const DWELL_MIN_WINDOW_MS   = 600;
 
 // ── GazeProvider ──────────────────────────────────────────────────────────────
 export function GazeProvider({ children }: { children: React.ReactNode }) {
@@ -142,18 +151,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const smoothRef       = useRef<{ x: number; y: number } | null>(null);
   const gazeTargetRef   = useRef<string | null>(null);
   const gazeHoverRef    = useRef<string | null>(null);
-  // Stability tracking
-  const stabCenterRef   = useRef<{ x: number; y: number } | null>(null);
-  const stabStartRef    = useRef<number>(0);
-  const calibratingRef  = useRef(false);
-  calibratingRef.current = calibrating;
+  // Sample buffer for dwell voting
+  type GazeSample = { id: string | null; ts: number };
+  const sampleBufRef    = useRef<GazeSample[]>([]);
 
   // ── RAF loop ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!gazeEnabled) return;
     let running = true;
 
-    function loop(now: number) {
+    function loop() {
       if (!running) return;
 
       const raw = rawRef.current;
@@ -164,70 +171,83 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           !isNaN(raw.x) && !isNaN(raw.y) &&
           raw.x >= 0 && raw.x <= vw && raw.y >= 0 && raw.y <= vh
         ) {
-          // 2. Jump filter: discard if moved > JUMP_THRESHOLD from previous smooth
+          // 2. Exponential moving average (0.70 old + 0.30 raw — responsive)
           const prev = smoothRef.current;
-          const dist = prev
-            ? Math.hypot(raw.x - prev.x, raw.y - prev.y)
-            : 0;
+          if (!prev) {
+            smoothRef.current = { x: raw.x, y: raw.y };
+          } else {
+            smoothRef.current = {
+              x: prev.x * (1 - EMA_ALPHA) + raw.x * EMA_ALPHA,
+              y: prev.y * (1 - EMA_ALPHA) + raw.y * EMA_ALPHA,
+            };
+          }
 
-          if (!prev || dist <= JUMP_THRESHOLD) {
-            // 3. Exponential moving average (0.85 old + 0.15 raw)
-            if (!prev) {
-              smoothRef.current = { x: raw.x, y: raw.y };
-            } else {
-              smoothRef.current = {
-                x: prev.x * (1 - EMA_ALPHA) + raw.x * EMA_ALPHA,
-                y: prev.y * (1 - EMA_ALPHA) + raw.y * EMA_ALPHA,
-              };
-            }
+          const { x, y } = smoothRef.current;
 
-            const { x, y } = smoothRef.current;
+          // 3. Move cursor immediately — no stability lock
+          const cursorEl = document.getElementById('sameyba-gaze-cursor');
+          if (cursorEl) {
+            cursorEl.style.transform = `translate3d(${x - 14}px, ${y - 14}px, 0)`;
+            cursorEl.style.opacity   = '1';
+          }
 
-            // 4. Move cursor with GPU-accelerated translate3d
-            const cursorEl = document.getElementById('sameyba-gaze-cursor');
-            if (cursorEl) {
-              cursorEl.style.transform = `translate3d(${x - 14}px, ${y - 14}px, 0)`;
-              cursorEl.style.opacity   = '1';
-            }
+          setGazePos({ x, y });
 
-            setGazePos({ x, y });
+          // 4. Hit-test every frame → immediate hover indicator
+          const hoverEl = document.elementFromPoint(x, y);
+          const hovTgt  = hoverEl?.closest('[data-gaze-id]') as HTMLElement | null;
+          const hitId   = hovTgt?.dataset.gazeId ?? null;
+          if (hitId !== gazeHoverRef.current) {
+            gazeHoverRef.current = hitId;
+            setGazeHoverId(hitId);
+          }
 
-            // 5. Pre-stability hover (every frame — for status indicator)
-            const hoverEl  = document.elementFromPoint(x, y);
-            const hovTgt   = hoverEl?.closest('[data-gaze-id]') as HTMLElement | null;
-            const hovId    = hovTgt?.dataset.gazeId ?? null;
-            if (hovId !== gazeHoverRef.current) {
-              gazeHoverRef.current = hovId;
-              setGazeHoverId(hovId);
-            }
+          // 5. Sample-based dwell voting
+          //    Rolling 2s window; 70% of samples must be on the same card.
+          //    Gaps < 200ms are forgiven (departure tolerance).
+          const now_ms = performance.now();
+          const buf = sampleBufRef.current;
+          buf.push({ id: hitId, ts: now_ms });
 
-            // 6. Stability tracking — only update gazeTargetId after STAB_MS
-            if (!calibratingRef.current) {
-              const sc = stabCenterRef.current;
-              const dFromCenter = sc ? Math.hypot(x - sc.x, y - sc.y) : Infinity;
+          // Prune entries older than DWELL_WINDOW_MS
+          const cutoff = now_ms - DWELL_WINDOW_MS;
+          let pruneIdx = 0;
+          while (pruneIdx < buf.length && buf[pruneIdx].ts < cutoff) pruneIdx++;
+          if (pruneIdx > 0) buf.splice(0, pruneIdx);
 
-              if (!sc || dFromCenter > STAB_RADIUS) {
-                // Moved outside stability radius — reset
-                stabCenterRef.current = { x, y };
-                stabStartRef.current  = now;
-                // Clear gazeTargetId while re-stabilising
-                if (gazeTargetRef.current !== null) {
-                  gazeTargetRef.current = null;
-                  setGazeTargetId(null);
-                }
-              } else if (now - stabStartRef.current >= STAB_MS) {
-                // Stable for long enough — hit-test at STABLE centre
-                const stEl   = document.elementFromPoint(sc.x, sc.y);
-                const stTgt  = stEl?.closest('[data-gaze-id]') as HTMLElement | null;
-                const stId   = stTgt?.dataset.gazeId ?? null;
-                if (stId !== gazeTargetRef.current) {
-                  gazeTargetRef.current = stId;
-                  setGazeTargetId(stId);
-                }
+          // Only vote after the window has accumulated enough data
+          const windowAge = buf.length > 0 ? now_ms - buf[0].ts : 0;
+          if (windowAge >= DWELL_MIN_WINDOW_MS) {
+            // Apply departure tolerance: nulls within 200ms after a non-null
+            // inherit that id (brief glances away are forgiven)
+            const counts: Record<string, number> = {};
+            let lastNonNull: { id: string; ts: number } | null = null;
+            for (const s of buf) {
+              if (s.id !== null) {
+                counts[s.id] = (counts[s.id] ?? 0) + 1;
+                lastNonNull = { id: s.id, ts: s.ts };
+              } else if (
+                lastNonNull &&
+                s.ts - lastNonNull.ts <= DEPARTURE_TOLERANCE_MS
+              ) {
+                counts[lastNonNull.id] = (counts[lastNonNull.id] ?? 0) + 1;
               }
             }
+
+            const total = buf.length;
+            let newTargetId: string | null = null;
+            for (const [id, count] of Object.entries(counts)) {
+              if (count / total >= DWELL_THRESHOLD) {
+                newTargetId = id;
+                break;
+              }
+            }
+
+            if (newTargetId !== gazeTargetRef.current) {
+              gazeTargetRef.current = newTargetId;
+              setGazeTargetId(newTargetId);
+            }
           }
-          // else: jump too large — skip this frame
         }
       }
 
@@ -374,12 +394,28 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         setCalibrating(false);
         setCalibrated(true);
         setGazeEnabled(true);
-        // Reset stability so dwell doesn't fire immediately
-        stabCenterRef.current = null;
-        stabStartRef.current  = 0;
+        // Clear sample buffer so dwell doesn't fire immediately
+        sampleBufRef.current = [];
       }, 1800);
     }
   }, [calStep, calClicks]);
+
+  // ── recalibrate ───────────────────────────────────────────────────────────────
+  const recalibrate = useCallback(() => {
+    if (!gazeEnabled && permissionState !== 'granted') return;
+    // Pause gaze interaction, clear calibration data, restart calibration
+    setGazeEnabled(false);
+    setCalibrated(false);
+    setCalSuccess(false);
+    sampleBufRef.current = [];
+    smoothRef.current    = null;
+    rawRef.current       = null;
+    window.webgazer?.clearData();
+    setCalStep(0);
+    setCalClicks(0);
+    setCalibrating(true);
+    console.log('[Sameyba/Gaze] Recalibration started');
+  }, [gazeEnabled, permissionState]);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -400,7 +436,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   return (
     <GazeContext.Provider value={{
       gazeEnabled, gazePos, gazeTargetId, permissionState,
-      requestCamera, calibrated, gazeStatus,
+      requestCamera, calibrated, gazeStatus, recalibrate,
     }}>
       {children}
 
@@ -446,6 +482,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             <GazeStatusIndicator
               hovering={gazeHoverId !== null}
               dwellActive={gazeTargetId !== null}
+              onRecalibrate={recalibrate}
             />
           )}
         </AnimatePresence>,
@@ -545,8 +582,11 @@ function CalibrationOverlay({
               <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>
                 معايرة تتبع العين
               </p>
-              <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', margin: '0 0 18px' }}>
-                انظر إلى النقطة المضيئة ثم اضغط عليها ({step + 1}/9)
+              <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>
+                انظر إلى النقطة المضيئة ثم اضغط عليها مع الاستمرار في النظر إليها
+              </p>
+              <p style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.35)', margin: '0 0 18px' }}>
+                النقطة {step + 1} من {CAL_POINTS.length}
               </p>
               {/* Progress bar */}
               <div style={{
@@ -675,10 +715,11 @@ function FutureCalPoint() {
 
 // ── GazeStatusIndicator ───────────────────────────────────────────────────────
 function GazeStatusIndicator({
-  hovering, dwellActive,
+  hovering, dwellActive, onRecalibrate,
 }: {
   hovering: boolean;
   dwellActive: boolean;
+  onRecalibrate: () => void;
 }) {
   const label = dwellActive || hovering
     ? 'ثبّت نظرك للاختيار'
@@ -695,8 +736,8 @@ function GazeStatusIndicator({
       style={{
         position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
         zIndex: 999997,
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '7px 18px',
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '7px 10px 7px 18px',
         borderRadius: 999,
         background: 'rgba(15,15,25,0.75)',
         backdropFilter: 'blur(16px)',
@@ -704,7 +745,7 @@ function GazeStatusIndicator({
         border: '1px solid rgba(255,255,255,0.10)',
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
         direction: 'rtl',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
       }}
     >
       {/* Status dot */}
@@ -727,6 +768,41 @@ function GazeStatusIndicator({
       >
         {label}
       </motion.span>
+
+      {/* Recalibrate button */}
+      <button
+        onClick={onRecalibrate}
+        title="إعادة المعايرة"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '4px 10px',
+          borderRadius: 999,
+          background: 'rgba(255,255,255,0.10)',
+          border: '1px solid rgba(255,255,255,0.16)',
+          color: 'rgba(255,255,255,0.70)',
+          fontSize: '0.74rem', fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          flexShrink: 0,
+          transition: 'background 0.15s, color 0.15s',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)';
+          (e.currentTarget as HTMLButtonElement).style.color = '#fff';
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)';
+          (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.70)';
+        }}
+      >
+        {/* Refresh icon */}
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="1 4 1 10 7 10" />
+          <path d="M3.51 15a9 9 0 1 0 .49-3.5" />
+        </svg>
+        معايرة
+      </button>
     </motion.div>
   );
 }
