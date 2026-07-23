@@ -319,6 +319,51 @@ let _uid = 0;
 function uid() { return `ai-${Date.now()}-${++_uid}`; }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RobotIcon — branded SVG, no emoji, no purple/blue
+//   olive body · white face · gold accents · green eyes
+// ─────────────────────────────────────────────────────────────────────────────
+function RobotIcon({ size = 28 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      {/* Antenna stem */}
+      <line x1="16" y1="2.5" x2="16" y2="7" stroke="#C9A84C" strokeWidth="1.6" strokeLinecap="round" />
+      {/* Antenna tip */}
+      <circle cx="16" cy="1.5" r="1.5" fill="#C9A84C" />
+
+      {/* Body */}
+      <rect x="5" y="7.5" width="22" height="19" rx="5" fill="#5E7E35" />
+
+      {/* Face / screen */}
+      <rect x="8.5" y="11" width="15" height="10" rx="3" fill="white" opacity="0.93" />
+
+      {/* Eyes — warm olive green */}
+      <circle cx="12.5" cy="15.5" r="2" fill="#7BA043" />
+      <circle cx="19.5" cy="15.5" r="2" fill="#7BA043" />
+      {/* Eye shine */}
+      <circle cx="13.2" cy="14.8" r="0.65" fill="white" />
+      <circle cx="20.2" cy="14.8" r="0.65" fill="white" />
+
+      {/* Smile — gold */}
+      <path d="M12.5 19.5 Q16 22 19.5 19.5" stroke="#C9A84C" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+
+      {/* Ear bolts — gold */}
+      <rect x="2" y="13" width="3" height="5" rx="1.5" fill="#C9A84C" />
+      <rect x="27" y="13" width="3" height="5" rx="1.5" fill="#C9A84C" />
+
+      {/* Chest detail — subtle gold line */}
+      <line x1="11.5" y1="24.5" x2="20.5" y2="24.5" stroke="#C9A84C" strokeWidth="1" strokeLinecap="round" opacity="0.65" />
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ChatBubble component
 // ─────────────────────────────────────────────────────────────────────────────
 function ChatBubble({ msg }: { msg: ChatMessage }) {
@@ -338,12 +383,12 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
       {isAI && (
         <div style={{
           width: 30, height: 30, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #5E7E35 0%, #4F6C2D 100%)',
+          background: 'linear-gradient(135deg, #6D8D45 0%, #5E7E35 100%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.85rem', flexShrink: 0, marginLeft: 8, alignSelf: 'flex-end',
-          boxShadow: '0 2px 8px rgba(94,126,53,0.30)',
+          flexShrink: 0, marginLeft: 8, alignSelf: 'flex-end',
+          boxShadow: '0 2px 8px rgba(94,126,53,0.25)',
         }}>
-          🤖
+          <RobotIcon size={17} />
         </div>
       )}
       <div style={{
@@ -354,7 +399,7 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
           : '20px 6px 20px 20px', // User: flat on bottom-right (end side in RTL)
         background: isAI
           ? 'rgba(245,247,242,0.97)'
-          : 'linear-gradient(135deg, #5E7E35 0%, #4F6C2D 100%)',
+          : 'linear-gradient(135deg, #5E7E35 0%, #4F8030 100%)',
         color: isAI ? '#1C1C1E' : '#fff',
         boxShadow: isAI
           ? '0 2px 12px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.8)'
@@ -451,13 +496,13 @@ function NavButton({ label, path, onNavigate }: { label: string; path: string; o
     >
       <motion.button
         onClick={() => onNavigate(path)}
-        whileHover={{ scale: 1.03, boxShadow: '0 6px 22px rgba(94,126,53,0.42)' }}
+        whileHover={{ scale: 1.03, boxShadow: '0 6px 22px rgba(94,126,53,0.35)' }}
         whileTap={{ scale: 0.97 }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 20px',
           borderRadius: 999,
-          background: 'linear-gradient(135deg, #5E7E35 0%, #4F6C2D 100%)',
+          background: 'linear-gradient(135deg, #6D8D45 0%, #5E7E35 100%)',
           color: 'white',
           border: 'none',
           fontSize: '0.9rem',
@@ -598,7 +643,7 @@ function AIAssistantModal({
           >
             {/* Olive green header — full-width branded strip */}
             <div style={{
-              background: 'linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)',
+              background: 'linear-gradient(135deg, #5E7E35 0%, #4F8030 100%)',
               borderRadius: '28px 28px 0 0',
               padding: '14px 20px 16px',
               display: 'flex',
@@ -620,11 +665,10 @@ function AIAssistantModal({
                 background: 'rgba(255,255,255,0.15)',
                 border: '1.5px solid rgba(201,168,76,0.55)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '1.25rem',
                 flexShrink: 0,
                 boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
               }}>
-                🤖
+                <RobotIcon size={24} />
               </div>
 
               <div style={{ flex: 1 }}>
@@ -754,19 +798,18 @@ export function AIAssistantButton() {
           width: 64,
           height: 64,
           borderRadius: '50%',
-          background: 'linear-gradient(145deg, #5E7E35 0%, #4A6828 100%)',
+          background: 'linear-gradient(145deg, #6D8D45 0%, #5E7E35 100%)',
           border: '1.5px solid rgba(201,168,76,0.40)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '1.75rem',
-          boxShadow: '0 8px 28px rgba(94,126,53,0.45), 0 2px 8px rgba(0,0,0,0.14)',
+          boxShadow: '0 8px 24px rgba(94,126,53,0.35), 0 2px 6px rgba(0,0,0,0.10)',
           /* Hardware-accelerate the float so it never flickers */
           willChange: 'transform',
         }}
       >
-        🤖
+        <RobotIcon size={32} />
         {/* Unread badge */}
         {hasUnread && (
           <motion.span
