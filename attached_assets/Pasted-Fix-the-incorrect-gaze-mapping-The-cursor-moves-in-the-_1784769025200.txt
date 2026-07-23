@@ -1,0 +1,53 @@
+Fix the incorrect gaze mapping. The cursor moves in the wrong direction; for example, looking at the top sends it toward the bottom-left.
+
+I inspected gazeTracking.tsx and found calibration issues.
+
+Required fixes:
+
+1. Remove the duplicate click handler.
+Currently the active calibration point receives onClick both on the parent wrapper and inside ActiveCalPoint, so one physical click may call handleCalClick twice.
+There must be exactly ONE click handler per calibration point.
+
+2. Prevent event bubbling:
+- Accept React.MouseEvent in the calibration handler.
+- call event.stopPropagation()
+- ensure one click records exactly one sample.
+
+3. Before EVERY calibration, including the first calibration:
+- call webgazer.clearData()
+- clear any stored WebGazer regression/calibration data
+- reset all local smoothing and sample refs
+This is required because corrupted calibration data may persist between sessions.
+
+4. Record the real clicked location:
+- pass the click event to the handler
+- use event.clientX and event.clientY in:
+  webgazer.recordScreenPosition(event.clientX, event.clientY, 'click')
+- do not recalculate the point using window.innerWidth/window.innerHeight.
+
+5. Wait for valid WebGazer predictions before allowing calibration:
+- after wg.begin(), wait until the gaze listener has produced at least 10 non-null samples
+- then show the calibration overlay
+- show "جاري تجهيز تتبع العين..." while waiting.
+
+6. Use 9 points with 2 clicks per point.
+Instruction:
+"انظر مباشرة إلى النقطة ثم اضغط عليها مرتين دون تحريك رأسك."
+
+7. After calibration:
+- reset rawRef, smoothRef and dwell sample buffers
+- do not reuse coordinates collected during calibration.
+
+8. Add a temporary calibration verification screen:
+- show 5 test targets: center, top, bottom, left, right
+- ask the user to look at each target
+- display the measured gaze dot
+- provide two buttons:
+  "المعايرة جيدة"
+  "إعادة المعايرة"
+- do not enter the app until the user confirms or recalibrates.
+
+9. Keep smoothing at 0.70 previous / 0.30 raw.
+Do not add stronger smoothing or invert X/Y manually.
+
+10. Run TypeScript checks and confirm that one physical click creates only one calibration record.

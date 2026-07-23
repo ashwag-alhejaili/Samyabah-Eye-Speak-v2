@@ -61,7 +61,7 @@ function installMediaPipeFetchPatch() {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type PermissionState = 'idle' | 'requesting' | 'granted' | 'denied';
-export type GazeStatus = 'idle' | 'calibrating' | 'ready' | 'dwelling';
+export type GazeStatus = 'idle' | 'preparing' | 'calibrating' | 'verifying' | 'ready' | 'dwelling';
 
 export type GazeContextShape = {
   gazeEnabled:     boolean;
@@ -115,7 +115,7 @@ const CAL_POINTS: [number, number][] = [
   [0.10, 0.50], [0.50, 0.50], [0.90, 0.50],
   [0.10, 0.88], [0.50, 0.88], [0.90, 0.88],
 ];
-const CLICKS_PER_POINT = 3;
+const CLICKS_PER_POINT = 2;
 
 // ── Filter / smoothing constants ──────────────────────────────────────────────
 /** 0.30 weight on raw → responsive but still smooth */
@@ -143,8 +143,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const [calibrating,   setCalibrating]   = useState(false);
   const [calibrated,    setCalibrated]    = useState(false);
   const [calStep,       setCalStep]       = useState(0);   // 0-8
-  const [calClicks,     setCalClicks]     = useState(0);   // 0-2
+  const [calClicks,     setCalClicks]     = useState(0);   // 0-1
   const [calSuccess,    setCalSuccess]    = useState(false);
+  const [preparingGaze, setPreparingGaze] = useState(false);
+  const [verifying,     setVerifying]     = useState(false);
 
   // Refs — used inside rAF to avoid stale closures
   const rawRef          = useRef<{ x: number; y: number } | null>(null);
@@ -344,8 +346,44 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       const result = await wg.begin();
       console.log('[Sameyba/Gaze] wg.begin() ✓ result:', result);
 
-      // Permission granted — launch calibration before enabling gaze interaction
       setPermissionState('granted');
+
+      // 5a. Wait for ≥10 non-null gaze predictions before calibrating.
+      //     This warms up MediaPipe's face-mesh so calibration dots get real data.
+      setPreparingGaze(true);
+      console.log('[Sameyba/Gaze] Waiting for 10 warm-up samples...');
+      await new Promise<void>((resolve) => {
+        let resolved = false;
+        let count = 0;
+        const done = () => {
+          if (!resolved) {
+            resolved = true;
+            // Restore the permanent gaze listener
+            wg.setGazeListener((d) => {
+              if (d) rawRef.current = { x: d.x, y: d.y };
+            });
+            resolve();
+          }
+        };
+        wg.setGazeListener((data) => {
+          if (data) {
+            rawRef.current = { x: data.x, y: data.y };
+            count++;
+            if (count >= 10) done();
+          }
+        });
+        setTimeout(done, 5000); // 5 s fallback
+      });
+
+      // 5b. Discard warm-up data so it doesn't corrupt the regression model.
+      console.log('[Sameyba/Gaze] Warm-up done — clearing data before calibration');
+      wg.clearData?.();
+      rawRef.current    = null;
+      smoothRef.current = null;
+      sampleBufRef.current = [];
+      setPreparingGaze(false);
+
+      // 5c. Launch calibration
       setCalibrating(true);
       setCalStep(0);
       setCalClicks(0);
@@ -362,17 +400,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   }, [permissionState]);
 
   // ── Calibration click handler ─────────────────────────────────────────────────
-  const handleCalClick = useCallback(() => {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const [colFrac, rowFrac] = CAL_POINTS[calStep];
-    const px = Math.round(colFrac * vw);
-    const py = Math.round(rowFrac * vh);
+  const handleCalClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
 
-    // Register click with WebGazer's regression model
+    // Record the ACTUAL pixel the user clicked — not a recomputed centre.
     if (window.webgazer?.recordScreenPosition) {
-      window.webgazer.recordScreenPosition(px, py, 'click');
-      console.log(`[Sameyba/Gaze] Cal point ${calStep + 1}/9 click ${calClicks + 1}/3 at (${px}, ${py})`);
+      window.webgazer.recordScreenPosition(e.clientX, e.clientY, 'click');
+      console.log(
+        `[Sameyba/Gaze] Cal ${calStep + 1}/9 click ${calClicks + 1}/${CLICKS_PER_POINT}` +
+        ` at (${e.clientX}, ${e.clientY})`,
+      );
     }
 
     const nextClicks = calClicks + 1;
@@ -387,25 +424,28 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       setCalStep(nextStep);
       setCalClicks(0);
     } else {
-      // All 9 points done
+      // All 9 points done — show success, then open verification screen
       console.log('[Sameyba/Gaze] Calibration complete ✓');
       setCalSuccess(true);
       setTimeout(() => {
         setCalibrating(false);
-        setCalibrated(true);
-        setGazeEnabled(true);
-        // Clear sample buffer so dwell doesn't fire immediately
+        // Reset all prediction data so calibration coords don't bleed into normal use
+        rawRef.current       = null;
+        smoothRef.current    = null;
         sampleBufRef.current = [];
+        // Enable gaze so cursor moves during verification
+        setGazeEnabled(true);
+        setVerifying(true);
       }, 1800);
     }
   }, [calStep, calClicks]);
 
   // ── recalibrate ───────────────────────────────────────────────────────────────
   const recalibrate = useCallback(() => {
-    if (!gazeEnabled && permissionState !== 'granted') return;
-    // Pause gaze interaction, clear calibration data, restart calibration
+    if (permissionState !== 'granted') return;
     setGazeEnabled(false);
     setCalibrated(false);
+    setVerifying(false);
     setCalSuccess(false);
     sampleBufRef.current = [];
     smoothRef.current    = null;
@@ -415,7 +455,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setCalClicks(0);
     setCalibrating(true);
     console.log('[Sameyba/Gaze] Recalibration started');
-  }, [gazeEnabled, permissionState]);
+  }, [permissionState]);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -425,8 +465,12 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   }, [gazeEnabled]);
 
   // ── Derived status ────────────────────────────────────────────────────────────
-  const gazeStatus: GazeStatus = calibrating
+  const gazeStatus: GazeStatus = preparingGaze
+    ? 'preparing'
+    : calibrating
     ? 'calibrating'
+    : verifying
+    ? 'verifying'
     : !calibrated
     ? 'idle'
     : gazeTargetId !== null
@@ -440,7 +484,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     }}>
       {children}
 
-      {/* Gaze cursor */}
+      {/* Gaze cursor — hidden during verification (dedicated red dot used instead) */}
       {createPortal(
         <div
           id="sameyba-gaze-cursor"
@@ -453,10 +497,18 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             boxShadow: '0 0 14px rgba(0,122,255,0.50), 0 0 28px rgba(0,122,255,0.20)',
             pointerEvents: 'none', zIndex: 999998, opacity: 0,
             willChange: 'transform',
-            display: gazeEnabled ? 'block' : 'none',
+            display: (gazeEnabled && !verifying) ? 'block' : 'none',
             transition: 'opacity 0.15s',
           }}
         />,
+        document.body,
+      )}
+
+      {/* "Preparing gaze" banner */}
+      {createPortal(
+        <AnimatePresence>
+          {preparingGaze && <GazePreparingOverlay />}
+        </AnimatePresence>,
         document.body,
       )}
 
@@ -469,6 +521,24 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               clicks={calClicks}
               success={calSuccess}
               onPointClick={handleCalClick}
+            />
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+
+      {/* Calibration verification screen */}
+      {createPortal(
+        <AnimatePresence>
+          {verifying && (
+            <CalibrationVerification
+              gazePos={gazePos}
+              onConfirm={() => {
+                sampleBufRef.current = [];
+                setCalibrated(true);
+                setVerifying(false);
+              }}
+              onRecalibrate={recalibrate}
             />
           )}
         </AnimatePresence>,
@@ -509,7 +579,7 @@ function CalibrationOverlay({
   step: number;
   clicks: number;
   success: boolean;
-  onPointClick: () => void;
+  onPointClick: (e: React.MouseEvent) => void;
 }) {
   const total   = CAL_POINTS.length * CLICKS_PER_POINT;
   const done    = step * CLICKS_PER_POINT + clicks;
@@ -583,7 +653,7 @@ function CalibrationOverlay({
                 معايرة تتبع العين
               </p>
               <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>
-                انظر إلى النقطة المضيئة ثم اضغط عليها مع الاستمرار في النظر إليها
+                انظر مباشرة إلى النقطة ثم اضغط عليها مرتين دون تحريك رأسك
               </p>
               <p style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.35)', margin: '0 0 18px' }}>
                 النقطة {step + 1} من {CAL_POINTS.length}
@@ -616,7 +686,6 @@ function CalibrationOverlay({
               return (
                 <div
                   key={i}
-                  onClick={isActive ? onPointClick : undefined}
                   style={{
                     position: 'absolute',
                     left: x, top: y,
@@ -642,7 +711,7 @@ function CalibrationOverlay({
   );
 }
 
-function ActiveCalPoint({ clicks, onTap }: { clicks: number; onTap: () => void }) {
+function ActiveCalPoint({ clicks, onTap }: { clicks: number; onTap: (e: React.MouseEvent) => void }) {
   return (
     <div
       onClick={onTap}
@@ -710,6 +779,171 @@ function FutureCalPoint() {
       background: 'rgba(255,255,255,0.08)',
       border: '1.5px solid rgba(255,255,255,0.18)',
     }} />
+  );
+}
+
+// ── GazePreparingOverlay ──────────────────────────────────────────────────────
+function GazePreparingOverlay() {
+  return (
+    <motion.div
+      key="gaze-preparing"
+      initial={{ opacity: 0, y: -60 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -60 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 1000001,
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 20px', borderRadius: 999,
+        background: 'rgba(255,255,255,0.92)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.13), inset 0 1px 0 rgba(255,255,255,1)',
+        border: '1px solid rgba(255,255,255,0.95)',
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        direction: 'rtl',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div style={{
+        width: 16, height: 16, borderRadius: '50%',
+        border: '2px solid rgba(0,122,255,0.25)', borderTopColor: '#007AFF',
+        animation: 'sameyba-spin 0.75s linear infinite', flexShrink: 0,
+      }} />
+      <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1C1C1E' }}>
+        جاري تجهيز تتبع العين…
+      </span>
+    </motion.div>
+  );
+}
+
+// ── CalibrationVerification ───────────────────────────────────────────────────
+const VERIFY_TARGETS = [
+  { id: 'center', label: 'المركز', x: '50%', y: '50%' },
+  { id: 'top',    label: 'الأعلى', x: '50%', y: '10%' },
+  { id: 'bottom', label: 'الأسفل', x: '50%', y: '90%' },
+  { id: 'left',   label: 'اليسار', x: '10%', y: '50%' },
+  { id: 'right',  label: 'اليمين', x: '90%', y: '50%' },
+] as const;
+
+function CalibrationVerification({
+  gazePos, onConfirm, onRecalibrate,
+}: {
+  gazePos: { x: number; y: number } | null;
+  onConfirm: () => void;
+  onRecalibrate: () => void;
+}) {
+  return (
+    <motion.div
+      key="cal-verify"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000000,
+        background: 'rgba(5, 5, 20, 0.92)',
+        backdropFilter: 'blur(6px)',
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        direction: 'rtl',
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        position: 'absolute', top: '5%', left: 0, right: 0,
+        textAlign: 'center',
+      }}>
+        <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>
+          تحقق من المعايرة
+        </p>
+        <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', margin: 0 }}>
+          انظر إلى كل نقطة — هل يتبعها المؤشر الأحمر؟
+        </p>
+      </div>
+
+      {/* Test targets */}
+      {VERIFY_TARGETS.map(t => (
+        <div
+          key={t.id}
+          style={{
+            position: 'absolute',
+            left: t.x, top: t.y,
+            transform: 'translate(-50%, -50%)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+          }}
+        >
+          <div style={{
+            width: 46, height: 46, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.06)',
+            border: '2px solid rgba(255,255,255,0.40)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              width: 10, height: 10, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.85)',
+            }} />
+          </div>
+          <span style={{
+            fontSize: '0.72rem', color: 'rgba(255,255,255,0.40)',
+            fontWeight: 600, whiteSpace: 'nowrap',
+          }}>
+            {t.label}
+          </span>
+        </div>
+      ))}
+
+      {/* Live gaze dot (red) */}
+      {gazePos && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0, left: 0,
+            width: 22, height: 22, borderRadius: '50%',
+            background: 'rgba(255, 55, 55, 0.55)',
+            border: '2.5px solid rgba(255, 55, 55, 1)',
+            pointerEvents: 'none',
+            zIndex: 1000002,
+            transform: `translate3d(${gazePos.x - 11}px, ${gazePos.y - 11}px, 0)`,
+            willChange: 'transform',
+            boxShadow: '0 0 10px rgba(255,55,55,0.6)',
+          }}
+        />
+      )}
+
+      {/* Action buttons */}
+      <div style={{
+        position: 'absolute', bottom: '8%', left: 0, right: 0,
+        display: 'flex', justifyContent: 'center', gap: 12,
+      }}>
+        <button
+          onClick={onRecalibrate}
+          style={{
+            padding: '12px 28px', borderRadius: 999,
+            background: 'rgba(255,255,255,0.08)',
+            border: '1.5px solid rgba(255,255,255,0.25)',
+            color: 'rgba(255,255,255,0.80)',
+            fontSize: '0.95rem', fontWeight: 700,
+            cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          }}
+        >
+          إعادة المعايرة
+        </button>
+        <button
+          onClick={onConfirm}
+          style={{
+            padding: '12px 32px', borderRadius: 999,
+            background: '#34C759', border: 'none',
+            color: '#fff', fontSize: '0.95rem', fontWeight: 700,
+            cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          }}
+        >
+          المعايرة جيدة ✓
+        </button>
+      </div>
+    </motion.div>
   );
 }
 
