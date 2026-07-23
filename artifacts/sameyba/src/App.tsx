@@ -1683,6 +1683,37 @@ function SuccessDialog({ visible }: { visible: boolean }) {
 // ── Home ──────────────────────────────────────────────────────────────────────
 function Home() {
   const [, navigate] = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const menuItems: {
+    icon: string;
+    label: string;
+    action?: () => void;
+    badge?: string;
+    disabled?: boolean;
+  }[] = [
+    {
+      icon: '👨‍⚕️',
+      label: 'لوحة مقدم الرعاية',
+      action: () => { setMenuOpen(false); navigate('/dashboard'); },
+    },
+    {
+      icon: '🎯',
+      label: 'إعادة معايرة تتبع العين',
+      action: () => { setMenuOpen(false); navigate('/settings'); },
+    },
+    {
+      icon: '🔊',
+      label: 'اختبار الصوت',
+      action: () => { setMenuOpen(false); navigate('/settings'); },
+    },
+    {
+      icon: '🌐',
+      label: 'اللغة',
+      badge: 'قريبًا',
+      disabled: true,
+    },
+  ];
 
   return (
     <div
@@ -1690,37 +1721,163 @@ function Home() {
       dir="rtl"
       style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
     >
-      {/* ── Settings button — upper-left corner ── */}
+      {/* ── Transparent overlay — closes menu on outside click ── */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            key="settings-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 29 }}
+            onClick={() => setMenuOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Settings button — upper corner (RTL: visual left) ── */}
       <motion.button
-        onClick={() => navigate('/settings')}
+        onClick={() => setMenuOpen(v => !v)}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.93 }}
         transition={{ type: 'spring', stiffness: 300, damping: 22 }}
         aria-label="الإعدادات"
+        aria-expanded={menuOpen}
         style={{
           position: 'absolute',
           top: '20px',
-          insetInlineEnd: '20px',   /* visual left in RTL */
-          zIndex: 30,
+          insetInlineEnd: '20px',
+          zIndex: 31,
           display: 'flex', alignItems: 'center', gap: '6px',
           height: '40px',
           padding: '0 16px',
           borderRadius: '999px',
-          background: 'rgba(255,255,255,0.78)',
+          background: menuOpen
+            ? 'rgba(94,126,53,0.10)'
+            : 'rgba(255,255,255,0.78)',
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid rgba(94,126,53,0.28)',
+          border: menuOpen
+            ? '1px solid rgba(94,126,53,0.40)'
+            : '1px solid rgba(94,126,53,0.28)',
           boxShadow: '0 2px 12px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,0.9)',
           cursor: 'pointer',
           fontSize: '0.82rem',
           fontWeight: 600,
           color: '#4F6C2D',
           fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          transition: 'background 0.18s, border-color 0.18s',
         }}
       >
-        <span style={{ fontSize: '0.92rem' }}>⚙️</span>
+        <motion.span
+          animate={{ rotate: menuOpen ? 60 : 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+          style={{ fontSize: '0.92rem', display: 'inline-block' }}
+        >
+          ⚙️
+        </motion.span>
         <span>الإعدادات</span>
       </motion.button>
+
+      {/* ── Settings popup menu ── */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            key="settings-menu"
+            initial={{ opacity: 0, scale: 0.90, y: -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.90, y: -10 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+            style={{
+              position: 'absolute',
+              top: '68px',
+              insetInlineEnd: '20px',
+              zIndex: 31,
+              width: '230px',
+              background: 'rgba(255,255,255,0.94)',
+              backdropFilter: 'blur(40px) saturate(200%)',
+              WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+              borderRadius: '20px',
+              border: '1.5px solid rgba(94,126,53,0.18)',
+              boxShadow:
+                '0 20px 56px rgba(0,0,0,0.11), 0 4px 16px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,1)',
+              overflow: 'hidden',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+              direction: 'rtl',
+            }}
+          >
+            {/* Thin olive top-accent */}
+            <div style={{
+              height: '3px',
+              background: 'linear-gradient(90deg, #5E7E35, #7BA043, #C9A84C)',
+            }} />
+
+            {menuItems.map((item, i) => (
+              <motion.button
+                key={item.label}
+                onClick={item.disabled ? undefined : item.action}
+                disabled={item.disabled}
+                whileHover={item.disabled ? {} : {
+                  background: 'rgba(94,126,53,0.08)',
+                }}
+                whileTap={item.disabled ? {} : { scale: 0.98 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  width: '100%',
+                  padding: '13px 18px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.05)',
+                  cursor: item.disabled ? 'default' : 'pointer',
+                  textAlign: 'right',
+                  opacity: item.disabled ? 0.42 : 1,
+                  fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                }}
+              >
+                <span style={{ fontSize: '1.15rem', flexShrink: 0, lineHeight: 1 }}>
+                  {item.icon}
+                </span>
+                <span style={{
+                  flex: 1,
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  color: '#1C1C1E',
+                  letterSpacing: '-0.01em',
+                }}>
+                  {item.label}
+                </span>
+                {item.badge && (
+                  <span style={{
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    color: '#5E7E35',
+                    background: 'rgba(94,126,53,0.10)',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    border: '1px solid rgba(94,126,53,0.20)',
+                    letterSpacing: '0.03em',
+                    flexShrink: 0,
+                  }}>
+                    {item.badge}
+                  </span>
+                )}
+                {!item.disabled && !item.badge && (
+                  <span style={{
+                    fontSize: '0.8rem',
+                    color: '#AEAEB2',
+                    flexShrink: 0,
+                  }}>
+                    ←
+                  </span>
+                )}
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Right Column (Hero Image) */}
       <motion.div
         className="w-full md:w-[55%] relative h-[55vw] md:h-[100dvh] p-4 md:p-0 md:py-6 md:pl-6 shrink-0"
