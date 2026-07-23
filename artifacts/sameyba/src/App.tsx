@@ -1714,7 +1714,7 @@ function Home() {
     {
       icon: '🔊',
       label: 'اختبار الصوت',
-      action: () => { setMenuOpen(false); navigate('/settings'); },
+      disabled: true,
     },
     {
       icon: '🌐',
