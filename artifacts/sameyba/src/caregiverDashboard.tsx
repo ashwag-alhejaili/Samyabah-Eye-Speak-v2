@@ -672,22 +672,24 @@ export function CaregiverDashboard() {
     >
       <AmbientBg />
 
-      {/* ── Debug strip ──────────────────────────────────────────────────── */}
-      <div style={{
-        position: 'relative', zIndex: 20,
-        display: 'flex', gap: '18px', padding: '4px 20px',
-        background: 'rgba(0,0,0,0.025)', borderBottom: '1px solid rgba(232,226,213,0.7)',
-        fontSize: '0.67rem', fontFamily: 'monospace', color: '#8E8E93',
-        direction: 'ltr', flexWrap: 'wrap',
-        overflowX: 'auto',
-      }}>
-        <span>Provider: <strong style={{ color: audioDebug.providerMounted ? '#34C759' : '#FF3B30' }}>{audioDebug.providerMounted ? 'mounted' : 'unmounted'}</strong></span>
-        <span>AudioContext: <strong>{audioDebug.ctxState}</strong></span>
-        <span>Session Ready: <strong style={{ color: audioDebug.sessionReady ? '#34C759' : '#FF3B30' }}>{audioDebug.sessionReady ? 'true' : 'false'}</strong></span>
-        <span>Queue: <strong>{audioDebug.pendingQueueIds.length > 0 ? audioDebug.pendingQueueIds.join(', ') : '—'}</strong></span>
-        <span>Last Played: <strong>{audioDebug.lastPlayedId}</strong></span>
-        <span>Last Error: <strong>{audioDebug.lastAudioError}</strong></span>
-      </div>
+      {/* ── Debug strip (development only) ───────────────────────────────── */}
+      {import.meta.env.DEV && (
+        <div style={{
+          position: 'relative', zIndex: 20,
+          display: 'flex', gap: '18px', padding: '4px 20px',
+          background: 'rgba(0,0,0,0.025)', borderBottom: '1px solid rgba(232,226,213,0.7)',
+          fontSize: '0.67rem', fontFamily: 'monospace', color: '#8E8E93',
+          direction: 'ltr', flexWrap: 'wrap',
+          overflowX: 'auto',
+        }}>
+          <span>Provider: <strong style={{ color: audioDebug.providerMounted ? '#34C759' : '#FF3B30' }}>{audioDebug.providerMounted ? 'mounted' : 'unmounted'}</strong></span>
+          <span>AudioContext: <strong>{audioDebug.ctxState}</strong></span>
+          <span>Session Ready: <strong style={{ color: audioDebug.sessionReady ? '#34C759' : '#FF3B30' }}>{audioDebug.sessionReady ? 'true' : 'false'}</strong></span>
+          <span>Queue: <strong>{audioDebug.pendingQueueIds.length > 0 ? audioDebug.pendingQueueIds.join(', ') : '—'}</strong></span>
+          <span>Last Played: <strong>{audioDebug.lastPlayedId}</strong></span>
+          <span>Last Error: <strong>{audioDebug.lastAudioError}</strong></span>
+        </div>
+      )}
 
       {/* ── Audio activation banner ───────────────────────────────────────── */}
       <AnimatePresence mode="wait">
