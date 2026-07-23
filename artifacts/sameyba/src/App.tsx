@@ -1787,8 +1787,9 @@ function Home() {
               >
                 ابدأ التواصل
               </motion.button>
-              <AIAssistantButton />
             </motion.div>
+            {/* Floating AI assistant — position: fixed, renders above page content */}
+            <AIAssistantButton />
 
           </div>
 

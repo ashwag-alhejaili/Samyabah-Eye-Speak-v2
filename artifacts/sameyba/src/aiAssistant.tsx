@@ -714,38 +714,71 @@ function AIAssistantModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AIAssistantButton — exported; placed on Home screen
+// AIAssistantButton — floating circular button fixed to the bottom-left corner
 // ─────────────────────────────────────────────────────────────────────────────
 export function AIAssistantButton() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]         = useState(false);
+  // Badge starts true — signals there's an AI suggestion available.
+  // Cleared as soon as the caregiver opens the panel once.
+  const [hasUnread, setHasUnread] = useState(true);
+
+  const handleOpen = () => {
+    setOpen(true);
+    setHasUnread(false);
+  };
 
   return (
     <>
+      {/* Fixed floating trigger */}
       <motion.button
-        onClick={() => setOpen(true)}
-        whileHover={{ scale: 1.04, boxShadow: '0 8px 28px rgba(94,92,230,0.32)' }}
-        whileTap={{ scale: 0.97 }}
-        initial={{ boxShadow: '0 4px 18px rgba(94,92,230,0.18)' }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '14px 32px',
-          borderRadius: 999,
-          background: 'rgba(255,255,255,0.88)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1.5px solid rgba(94,92,230,0.22)',
-          boxShadow: '0 4px 18px rgba(94,92,230,0.18), inset 0 1px 0 rgba(255,255,255,1)',
-          cursor: 'pointer',
-          fontSize: '1rem',
-          fontWeight: 700,
-          color: '#5E5CE6',
-          fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-          direction: 'rtl',
-        }}
+        onClick={handleOpen}
         aria-label="المساعد الذكي"
+        /* Subtle continuous float */
+        animate={{ y: [0, -7, 0] }}
+        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+        whileHover={{ scale: 1.10 }}
+        whileTap={{ scale: 0.93 }}
+        style={{
+          position: 'fixed',
+          bottom: 28,
+          left: 28,
+          zIndex: 90,
+          width: 64,
+          height: 64,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #6C63FF 0%, #5E5CE6 100%)',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '1.75rem',
+          boxShadow: '0 8px 28px rgba(94,92,230,0.40), 0 2px 8px rgba(0,0,0,0.12)',
+          /* Hardware-accelerate the float so it never flickers */
+          willChange: 'transform',
+        }}
       >
-        <span style={{ fontSize: '1.15rem' }}>🤖</span>
-        <span>المساعد الذكي</span>
+        🤖
+        {/* Unread badge */}
+        {hasUnread && (
+          <motion.span
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0 }}
+            style={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              width: 14,
+              height: 14,
+              borderRadius: '50%',
+              background: '#FF3B30',
+              border: '2px solid #fff',
+              boxShadow: '0 1px 4px rgba(255,59,48,0.55)',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
       </motion.button>
 
       <AIAssistantModal open={open} onClose={() => setOpen(false)} />
