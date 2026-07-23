@@ -1709,12 +1709,12 @@ function Home() {
           background: 'rgba(255,255,255,0.78)',
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid rgba(0,0,0,0.08)',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.09), inset 0 1px 0 rgba(255,255,255,0.9)',
+          border: '1px solid rgba(94,126,53,0.28)',
+          boxShadow: '0 2px 12px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,0.9)',
           cursor: 'pointer',
           fontSize: '0.82rem',
           fontWeight: 600,
-          color: '#3C3C43',
+          color: '#4F6C2D',
           fontFamily: "'IBM Plex Sans Arabic', sans-serif",
         }}
       >
@@ -1762,15 +1762,15 @@ function Home() {
 
             <motion.div variants={itemVariants} className="space-y-5">
               <div className="flex items-center gap-4">
-                <Eye className="w-5 h-5 text-[#0A84FF] shrink-0" strokeWidth={2.5} />
+                <Eye className="w-5 h-5 text-[#5E7E35] shrink-0" strokeWidth={2.5} />
                 <span className="text-[0.95rem] font-medium text-[#1C1C1E]">يتواصل بالنظر فقط</span>
               </div>
               <div className="flex items-center gap-4">
-                <Volume2 className="w-5 h-5 text-[#0A84FF] shrink-0" strokeWidth={2.5} />
+                <Volume2 className="w-5 h-5 text-[#5E7E35] shrink-0" strokeWidth={2.5} />
                 <span className="text-[0.95rem] font-medium text-[#1C1C1E]">يحوّل النظر إلى كلام</span>
               </div>
               <div className="flex items-center gap-4">
-                <Smartphone className="w-5 h-5 text-[#0A84FF] shrink-0" strokeWidth={2.5} />
+                <Smartphone className="w-5 h-5 text-[#5E7E35] shrink-0" strokeWidth={2.5} />
                 <span className="text-[0.95rem] font-medium text-[#1C1C1E]">يرسل الطلب لمقدم الرعاية</span>
               </div>
             </motion.div>
@@ -1778,12 +1778,12 @@ function Home() {
             <motion.div variants={itemVariants} className="pt-4 flex flex-col gap-3">
               <motion.button
                 onClick={() => navigate('/communicate')}
-                whileHover={{ scale: 1.05, boxShadow: '0 8px 36px rgba(10,132,255,0.45)' }}
+                whileHover={{ scale: 1.05, boxShadow: '0 8px 36px rgba(94,126,53,0.45)' }}
                 whileTap={{ scale: 0.97 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                initial={{ boxShadow: '0 4px 24px rgba(10,132,255,0.30)' }}
-                className="bg-[#0A84FF] text-white text-[1.1rem] font-semibold rounded-full min-w-[200px] w-fit flex items-center justify-center"
-                style={{ padding: '18px 52px', border: 'none', outline: 'none', cursor: 'pointer' }}
+                initial={{ boxShadow: '0 4px 24px rgba(94,126,53,0.30)' }}
+                className="text-white text-[1.1rem] font-semibold rounded-full min-w-[200px] w-fit flex items-center justify-center"
+                style={{ padding: '18px 52px', border: 'none', outline: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)' }}
               >
                 ابدأ التواصل
               </motion.button>
@@ -1797,21 +1797,6 @@ function Home() {
             <p className="text-[#AEAEB2] text-[0.82rem] font-normal leading-relaxed text-right max-w-sm">
               مصمم لمساعدة مرضى الجلطات وفاقدي القدرة على الكلام للتواصل بسهولة وكرامة.
             </p>
-            <motion.button
-              onClick={() => navigate('/dashboard')}
-              whileHover={{ opacity: 0.8 }}
-              whileTap={{ scale: 0.97 }}
-              className="mt-4"
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                color: '#AEAEB2', fontSize: '0.78rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-                display: 'flex', alignItems: 'center', gap: '4px', marginRight: 'auto', marginLeft: 0,
-                direction: 'rtl',
-              }}
-            >
-              فتح لوحة مقدم الرعاية
-              <ChevronRight size={13} strokeWidth={2} />
-            </motion.button>
           </motion.div>
         </div>
       </motion.div>
@@ -2114,7 +2099,7 @@ function SettingsPage() {
       style={{
         minHeight: '100dvh', width: '100%',
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(145deg, #F0F4FF 0%, #EBF0FD 35%, #E8EEF9 65%, #EDF2FF 100%)',
+        background: 'linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '24px 16px',
         position: 'relative', overflow: 'hidden',
@@ -2389,7 +2374,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
       style={{
         minHeight: '100dvh', width: '100%',
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(145deg, #F0F4FF 0%, #EBF0FD 35%, #E8EEF9 65%, #EDF2FF 100%)',
+        background: 'linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         padding: '24px 16px',
@@ -2460,12 +2445,12 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           initial={{ scale: 0.72, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-          style={{ marginBottom: '28px' }}
+          style={{ marginBottom: '32px' }}
         >
           <img
             src={import.meta.env.BASE_URL + 'sameyba-logo.png'}
             alt="سَم يبه"
-            style={{ height: '96px', width: 'auto', display: 'block', margin: '0 auto' }}
+            style={{ height: '112px', width: 'auto', display: 'block', margin: '0 auto' }}
           />
         </motion.div>
 
@@ -2475,9 +2460,9 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            fontSize: 'clamp(1.55rem, 4vw, 2rem)',
+            fontSize: 'clamp(1.65rem, 4.2vw, 2.1rem)',
             fontWeight: 800, color: '#1C1C1E',
-            margin: '0 0 20px', lineHeight: 1.2, letterSpacing: '-0.02em',
+            margin: '0 0 22px', lineHeight: 1.2, letterSpacing: '-0.02em',
           }}
         >
           مرحبًا بك في تطبيق سم يبه
@@ -2692,7 +2677,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
       style={{
         minHeight: '100dvh', width: '100%',
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(145deg, #F0F4FF 0%, #EBF0FD 35%, #E8EEF9 65%, #EDF2FF 100%)',
+        background: 'linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '24px 16px',
         position: 'relative', overflow: 'hidden',
@@ -2755,7 +2740,7 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
             <img
               src={import.meta.env.BASE_URL + 'sameyba-logo.png'}
               alt="سَم يبه"
-              style={{ height: '90px', width: 'auto', display: 'block', margin: '0 auto' }}
+              style={{ height: '104px', width: 'auto', display: 'block', margin: '0 auto' }}
             />
           </motion.div>
 
