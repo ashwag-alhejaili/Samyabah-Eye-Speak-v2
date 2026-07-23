@@ -338,9 +338,10 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
       {isAI && (
         <div style={{
           width: 30, height: 30, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #5E5CE6, #0A84FF)',
+          background: 'linear-gradient(135deg, #5E7E35 0%, #4F6C2D 100%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '0.85rem', flexShrink: 0, marginLeft: 8, alignSelf: 'flex-end',
+          boxShadow: '0 2px 8px rgba(94,126,53,0.30)',
         }}>
           🤖
         </div>
@@ -352,19 +353,19 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
           ? '20px 20px 6px 20px'  // AI: flat on bottom-left (start side in RTL)
           : '20px 6px 20px 20px', // User: flat on bottom-right (end side in RTL)
         background: isAI
-          ? 'rgba(242,242,247,0.95)'
-          : 'linear-gradient(135deg, #0A84FF 0%, #007AFF 100%)',
+          ? 'rgba(245,247,242,0.97)'
+          : 'linear-gradient(135deg, #5E7E35 0%, #4F6C2D 100%)',
         color: isAI ? '#1C1C1E' : '#fff',
         boxShadow: isAI
           ? '0 2px 12px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.8)'
-          : '0 4px 16px rgba(10,132,255,0.30)',
+          : '0 4px 16px rgba(94,126,53,0.32)',
         fontSize: '0.9rem',
         lineHeight: 1.55,
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
         fontWeight: 500,
         whiteSpace: 'pre-line',
         direction: 'rtl',
-        border: isAI ? '1px solid rgba(0,0,0,0.06)' : 'none',
+        border: isAI ? '1px solid rgba(94,126,53,0.12)' : 'none',
       }}>
         {msg.text}
       </div>
@@ -416,14 +417,14 @@ function SuggestionChips({
             WebkitBackdropFilter: 'blur(12px)',
             border: disabled
               ? '1px solid rgba(0,0,0,0.06)'
-              : '1px solid rgba(10,132,255,0.20)',
+              : '1px solid rgba(94,126,53,0.28)',
             boxShadow: disabled
               ? 'none'
-              : '0 2px 10px rgba(10,132,255,0.10), inset 0 1px 0 rgba(255,255,255,1)',
+              : '0 2px 10px rgba(94,126,53,0.12), inset 0 1px 0 rgba(255,255,255,1)',
             cursor: disabled ? 'default' : 'pointer',
             fontSize: '0.85rem',
             fontWeight: 600,
-            color: disabled ? '#AEAEB2' : '#007AFF',
+            color: disabled ? '#AEAEB2' : '#4F6C2D',
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
             transition: 'background 0.15s, border 0.15s, color 0.15s',
             direction: 'rtl',
@@ -450,20 +451,20 @@ function NavButton({ label, path, onNavigate }: { label: string; path: string; o
     >
       <motion.button
         onClick={() => onNavigate(path)}
-        whileHover={{ scale: 1.03, boxShadow: '0 6px 22px rgba(10,132,255,0.38)' }}
+        whileHover={{ scale: 1.03, boxShadow: '0 6px 22px rgba(94,126,53,0.42)' }}
         whileTap={{ scale: 0.97 }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 20px',
           borderRadius: 999,
-          background: 'linear-gradient(135deg, #0A84FF 0%, #0060DF 100%)',
+          background: 'linear-gradient(135deg, #5E7E35 0%, #4F6C2D 100%)',
           color: 'white',
           border: 'none',
           fontSize: '0.9rem',
           fontWeight: 700,
           fontFamily: "'IBM Plex Sans Arabic', sans-serif",
           cursor: 'pointer',
-          boxShadow: '0 4px 18px rgba(10,132,255,0.32)',
+          boxShadow: '0 4px 18px rgba(94,126,53,0.34)',
           direction: 'rtl',
         }}
       >
@@ -595,41 +596,47 @@ function AIAssistantModal({
               overflow: 'hidden',
             }}
           >
-            {/* Handle bar */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
-              <div style={{
-                width: 36, height: 4, borderRadius: 2,
-                background: 'rgba(0,0,0,0.14)',
-              }} />
-            </div>
-
-            {/* Header */}
+            {/* Olive green header — full-width branded strip */}
             <div style={{
-              display: 'flex', alignItems: 'center',
-              padding: '10px 20px 12px',
-              borderBottom: '1px solid rgba(0,0,0,0.06)',
-              gap: 10,
+              background: 'linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)',
+              borderRadius: '28px 28px 0 0',
+              padding: '14px 20px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexShrink: 0,
             }}>
-              {/* AI icon */}
+              {/* Handle bar — white tint on the green strip */}
               <div style={{
-                width: 38, height: 38, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #5E5CE6 0%, #0A84FF 100%)',
+                position: 'absolute',
+                top: 10, left: '50%', transform: 'translateX(-50%)',
+                width: 36, height: 4, borderRadius: 2,
+                background: 'rgba(255,255,255,0.35)',
+              }} />
+
+              {/* AI icon circle */}
+              <div style={{
+                width: 42, height: 42, borderRadius: '50%',
+                background: 'rgba(255,255,255,0.15)',
+                border: '1.5px solid rgba(201,168,76,0.55)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '1.1rem',
-                boxShadow: '0 4px 14px rgba(94,92,230,0.30)',
+                fontSize: '1.25rem',
                 flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
               }}>
                 🤖
               </div>
 
               <div style={{ flex: 1 }}>
                 <p style={{
-                  margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1C1C1E',
+                  margin: 0, fontSize: '1rem', fontWeight: 700, color: '#ffffff',
+                  letterSpacing: '0.01em',
                 }}>
                   المساعد الذكي
                 </p>
                 <p style={{
-                  margin: 0, fontSize: '0.74rem', color: '#8E8E93', fontWeight: 500,
+                  margin: 0, fontSize: '0.73rem', color: '#C9A84C', fontWeight: 600,
+                  letterSpacing: '0.02em',
                 }}>
                   مساعد ذكي لاحتياجاتك
                 </p>
@@ -638,14 +645,15 @@ function AIAssistantModal({
               {/* Close button */}
               <motion.button
                 onClick={onClose}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.93 }}
+                whileHover={{ scale: 1.10, background: 'rgba(255,255,255,0.22)' }}
+                whileTap={{ scale: 0.92 }}
                 style={{
-                  width: 30, height: 30, borderRadius: '50%',
-                  background: 'rgba(142,142,147,0.14)',
-                  border: 'none', cursor: 'pointer',
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.22)',
+                  cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '0.9rem', color: '#8E8E93',
+                  fontSize: '0.85rem', color: 'rgba(255,255,255,0.90)',
                   flexShrink: 0,
                 }}
                 aria-label="إغلاق"
@@ -695,12 +703,12 @@ function AIAssistantModal({
             {/* Footer hint */}
             <div style={{
               padding: '10px 20px 20px',
-              borderTop: '1px solid rgba(0,0,0,0.05)',
+              borderTop: '1px solid rgba(94,126,53,0.10)',
               textAlign: 'center',
             }}>
               <p style={{
                 margin: 0, fontSize: '0.74rem',
-                color: '#AEAEB2', fontWeight: 500,
+                color: '#7BA043', fontWeight: 500,
               }}>
                 اضغط على اقتراح للحصول على مساعدة فورية
               </p>
@@ -746,14 +754,14 @@ export function AIAssistantButton() {
           width: 64,
           height: 64,
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #6C63FF 0%, #5E5CE6 100%)',
-          border: 'none',
+          background: 'linear-gradient(145deg, #5E7E35 0%, #4A6828 100%)',
+          border: '1.5px solid rgba(201,168,76,0.40)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: '1.75rem',
-          boxShadow: '0 8px 28px rgba(94,92,230,0.40), 0 2px 8px rgba(0,0,0,0.12)',
+          boxShadow: '0 8px 28px rgba(94,126,53,0.45), 0 2px 8px rgba(0,0,0,0.14)',
           /* Hardware-accelerate the float so it never flickers */
           willChange: 'transform',
         }}
