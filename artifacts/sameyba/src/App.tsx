@@ -1306,27 +1306,30 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <motion.button
       onClick={onClick}
       whileHover={{ scale: 1.04 }}
-      whileTap={{ scale: 0.94 }}
+      whileTap={{ scale: 0.93 }}
       transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-      className="absolute flex items-center gap-[7px] font-semibold"
+      className="absolute flex items-center"
       style={{
-        insetInlineEnd: '24px',
-        height: '48px',
-        padding: '0 22px',
+        insetInlineEnd: '20px',
+        top: '16px',
+        gap: '8px',
+        height: '52px',
+        padding: '0 24px',
         borderRadius: '999px',
-        background: 'rgba(255,255,255,0.82)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        boxShadow: '0 4px 18px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,1)',
-        border: '1px solid rgba(255,255,255,0.95)',
-        fontSize: '0.95rem',
-        color: '#3C3C43',
+        background: 'linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)',
+        boxShadow: '0 4px 20px rgba(94,126,53,0.38), 0 1px 4px rgba(0,0,0,0.12)',
+        border: 'none',
+        fontSize: '1.05rem',
+        fontWeight: 700,
+        color: '#fff',
         cursor: 'pointer',
         zIndex: 20,
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        letterSpacing: '-0.01em',
       }}
       aria-label="رجوع"
     >
-      <ChevronRight className="w-5 h-5 text-[#3C3C43]" strokeWidth={2} />
+      <ChevronRight className="w-5 h-5" style={{ color: '#fff' }} strokeWidth={2.5} />
       <span>رجوع</span>
     </motion.button>
   );
@@ -2305,6 +2308,8 @@ function SettingsPage() {
         }} />
       </div>
 
+      <BackButton onClick={() => navigate('/')} />
+
       {/* Glass card */}
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.97 }}
@@ -2323,43 +2328,21 @@ function SettingsPage() {
           overflow: 'hidden',
         }}
       >
-        {/* Header row — back button + title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '28px' }}>
-          <motion.button
-            onClick={() => navigate('/')}
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.93 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 22 }}
-            aria-label="رجوع"
-            style={{
-              flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '36px', height: '36px', borderRadius: '50%',
-              background: 'rgba(0,0,0,0.06)',
-              border: '1px solid rgba(0,0,0,0.07)',
-              cursor: 'pointer',
-              fontSize: '1rem',
-            }}
-          >
-            ←
-          </motion.button>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <h1 style={{
-              fontSize: 'clamp(1.25rem,3vw,1.55rem)',
-              fontWeight: 800, color: '#1C1C1E', margin: 0,
-              letterSpacing: '-0.02em', lineHeight: 1.2,
-            }}>
-              ⚙️ الإعدادات
-            </h1>
-            <p style={{
-              fontSize: '0.83rem', color: '#6E6E73', fontWeight: 500,
-              margin: '4px 0 0', lineHeight: 1.4,
-            }}>
-              تعديل بيانات المريض ومقدم الرعاية
-            </p>
-          </div>
-          {/* Spacer to balance the back button */}
-          <div style={{ width: '36px', flexShrink: 0 }} />
+        {/* Title */}
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <h1 style={{
+            fontSize: 'clamp(1.25rem,3vw,1.55rem)',
+            fontWeight: 800, color: '#1C1C1E', margin: 0,
+            letterSpacing: '-0.02em', lineHeight: 1.2,
+          }}>
+            ⚙️ الإعدادات
+          </h1>
+          <p style={{
+            fontSize: '0.83rem', color: '#6E6E73', fontWeight: 500,
+            margin: '4px 0 0', lineHeight: 1.4,
+          }}>
+            تعديل بيانات المريض ومقدم الرعاية
+          </p>
         </div>
 
         {/* Divider */}

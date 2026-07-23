@@ -881,20 +881,21 @@ export function CaregiverDashboard() {
           {/* Right: back button */}
           <motion.button
             whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
+            whileTap={{ scale: 0.93 }}
             onClick={() => navigate('/')}
             style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
-              padding: '10px 18px', borderRadius: '999px',
-              background: 'rgba(94,126,53,0.08)',
-              border: '1.5px solid rgba(94,126,53,0.18)',
-              boxShadow: '0 2px 10px rgba(94,126,53,0.08)',
-              cursor: 'pointer', color: '#4A6629', fontWeight: 700,
-              fontSize: '0.86rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-              flexShrink: 0,
+              display: 'flex', alignItems: 'center', gap: '8px',
+              height: '52px', padding: '0 24px', borderRadius: '999px',
+              background: 'linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)',
+              boxShadow: '0 4px 20px rgba(94,126,53,0.38), 0 1px 4px rgba(0,0,0,0.12)',
+              border: 'none',
+              cursor: 'pointer', color: '#fff', fontWeight: 700,
+              fontSize: '1.05rem', fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+              flexShrink: 0, letterSpacing: '-0.01em',
             }}
           >
-            الرئيسية <ChevronRight size={14} strokeWidth={2.5} />
+            <ChevronRight size={18} strokeWidth={2.5} style={{ color: '#fff' }} />
+            رجوع
           </motion.button>
         </motion.div>
 

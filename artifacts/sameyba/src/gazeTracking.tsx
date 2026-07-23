@@ -74,7 +74,9 @@ export type GazeContextShape = {
   /** current state of the gaze system */
   gazeStatus:      GazeStatus;
   /** restart the 9-point calibration flow */
-  recalibrate:     () => void;
+  recalibrate:          () => void;
+  /** close the calibration overlay without completing it */
+  cancelCalibration:    () => void;
 };
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -86,7 +88,8 @@ export const GazeContext = createContext<GazeContextShape>({
   requestCamera:   () => {},
   calibrated:      false,
   gazeStatus:      'idle',
-  recalibrate:     () => {},
+  recalibrate:          () => {},
+  cancelCalibration:    () => {},
 });
 export function useGazeContext() { return useContext(GazeContext); }
 
@@ -457,6 +460,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     console.log('[Sameyba/Gaze] Recalibration started');
   }, [permissionState]);
 
+  // ── cancelCalibration ─────────────────────────────────────────────────────────
+  const cancelCalibration = useCallback(() => {
+    setCalibrating(false);
+    setVerifying(false);
+    setCalSuccess(false);
+    setCalStep(0);
+    setCalClicks(0);
+  }, []);
+
   // ── Cleanup ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -480,7 +492,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   return (
     <GazeContext.Provider value={{
       gazeEnabled, gazePos, gazeTargetId, permissionState,
-      requestCamera, calibrated, gazeStatus, recalibrate,
+      requestCamera, calibrated, gazeStatus, recalibrate, cancelCalibration,
     }}>
       {children}
 
@@ -521,6 +533,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               clicks={calClicks}
               success={calSuccess}
               onPointClick={handleCalClick}
+              onCancel={cancelCalibration}
             />
           )}
         </AnimatePresence>,
@@ -539,6 +552,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                 setVerifying(false);
               }}
               onRecalibrate={recalibrate}
+              onCancel={cancelCalibration}
             />
           )}
         </AnimatePresence>,
@@ -574,12 +588,13 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
 // ── CalibrationOverlay ────────────────────────────────────────────────────────
 function CalibrationOverlay({
-  step, clicks, success, onPointClick,
+  step, clicks, success, onPointClick, onCancel,
 }: {
   step: number;
   clicks: number;
   success: boolean;
   onPointClick: (e: React.MouseEvent) => void;
+  onCancel?: () => void;
 }) {
   const total   = CAL_POINTS.length * CLICKS_PER_POINT;
   const done    = step * CLICKS_PER_POINT + clicks;
@@ -707,6 +722,30 @@ function CalibrationOverlay({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Cancel button — hidden during success animation */}
+      {!success && onCancel && (
+        <div style={{
+          position: 'absolute', bottom: '6%', left: 0, right: 0,
+          display: 'flex', justifyContent: 'center',
+        }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '14px 40px', borderRadius: 999,
+              background: 'rgba(255,255,255,0.07)',
+              border: '1.5px solid rgba(255,255,255,0.22)',
+              color: 'rgba(255,255,255,0.75)',
+              fontSize: '1rem', fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+              letterSpacing: '-0.01em',
+            }}
+          >
+            ✕  إلغاء والرجوع
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -828,11 +867,12 @@ const VERIFY_TARGETS = [
 ] as const;
 
 function CalibrationVerification({
-  gazePos, onConfirm, onRecalibrate,
+  gazePos, onConfirm, onRecalibrate, onCancel,
 }: {
   gazePos: { x: number; y: number } | null;
   onConfirm: () => void;
   onRecalibrate: () => void;
+  onCancel?: () => void;
 }) {
   return (
     <motion.div
@@ -916,6 +956,22 @@ function CalibrationVerification({
         position: 'absolute', bottom: '8%', left: 0, right: 0,
         display: 'flex', justifyContent: 'center', gap: 12,
       }}>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '12px 28px', borderRadius: 999,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1.5px solid rgba(255,255,255,0.14)',
+              color: 'rgba(255,255,255,0.55)',
+              fontSize: '0.95rem', fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            }}
+          >
+            إلغاء والرجوع
+          </button>
+        )}
         <button
           onClick={onRecalibrate}
           style={{
