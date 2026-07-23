@@ -1684,7 +1684,7 @@ function SuccessDialog({ visible }: { visible: boolean }) {
 function Home() {
   const [, navigate] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const { recalibrate } = useGazeContext();
+  const { recalibrate, requestCamera, permissionState } = useGazeContext();
 
   const menuItems: {
     icon: string;
@@ -1702,7 +1702,14 @@ function Home() {
     {
       icon: '🎯',
       label: 'إعادة المعايرة',
-      action: () => { setMenuOpen(false); recalibrate(); },
+      action: () => {
+        setMenuOpen(false);
+        if (permissionState === 'granted') {
+          recalibrate();
+        } else {
+          requestCamera();
+        }
+      },
     },
     {
       icon: '🔊',
