@@ -4,32 +4,171 @@
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 
+/* ── Sameybah brand palette ─────────────────────────────────────────── */
 @theme inline {
-  --color-background: #FAFAFA;
-  --color-foreground: #0A0A0A;
-  --font-sans: 'IBM Plex Sans Arabic', sans-serif;
-  --font-arabic: 'IBM Plex Sans Arabic', sans-serif;
+  --color-background:  #F7F6F2;
+  --color-foreground:  #1F1F1F;
+  --font-sans:         'IBM Plex Sans Arabic', sans-serif;
+  --font-arabic:       'IBM Plex Sans Arabic', sans-serif;
+
+  /* Brand greens & gold */
+  --color-brand-green:  #5E7E35;
+  --color-brand-olive:  #7BA043;
+  --color-brand-gold:   #C9A84C;
+  --color-brand-bg:     #F7F6F2;
+  --color-brand-border: #E8E2D5;
+
+  /* Map Tailwind semantic tokens → brand colours (replaces every blue default) */
+  --color-primary:              #5E7E35;
+  --color-primary-foreground:   #ffffff;
+  --color-ring:                 #5E7E35;
+  --color-border:               #E8E2D5;
+  --color-input:                #E8E2D5;
+  --color-accent:               #7BA043;
+  --color-accent-foreground:    #ffffff;
+  --color-muted:                #F0EDE6;
+  --color-muted-foreground:     #6B6B6B;
+  --color-card:                 #ffffff;
+  --color-card-foreground:      #1F1F1F;
+  --color-popover:              #ffffff;
+  --color-popover-foreground:   #1F1F1F;
+  --color-secondary:            #EEE9DF;
+  --color-secondary-foreground: #1F1F1F;
+  --color-destructive:          #FF3B30;
+  --color-destructive-foreground: #ffffff;
+
+  /* Sidebar (avoids sidebar components falling back to blue) */
+  --color-sidebar:              #F7F6F2;
+  --color-sidebar-foreground:   #1F1F1F;
+  --color-sidebar-primary:      #5E7E35;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent:       #7BA043;
+  --color-sidebar-accent-foreground: #ffffff;
+  --color-sidebar-border:       #E8E2D5;
+  --color-sidebar-ring:         #5E7E35;
 }
 
 :root {
-  --background: #FAFAFA;
-  --foreground: #0A0A0A;
+  --background:          #F7F6F2;
+  --foreground:          #1F1F1F;
+  --primary:             #5E7E35;
+  --primary-foreground:  #ffffff;
+  --ring:                #5E7E35;
+  --border:              #E8E2D5;
+  --input:               #E8E2D5;
+  --accent:              #7BA043;
+  --accent-foreground:   #ffffff;
+  --muted:               #F0EDE6;
+  --muted-foreground:    #6B6B6B;
+  --card:                #ffffff;
+  --card-foreground:     #1F1F1F;
+  --popover:             #ffffff;
+  --popover-foreground:  #1F1F1F;
+  --secondary:           #EEE9DF;
+  --secondary-foreground:#1F1F1F;
+  --destructive:         #FF3B30;
+  --destructive-foreground: #ffffff;
+  --radius: 0.5rem;
 }
 
 @layer base {
   * {
-    border-color: #e5e7eb;
+    border-color: #E8E2D5;
+    /* Override Tailwind v4 ring default — replaces the blue ring on every
+       focus-visible:ring-ring utility before it even hits the component */
+    --tw-ring-color: rgba(94, 126, 53, 0.5);
   }
+
   body {
-    @apply font-sans antialiased bg-[#FAFAFA] text-[#0A0A0A] m-0 p-0;
+    @apply font-sans antialiased bg-[#F7F6F2] text-[#1F1F1F] m-0 p-0;
+  }
+
+  /* ── Browser-level blue eliminators ─────────────────────────────── */
+
+  /* 1. Native controls: checkboxes, radio buttons, range sliders,
+        <progress>, <select> thumb — anything that reads accent-color  */
+  :root {
+    accent-color: #5E7E35;
+  }
+
+  /* 2. Text insertion caret in all <input> and <textarea> elements     */
+  input,
+  textarea,
+  [contenteditable] {
+    caret-color: #5E7E35;
+  }
+
+  /* 3. Text selection highlight                                         */
+  ::selection {
+    background-color: rgba(94, 126, 53, 0.22);
+    color: #1F1F1F;
+  }
+  ::-moz-selection {
+    background-color: rgba(94, 126, 53, 0.22);
+    color: #1F1F1F;
+  }
+
+  /* 4. Focus rings — catches any element that still gets browser-native
+        blue outline instead of a brand colour                           */
+  *:focus-visible {
+    outline-color: #5E7E35;
+    --tw-ring-color: rgba(94, 126, 53, 0.45);
+  }
+
+  /* 5. Mobile tap highlight (iOS / Android blue flash on tap)           */
+  * {
+    -webkit-tap-highlight-color: rgba(94, 126, 53, 0.12);
+  }
+
+  /* 6. Hyperlinks — catches any raw <a> that inherits browser blue      */
+  a {
+    color: #5E7E35;
+    text-decoration-color: rgba(94, 126, 53, 0.45);
+  }
+  a:hover {
+    color: #7BA043;
+  }
+
+  /* 7. Scrollbar (Chromium & Firefox)                                   */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(94, 126, 53, 0.30);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(94, 126, 53, 0.55);
+  }
+  /* Firefox */
+  * {
+    scrollbar-color: rgba(94, 126, 53, 0.30) transparent;
+    scrollbar-width: thin;
+  }
+
+  /* 8. WebKit autofill highlight (browser paints blue over inputs)      */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px rgba(242, 246, 236, 0.95) inset;
+    -webkit-text-fill-color: #1F1F1F;
+    caret-color: #5E7E35;
+    transition: background-color 5000s ease-in-out 0s;
   }
 }
 
+/* ── Keyframe animations ─────────────────────────────────────────────── */
 @keyframes sameyba-spin {
   to { transform: rotate(360deg); }
 }
 
 @keyframes gaze-blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50%       { opacity: 0.3; }
 }
