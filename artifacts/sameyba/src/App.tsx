@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, createContext, useContext } f
 import { GazeContext, GazeProvider, useGazeContext } from './gazeTracking';
 import { AIAssistantButton } from './aiAssistant';
 import { CaregiverDashboard } from './caregiverDashboard';
+import { CaregiverNotificationProvider } from './caregiverNotification';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
@@ -3051,6 +3052,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ProfileProvider>
         <RequestStoreProvider>
+          <CaregiverNotificationProvider>
           {/* Patient-side confirmation overlay — listens for caregiver completions */}
           <PatientConfirmationOverlay />
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
@@ -3071,6 +3073,7 @@ function App() {
               )} />
             </Switch>
           </WouterRouter>
+          </CaregiverNotificationProvider>
         </RequestStoreProvider>
       </ProfileProvider>
     </QueryClientProvider>

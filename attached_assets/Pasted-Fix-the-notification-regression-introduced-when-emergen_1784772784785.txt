@@ -1,0 +1,90 @@
+Fix the notification regression introduced when emergency request handling was added.
+
+I verified the current caregiverDashboard.tsx code.
+
+Confirmed bugs:
+
+1. AudioContext and notification state are local to CaregiverDashboard, so they are destroyed when /dashboard unmounts.
+
+2. A new request ID is added to notifiedIds BEFORE audio playback succeeds.
+When the caregiver tab is hidden and AudioContext is suspended, playback may fail, but the request is still permanently marked as notified.
+When the caregiver returns, the sound is never retried.
+
+3. Normal and urgent requests currently use the same playChime().
+
+Required fix:
+
+A. Move the following into a root-level CaregiverNotificationProvider that stays mounted above the router:
+- audioCtxRef
+- audioSessionReadyRef/state
+- notifiedIds
+- pendingSoundQueue
+- BroadcastChannel/storage request listener
+- visibilitychange/focus handlers
+- normal and emergency chime functions
+
+B. Do not mark a request as audibly notified until its chime has actually been scheduled successfully while AudioContext.state === "running".
+
+C. If a new request arrives while the tab is hidden or audio is suspended:
+- add its ID and priority to pendingSoundQueue
+- do not discard it
+- show the browser notification if permission is granted
+
+D. On window focus or visibilitychange to visible:
+- resume the existing AudioContext
+- when state becomes "running", play queued sounds once
+- urgent requests must be played first
+- then remove them from the queue and add them to notifiedIds
+
+E. Avoid replaying old requests after refresh:
+- initialize notifiedIds with request IDs already present when the provider first mounts
+- queue only genuinely new pending requests received afterward
+
+F. Create separate sounds:
+
+Normal:
+- 880 Hz for 180 ms
+- 1175 Hz for 220 ms
+
+Emergency:
+- louder repeating urgent pattern
+- three short alternating tones
+- clearly distinguishable from a normal request
+
+G. The audio session should remain active during internal navigation.
+Only require reactivation after:
+- full page refresh
+- tab close
+- browser restart
+
+H. CaregiverDashboard must consume the provider and must no longer own or recreate AudioContext, notifiedIds, or request notification effects.
+
+I. Do not alter:
+- request synchronization
+- emergency request creation
+- request cards
+- completion/rejection logic
+- patient pages
+- gaze tracking
+- dashboard visual design
+
+J. Keep temporary debug values:
+- Provider mounted
+- AudioContext state
+- Session ready
+- Pending sound queue IDs
+- Last successfully played request ID
+- Last audio error
+
+Verify this exact scenario:
+
+1. Open Caregiver Dashboard.
+2. Press "تفعيل واختبار الصوت" and hear the test chime.
+3. Switch to the patient tab, leaving caregiver tab in the background.
+4. Send one normal request.
+5. Send one emergency request.
+6. Return to caregiver tab.
+7. The emergency sound must play once, followed by the normal sound once.
+8. Neither sound may replay again.
+9. Navigate internally away from and back to /dashboard.
+10. Session Ready must remain true.

@@ -1,0 +1,86 @@
+Fix caregiver audio and request listening so they persist across internal navigation.
+
+Current confirmed behavior:
+- Audio works while CaregiverDashboard is open and active.
+- When navigating away from the dashboard to another page in the same app, audio notifications stop.
+- Returning to the dashboard loses the active audio session/listener.
+
+Root cause to address:
+The AudioContext and new-request listener appear to be owned by CaregiverDashboard, so they are destroyed when that component unmounts.
+
+Required architecture:
+
+1. Create a global CaregiverNotificationProvider mounted at the application root, above routing.
+
+2. Move into this provider:
+- audioCtxRef
+- audioSessionReady state/ref
+- audio activation handler
+- playNormalChime()
+- playEmergencyChime()
+- new request detection
+- BroadcastChannel listener
+- duplicate request protection
+- visibilitychange and focus handling
+
+3. The provider must remain mounted during all internal page navigation.
+
+4. CaregiverDashboard should only consume the provider state and display controls.
+It must not create or destroy its own AudioContext or BroadcastChannel listener.
+
+5. After the caregiver presses:
+"🔊 تفعيل واختبار الصوت"
+the audio session must remain ready while navigating between pages in the same tab.
+
+6. Do not reset audioSessionReady when:
+- navigating to the home page
+- opening settings
+- opening request categories
+- returning to the dashboard
+
+7. It is acceptable to require reactivation only after:
+- full page refresh
+- closing the tab
+- reopening the browser
+
+8. When the tab becomes hidden:
+- keep the global request listener alive
+- if AudioContext becomes suspended, attempt resume when the tab becomes visible again
+- do not recreate the context
+- do not mark the session false unless resume actually fails
+
+9. Add browser notifications as a fallback for background tabs:
+- request permission only from a direct caregiver button
+- when a new request arrives and document.hidden === true, show a system notification
+- emergency notification title:
+  "🚨 طلب طوارئ من المريض"
+- normal notification title:
+  "طلب جديد من المريض"
+
+10. Be honest about browser limitations:
+Do not claim Web Audio will always play while the browser tab is fully backgrounded or the device is locked.
+
+11. Keep the current debug bar temporarily:
+- AudioContext state
+- Session Ready
+- Current route
+- Provider mounted true/false
+- Last received request ID
+- Last chime result
+
+12. Preserve:
+- request cards
+- request status logic
+- patient pages
+- gaze tracking
+- dashboard design
+- existing synchronization
+
+Run TypeScript checks and verify this exact test:
+
+A. Open caregiver dashboard.
+B. Activate and hear the test sound.
+C. Navigate to home/settings inside the same tab.
+D. Send a new patient request from another tab.
+E. The provider must still receive it.
+F. Return to dashboard; Session Ready must still be true.

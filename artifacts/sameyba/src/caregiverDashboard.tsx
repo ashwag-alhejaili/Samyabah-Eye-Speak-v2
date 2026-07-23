@@ -12,11 +12,12 @@ import { useLocation } from 'wouter';
 import { ChevronRight } from 'lucide-react';
 
 import { useRequestStore, useProfile, type PatientRequest } from './App';
+import { useCaregiverNotification } from './caregiverNotification';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
-const CAREGIVER_AUDIO_KEY    = 'sameyba_caregiver_audio_v2';
+// CAREGIVER_AUDIO_KEY lives in caregiverNotification.tsx
 const PATIENT_NOTIFY_CHANNEL = 'sameyba_patient_notify';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,54 +45,6 @@ function formatClockTime(iso: string): string {
 function todayStart(): number {
   const d = new Date();
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Audio (Web Audio API — no external files)
-// ─────────────────────────────────────────────────────────────────────────────
-function playChime(ctx: AudioContext) {
-  const now = ctx.currentTime;
-  const tone = (freq: number, start: number, dur: number, peak: number) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, now + start);
-    gain.gain.setValueAtTime(0, now + start);
-    gain.gain.linearRampToValueAtTime(peak, now + start + 0.015);
-    gain.gain.setValueAtTime(peak, now + start + Math.max(dur - 0.03, 0.02));
-    gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
-    osc.start(now + start);
-    osc.stop(now + start + dur + 0.01);
-  };
-  tone(880,  0.01, 0.18, 0.28);
-  tone(1175, 0.22, 0.22, 0.24);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Emergency chime — louder, urgent repeating pattern; clearly distinct from normal
-// ─────────────────────────────────────────────────────────────────────────────
-function playEmergencyChime(ctx: AudioContext) {
-  const now = ctx.currentTime;
-  const burst = (start: number) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(660, now + start);
-    osc.frequency.setValueAtTime(990, now + start + 0.08);
-    gain.gain.setValueAtTime(0,    now + start);
-    gain.gain.linearRampToValueAtTime(0.50, now + start + 0.012);
-    gain.gain.setValueAtTime(0.50, now + start + 0.16);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + start + 0.24);
-    osc.start(now + start);
-    osc.stop(now  + start + 0.26);
-  };
-  burst(0.00);
-  burst(0.30);
-  burst(0.60);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -525,117 +478,25 @@ export function CaregiverDashboard() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setTick]    = useState(0);
 
-  // ── Audio ──────────────────────────────────────────────────────────────────
-  // audioPreferenceEnabled — persisted in localStorage; survives page reloads.
-  // audioSessionReady      — ALWAYS false on a fresh page load; requires one
-  //   explicit caregiver click per session to satisfy browser autoplay policy.
-  const audioCtxRef          = useRef<AudioContext | null>(null);
-  const audioSessionReadyRef = useRef(false);
-  const [audioSessionReady,  setAudioSessionReady]  = useState(false);
-  const [audioJustActivated, setAudioJustActivated] = useState(false);
-  const [audioActivating,    setAudioActivating]    = useState(false);
-  const [audioError,         setAudioError]         = useState<string | null>(null);
-  const [audioDebug, setAudioDebug] = useState<{ ctxState: string; sessionReady: boolean; lastChime: string }>(
-    { ctxState: 'none', sessionReady: false, lastChime: '—' },
-  );
-
-  // Notification permission state (no auto-request; needs explicit button click).
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unavailable'>(
-    () => (typeof Notification !== 'undefined' ? Notification.permission : 'unavailable'),
-  );
-
-  const handleActivateAudio = async () => {
-    setAudioActivating(true);
-    setAudioError(null);
-
-    // Create AudioContext SYNCHRONOUSLY before the first await to satisfy autoplay policy.
-    const Ctor = window.AudioContext
-      ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) {
-      setAudioError('المتصفح لا يدعم Web Audio API');
-      setAudioActivating(false);
-      return;
-    }
-    let ctx = audioCtxRef.current;
-    if (!ctx || ctx.state === 'closed') {
-      ctx = new Ctor();
-      audioCtxRef.current = ctx;
-    }
-
-    try {
-      await ctx.resume();
-      if (ctx.state !== 'running') {
-        throw new Error(`حالة AudioContext: ${ctx.state}`);
-      }
-
-      // Play an audible two-tone test chime so the caregiver can confirm audio works.
-      playChime(ctx);
-      setAudioDebug({ ctxState: ctx.state, sessionReady: false, lastChime: 'تشغيل…' });
-
-      // Wait for the chime to finish (~650 ms).
-      await new Promise<void>(r => setTimeout(r, 650));
-
-      if (ctx.state !== 'running') {
-        throw new Error('توقف السياق أثناء تشغيل النغمة');
-      }
-
-      // ✓ Success — mark session ready and save preference.
-      localStorage.setItem(CAREGIVER_AUDIO_KEY, 'true');
-      audioSessionReadyRef.current = true;
-      setAudioSessionReady(true);
-      setAudioJustActivated(true);
-      setAudioDebug({ ctxState: ctx.state, sessionReady: true, lastChime: 'نجح ✓' });
-      setTimeout(() => setAudioJustActivated(false), 3500);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setAudioError(`فشل التفعيل: ${msg}`);
-      setAudioDebug(d => ({ ...d, ctxState: ctx?.state ?? 'none', lastChime: `خطأ: ${msg}` }));
-      // Keep button visible — do NOT mark session ready.
-    } finally {
-      setAudioActivating(false);
-    }
-  };
-
-  const handleRequestNotifPermission = async () => {
-    if (typeof Notification === 'undefined') return;
-    const result = await Notification.requestPermission();
-    setNotifPermission(result);
-  };
-
-  // Visibilitychange / focus — attempt to resume a suspended context.
-  // If resume fails (e.g. autoplay policy kicked in again), clear session
-  // readiness and show the activation button again.
-  useEffect(() => {
-    const onFocus = async () => {
-      const ctx = audioCtxRef.current;
-      if (!ctx || !audioSessionReadyRef.current) return;
-      if (ctx.state === 'suspended') {
-        try {
-          await ctx.resume();
-          // If resume() didn't throw, the context should be running again.
-          setAudioDebug(d => ({ ...d, ctxState: audioCtxRef.current?.state ?? 'none' }));
-        } catch {
-          // Resume failed — require a new activation gesture.
-          audioSessionReadyRef.current = false;
-          setAudioSessionReady(false);
-          setAudioDebug(d => ({ ...d, ctxState: audioCtxRef.current?.state ?? 'none', sessionReady: false }));
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', onFocus);
-    window.addEventListener('focus', onFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', onFocus);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, []);
+  // ── Audio / notifications — owned by CaregiverNotificationProvider ─────────
+  const {
+    audioSessionReady,
+    audioJustActivated,
+    audioActivating,
+    audioError,
+    handleActivateAudio,
+    notifPermission,
+    handleRequestNotifPermission,
+    audioDebug,
+  } = useCaregiverNotification();
 
   // ── Badge flash ────────────────────────────────────────────────────────────
   const [badgeFlash, setBadgeFlash] = useState(false);
-  const flashTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const notifiedIds   = useRef<Set<string>>(new Set(requests.map(r => r.id)));
-  // "New" requests: arrived after mount, not yet acted on
-  const seenAtMount   = useRef<Set<string>>(new Set(requests.map(r => r.id)));
+  const flashTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // badgeNotifiedIds: tracks which request IDs have already triggered a badge flash/title
+  const badgeNotifiedIds = useRef<Set<string>>(new Set(requests.map(r => r.id)));
+  // seenAtMount: used for the "N جديد" header badge (requests present at mount are NOT "new")
+  const seenAtMount      = useRef<Set<string>>(new Set(requests.map(r => r.id)));
 
   useEffect(() => {
     const prev = document.title;
@@ -655,44 +516,13 @@ export function CaregiverDashboard() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  // (Notification permission is no longer requested automatically.
-  //  The caregiver can opt in via the "تفعيل الإشعارات" button.)
-
+  // Badge flash + tab title — audio is handled entirely by CaregiverNotificationProvider
   useEffect(() => {
     const fresh = requests.filter(
-      r => r.status === 'pending' && !notifiedIds.current.has(r.id),
+      r => r.status === 'pending' && !badgeNotifiedIds.current.has(r.id),
     );
     if (fresh.length === 0) return;
-    fresh.forEach(req => {
-      notifiedIds.current.add(req.id);
-      if (
-        typeof Notification !== 'undefined' &&
-        Notification.permission === 'granted' &&
-        document.hidden
-      ) {
-        new Notification('طلب جديد', {
-          body: `${req.patientName} - ${req.requestText}`,
-          dir: 'rtl', lang: 'ar',
-        });
-      }
-    });
-
-    // Play sound only when audio is session-ready. Use emergency chime for urgent requests.
-    if (audioSessionReadyRef.current && audioCtxRef.current) {
-      const ctx      = audioCtxRef.current;
-      const hasUrgent = fresh.some(r => r.priority === 'urgent');
-      const doPlay   = (c: AudioContext) => {
-        if (hasUrgent) playEmergencyChime(c); else playChime(c);
-        setAudioDebug(d => ({ ...d, lastChime: hasUrgent ? 'طارئ 🚨' : 'عادي 🔔' }));
-      };
-      if (ctx.state === 'running') {
-        doPlay(ctx);
-      } else if (ctx.state === 'suspended') {
-        ctx.resume().then(() => {
-          if (audioCtxRef.current?.state === 'running') doPlay(audioCtxRef.current!);
-        }).catch(() => {});
-      }
-    }
+    fresh.forEach(req => { badgeNotifiedIds.current.add(req.id); });
 
     if (document.hidden) document.title = '🔔 طلب جديد';
     setBadgeFlash(true);
@@ -764,9 +594,12 @@ export function CaregiverDashboard() {
         fontSize: '0.70rem', fontFamily: 'monospace', color: '#6E6E73',
         direction: 'ltr', flexWrap: 'wrap',
       }}>
+        <span>Provider: <strong style={{ color: audioDebug.providerMounted ? '#34C759' : '#FF3B30' }}>{audioDebug.providerMounted ? 'mounted' : 'unmounted'}</strong></span>
         <span>AudioContext: <strong>{audioDebug.ctxState}</strong></span>
         <span>Session Ready: <strong style={{ color: audioDebug.sessionReady ? '#34C759' : '#FF3B30' }}>{audioDebug.sessionReady ? 'true' : 'false'}</strong></span>
-        <span>Last Chime: <strong>{audioDebug.lastChime}</strong></span>
+        <span>Queue: <strong>{audioDebug.pendingQueueIds.length > 0 ? audioDebug.pendingQueueIds.join(', ') : '—'}</strong></span>
+        <span>Last Played: <strong>{audioDebug.lastPlayedId}</strong></span>
+        <span>Last Error: <strong>{audioDebug.lastAudioError}</strong></span>
       </div>
 
       {/* ── Audio banner / success strip ────────────────────────────────── */}

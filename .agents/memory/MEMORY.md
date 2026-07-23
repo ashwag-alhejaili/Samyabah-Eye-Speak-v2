@@ -1,1 +1,1 @@
-- [Dashboard audio design](dashboard-audio.md) — AudioContext in a React ref, not module-level; banner only for first-time users; auto-unlock on first click for returning users.
+- [Dashboard audio design](dashboard-audio.md) — CaregiverNotificationProvider above router; AudioContext in ref; pending sound queue for background tabs; two chimes (normal/emergency).

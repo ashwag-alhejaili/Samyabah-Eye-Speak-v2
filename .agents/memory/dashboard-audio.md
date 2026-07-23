@@ -1,22 +1,30 @@
 ---
 name: Dashboard audio design
-description: How the CaregiverDashboard AudioContext is managed — the decisions that were hard-won through multiple failed iterations.
+description: Architecture of CaregiverNotificationProvider — where it lives, what it owns, and the rules for when sounds play.
 ---
 
-## The rule
-`AudioContext` lives in `audioCtxRef` (a React `useRef`), not a module-level variable. Module-level vars survive HMR but reset on a real page reload, which silently breaks audio on published HTTPS builds where the banner is hidden.
+## Rule
+All audio/notification state lives in `CaregiverNotificationProvider` (caregiverNotification.tsx), mounted **inside RequestStoreProvider but above WouterRouter**, so it survives internal navigation.
 
-**Why:** Module-level `_audioCtx = null` resets every page load. If localStorage says audio is enabled, the old code hid the banner — so `resume()` was called without a gesture when a notification arrived, which browsers reject.
+**Why:** AudioContext is session-scoped and destroyed on unmount. When audio state lived inside CaregiverDashboard, navigating away then back reset it and lost the pending sound queue.
+
+## What the provider owns
+- `audioCtxRef` — single AudioContext for the session
+- `audioSessionReadyRef` + `audioSessionReady` state — always `false` on page load; requires one explicit click per session
+- `acknowledgedIds` ref — IDs already processed (browser-notified or queued); prevents double-queuing
+- `pendingSoundQueue` ref — requests that arrived while ctx was not running; only removed after chime is scheduled on a running ctx
+- visibilitychange/focus handlers — drain queue when tab becomes visible
 
 ## How to apply
-- Create `AudioContext` inside a synchronous click handler only. Never outside a gesture.
-- `audioActiveRef` (not state) tracks whether the context is running this session — used inside notification `useEffect` to decide whether to call `playChime`.
-- Banner: only shown when `localStorage.getItem(CAREGIVER_AUDIO_KEY) !== 'true'` (never-enabled users). Use key `sameyba_caregiver_audio_v2` — old key `sameyba_audio_unlocked_v1` stored `'1'` (not `'true'`) and caused stale reads.
-- Returning users (localStorage `=== 'true'`): add a one-shot `document.addEventListener('click', ..., { once: true })` effect that creates + resumes ctx on their first click anywhere. No banner shown; if resume() fails, clear localStorage so banner shows next load.
-- Visibility/focus handler: resume the *existing* ctx if suspended. Never recreate it without a gesture.
-- No heartbeat interval — the visibility handler is sufficient.
+- `CaregiverDashboard` calls `useCaregiverNotification()` and MUST NOT recreate AudioContext or own notification effects
+- `acknowledgedIds` is initialized at provider mount with all existing request IDs → old requests never replay after refresh
+- A request is added to `acknowledgedIds` immediately on detection; audio queue is separate — items removed only after chime scheduled
+- On focus/visibilitychange: try resume → if success drain queue (urgent first); if fail → clear sessionReady and show activation button again
+- Activation button must be clicked synchronously (AudioContext created before first `await`)
 
-## Chime spec
-- Tone 1: 880 Hz, 180 ms, peak gain 0.28
-- Tone 2: 1175 Hz, 220 ms, peak gain 0.24 (starts at +0.22 s offset)
-- Function: `playChime(ctx: AudioContext)` — uses `ctx.currentTime` offsets so it works even if ctx.currentTime was frozen during suspension.
+## Chimes
+- Normal: sine wave, 880 Hz → 1175 Hz
+- Emergency: square wave, 3 bursts (660 Hz → 990 Hz), peak gain 0.50 — clearly louder and different
+
+## Debug fields on context
+`providerMounted`, `ctxState`, `sessionReady`, `pendingQueueIds`, `lastPlayedId`, `lastAudioError`
