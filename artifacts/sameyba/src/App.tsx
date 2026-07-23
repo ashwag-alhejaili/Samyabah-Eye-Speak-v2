@@ -700,9 +700,9 @@ const CATEGORIES: Category[] = [
     emoji: '❤️',
     path: '/communicate/health',
     image: 'user-health.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,249,255,0.86) 60%, rgba(212,235,255,0.75) 100%)',
-    ringColor: '#0A84FF',
-    glowColor: 'rgba(10,132,255,0.40)',
+    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,249,242,0.86) 60%, rgba(212,235,212,0.75) 100%)',
+    ringColor: '#5E7E35',
+    glowColor: 'rgba(94,126,53,0.40)',
     floatDuration: 4.2,
     imgScale: 1.60,
     imgPosition: 'center 42%',
@@ -766,9 +766,9 @@ const CATEGORIES: Category[] = [
     emoji: '🛏️',
     path: '/communicate/room',
     image: 'environment-room.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(245,245,255,0.86) 60%, rgba(230,225,255,0.75) 100%)',
-    ringColor: '#AF52DE',
-    glowColor: 'rgba(175,82,222,0.40)',
+    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(250,248,242,0.86) 60%, rgba(240,235,220,0.75) 100%)',
+    ringColor: '#C9A84C',
+    glowColor: 'rgba(201,168,76,0.40)',
     floatDuration: 4.5,
     imgScale: 1.0,
     imgPosition: 'center center',
@@ -1284,8 +1284,8 @@ function EmergencyButton() {
           pointerEvents: 'none',
         }}>
           <DwellRingCircle
-            ringColor="#007AFF"
-            glowColor="rgba(0,122,255,0.40)"
+            ringColor="#5E7E35"
+            glowColor="rgba(94,126,53,0.40)"
             active={active}
             controls={controls}
             onUpdate={onUpdate}
@@ -1509,9 +1509,9 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
       ].join(', ');
 
   const focusShadow = [
-    '0 0 0 3px rgba(0,122,255,0.50)',
-    '0 0 24px rgba(0,122,255,0.32)',
-    '0 8px 32px rgba(0,122,255,0.16)',
+    '0 0 0 3px rgba(94,126,53,0.45)',
+    '0 0 24px rgba(94,126,53,0.28)',
+    '0 8px 32px rgba(94,126,53,0.14)',
     'inset 0 1.5px 0 rgba(255,255,255,1)',
   ].join(', ');
 
@@ -1557,8 +1557,8 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         pointerEvents: 'none',
       }}>
         <DwellRingCircle
-          ringColor="#007AFF"
-          glowColor="rgba(0,122,255,0.40)"
+          ringColor="#5E7E35"
+          glowColor="rgba(94,126,53,0.40)"
           active={active}
           controls={controls}
           onUpdate={onUpdate}

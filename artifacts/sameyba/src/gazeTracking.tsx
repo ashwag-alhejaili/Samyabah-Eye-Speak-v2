@@ -492,9 +492,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           style={{
             position: 'fixed', top: 0, left: 0,
             width: 28, height: 28, borderRadius: '50%',
-            background: 'rgba(0,122,255,0.22)',
-            border: '2.5px solid rgba(0,122,255,0.80)',
-            boxShadow: '0 0 14px rgba(0,122,255,0.50), 0 0 28px rgba(0,122,255,0.20)',
+            background: 'rgba(94,126,53,0.22)',
+            border: '2.5px solid rgba(94,126,53,0.80)',
+            boxShadow: '0 0 14px rgba(94,126,53,0.50), 0 0 28px rgba(94,126,53,0.20)',
             pointerEvents: 'none', zIndex: 999998, opacity: 0,
             willChange: 'transform',
             display: (gazeEnabled && !verifying) ? 'block' : 'none',
@@ -668,7 +668,7 @@ function CalibrationOverlay({
                   transition={{ duration: 0.3 }}
                   style={{
                     height: '100%', borderRadius: 999,
-                    background: 'linear-gradient(90deg, #007AFF, #34C759)',
+                    background: 'linear-gradient(90deg, #5E7E35, #7BA043)',
                   }}
                 />
               </div>
@@ -724,7 +724,7 @@ function ActiveCalPoint({ clicks, onTap }: { clicks: number; onTap: (e: React.Mo
         style={{
           position: 'absolute', inset: -12,
           borderRadius: '50%',
-          border: '2.5px solid rgba(0,122,255,0.5)',
+          border: '2.5px solid rgba(94,126,53,0.5)',
         }}
       />
       {/* Inner circle */}
@@ -733,9 +733,9 @@ function ActiveCalPoint({ clicks, onTap }: { clicks: number; onTap: (e: React.Mo
         transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
         style={{
           width: '100%', height: '100%', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0,122,255,0.9) 0%, rgba(0,122,255,0.5) 100%)',
+          background: 'radial-gradient(circle, rgba(94,126,53,0.9) 0%, rgba(94,126,53,0.5) 100%)',
           border: '2.5px solid rgba(255,255,255,0.8)',
-          boxShadow: '0 0 24px rgba(0,122,255,0.6)',
+          boxShadow: '0 0 24px rgba(94,126,53,0.6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
@@ -808,7 +808,7 @@ function GazePreparingOverlay() {
     >
       <div style={{
         width: 16, height: 16, borderRadius: '50%',
-        border: '2px solid rgba(0,122,255,0.25)', borderTopColor: '#007AFF',
+        border: '2px solid rgba(94,126,53,0.25)', borderTopColor: '#5E7E35',
         animation: 'sameyba-spin 0.75s linear infinite', flexShrink: 0,
       }} />
       <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1C1C1E' }}>
@@ -958,7 +958,7 @@ function GazeStatusIndicator({
   const label = dwellActive || hovering
     ? 'ثبّت نظرك للاختيار'
     : 'تتبع العين جاهز';
-  const color = dwellActive ? '#34C759' : hovering ? '#007AFF' : 'rgba(255,255,255,0.65)';
+  const color = dwellActive ? '#34C759' : hovering ? '#7BA043' : 'rgba(255,255,255,0.65)';
 
   return (
     <motion.div
@@ -1082,7 +1082,7 @@ function CameraPermissionBanner({
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ color: permissionState === 'denied' ? '#FF3B30' : '#007AFF', flexShrink: 0 }}>
+            style={{ color: permissionState === 'denied' ? '#FF3B30' : '#5E7E35', flexShrink: 0 }}>
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
             <circle cx="12" cy="12" r="3" />
           </svg>
@@ -1097,7 +1097,7 @@ function CameraPermissionBanner({
 
           {permissionState === 'idle' && (
             <button onClick={requestCamera} style={{
-              padding: '5px 14px', borderRadius: 999, background: '#007AFF',
+              padding: '5px 14px', borderRadius: 999, background: '#5E7E35',
               color: 'white', border: 'none', fontSize: '0.82rem', fontWeight: 700,
               cursor: 'pointer', fontFamily: "'IBM Plex Sans Arabic', sans-serif", flexShrink: 0,
             }}>
@@ -1116,7 +1116,7 @@ function CameraPermissionBanner({
           {permissionState === 'requesting' && (
             <div style={{
               width: 16, height: 16, borderRadius: '50%',
-              border: '2px solid rgba(0,122,255,0.25)', borderTopColor: '#007AFF',
+              border: '2px solid rgba(94,126,53,0.25)', borderTopColor: '#5E7E35',
               animation: 'sameyba-spin 0.75s linear infinite', flexShrink: 0,
             }} />
           )}

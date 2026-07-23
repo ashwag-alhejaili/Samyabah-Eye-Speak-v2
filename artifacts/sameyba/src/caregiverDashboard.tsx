@@ -112,8 +112,8 @@ function StatsBar({ requests }: { requests: PatientRequest[] }) {
 
   return (
     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' as const }}>
-      <StatCard icon="📊" label="طلبات اليوم"  value={`${today.length}`}                    accent="#0A84FF" />
-      <StatCard icon="🕒" label="آخر نشاط"    value={lastReq ? formatRelativeTime(lastReq.createdAt) : 'لا يوجد'} accent="#5E5CE6" />
+      <StatCard icon="📊" label="طلبات اليوم"  value={`${today.length}`}                    accent="#5E7E35" />
+      <StatCard icon="🕒" label="آخر نشاط"    value={lastReq ? formatRelativeTime(lastReq.createdAt) : 'لا يوجد'} accent="#7BA043" />
       <StatCard icon="🏆" label="الأكثر طلبًا" value={topCat?.label ?? 'لا يوجد'}             accent="#FF9500" />
     </div>
   );
@@ -215,8 +215,8 @@ function RequestCard({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' as const }}>
           <span style={{
-            background: urgent ? 'rgba(255,59,48,0.10)' : 'rgba(10,132,255,0.09)',
-            color: urgent ? '#FF3B30' : '#0A84FF',
+            background: urgent ? 'rgba(255,59,48,0.10)' : 'rgba(94,126,53,0.09)',
+            color: urgent ? '#FF3B30' : '#5E7E35',
             borderRadius: '999px', padding: '3px 11px',
             fontSize: '0.73rem', fontWeight: 700,
           }}>
@@ -239,7 +239,7 @@ function RequestCard({
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <div style={{
           width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-          background: urgent ? 'rgba(255,59,48,0.09)' : 'rgba(10,132,255,0.08)',
+          background: urgent ? 'rgba(255,59,48,0.09)' : 'rgba(94,126,53,0.08)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '1rem',
         }}>
@@ -257,11 +257,11 @@ function RequestCard({
         padding: '13px 16px', borderRadius: '14px',
         background: urgent
           ? 'linear-gradient(135deg, rgba(255,59,48,0.07) 0%, rgba(255,59,48,0.04) 100%)'
-          : 'linear-gradient(135deg, rgba(10,132,255,0.07) 0%, rgba(10,132,255,0.04) 100%)',
-        border: urgent ? '1px solid rgba(255,59,48,0.12)' : '1px solid rgba(10,132,255,0.10)',
+          : 'linear-gradient(135deg, rgba(94,126,53,0.07) 0%, rgba(94,126,53,0.04) 100%)',
+        border: urgent ? '1px solid rgba(255,59,48,0.12)' : '1px solid rgba(94,126,53,0.10)',
       }}>
         <span style={{ fontSize: '1.5rem', lineHeight: 1, flexShrink: 0 }}>{req.requestEmoji}</span>
-        <span style={{ fontWeight: 700, color: urgent ? '#FF3B30' : '#0A84FF', fontSize: '0.97rem', lineHeight: 1.35 }}>
+        <span style={{ fontWeight: 700, color: urgent ? '#FF3B30' : '#5E7E35', fontSize: '0.97rem', lineHeight: 1.35 }}>
           {req.requestText}
         </span>
       </div>
@@ -400,7 +400,7 @@ function ActivityTimeline({ requests }: { requests: PatientRequest[] }) {
           ? '#FF3B30'
           : req.priority === 'urgent'
           ? '#FF3B30'
-          : '#0A84FF';
+          : '#5E7E35';
 
         return (
           <motion.div
@@ -451,7 +451,7 @@ function ActivityTimeline({ requests }: { requests: PatientRequest[] }) {
                       ? 'rgba(52,199,89,0.09)'
                       : req.status === 'rejected'
                       ? 'rgba(255,59,48,0.09)'
-                      : 'rgba(10,132,255,0.09)',
+                      : 'rgba(94,126,53,0.09)',
                     borderRadius: '999px', padding: '1px 7px',
                   }}>
                     {req.status === 'done' ? 'منجز' : req.status === 'rejected' ? 'مرفوض' : req.priority === 'urgent' ? 'عاجل' : 'معلّق'}
@@ -679,8 +679,8 @@ export function CaregiverDashboard() {
                 onClick={handleRequestNotifPermission}
                 style={{
                   padding: '8px 14px', borderRadius: '999px',
-                  background: 'rgba(10,132,255,0.10)',
-                  color: '#0A84FF', border: '1px solid rgba(10,132,255,0.22)',
+                  background: 'rgba(94,126,53,0.10)',
+                  color: '#5E7E35', border: '1px solid rgba(94,126,53,0.22)',
                   cursor: 'pointer', fontWeight: 600, fontSize: '0.80rem',
                   fontFamily: "'IBM Plex Sans Arabic', sans-serif",
                   flexShrink: 0,
@@ -721,10 +721,10 @@ export function CaregiverDashboard() {
             {/* Avatar */}
             <div style={{
               width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
-              background: 'linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%)',
+              background: 'linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '1.5rem',
-              boxShadow: '0 4px 16px rgba(10,132,255,0.28)',
+              boxShadow: '0 4px 16px rgba(94,126,53,0.28)',
             }}>
               👤
             </div>
@@ -866,7 +866,7 @@ export function CaregiverDashboard() {
 
           {/* Pending */}
           <section>
-            <SectionHeader emoji="⏳" title="طلبات معلّقة" count={pending.length} color="#0A84FF" flash={badgeFlash && emergency.length === 0} />
+            <SectionHeader emoji="⏳" title="طلبات معلّقة" count={pending.length} color="#5E7E35" flash={badgeFlash && emergency.length === 0} />
             <AnimatePresence mode="popLayout">
               {pending.length === 0 && emergency.length === 0 ? (
                 <motion.div
@@ -938,7 +938,7 @@ export function CaregiverDashboard() {
         {/* ── Right column: Activity Timeline ────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <SectionHeader emoji="📋" title="سجل النشاط" count={0} color="#5E5CE6" />
+            <SectionHeader emoji="📋" title="سجل النشاط" count={0} color="#7BA043" />
             <ActivityTimeline requests={requests} />
           </div>
         </div>
