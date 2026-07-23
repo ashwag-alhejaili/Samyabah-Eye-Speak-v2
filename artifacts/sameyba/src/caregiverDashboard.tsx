@@ -70,6 +70,31 @@ function playChime(ctx: AudioContext) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Emergency chime — louder, urgent repeating pattern; clearly distinct from normal
+// ─────────────────────────────────────────────────────────────────────────────
+function playEmergencyChime(ctx: AudioContext) {
+  const now = ctx.currentTime;
+  const burst = (start: number) => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(660, now + start);
+    osc.frequency.setValueAtTime(990, now + start + 0.08);
+    gain.gain.setValueAtTime(0,    now + start);
+    gain.gain.linearRampToValueAtTime(0.50, now + start + 0.012);
+    gain.gain.setValueAtTime(0.50, now + start + 0.16);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + start + 0.24);
+    osc.start(now + start);
+    osc.stop(now  + start + 0.26);
+  };
+  burst(0.00);
+  burst(0.30);
+  burst(0.60);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AmbientBackground
 // ─────────────────────────────────────────────────────────────────────────────
 function AmbientBg() {
@@ -501,71 +526,100 @@ export function CaregiverDashboard() {
   const [, setTick]    = useState(0);
 
   // ── Audio ──────────────────────────────────────────────────────────────────
-  const audioCtxRef    = useRef<AudioContext | null>(null);
-  const audioActiveRef = useRef(false);
-  const [audioEnabled,       setAudioEnabled]       = useState(
-    () => localStorage.getItem(CAREGIVER_AUDIO_KEY) === 'true',
-  );
+  // audioPreferenceEnabled — persisted in localStorage; survives page reloads.
+  // audioSessionReady      — ALWAYS false on a fresh page load; requires one
+  //   explicit caregiver click per session to satisfy browser autoplay policy.
+  const audioCtxRef          = useRef<AudioContext | null>(null);
+  const audioSessionReadyRef = useRef(false);
+  const [audioSessionReady,  setAudioSessionReady]  = useState(false);
   const [audioJustActivated, setAudioJustActivated] = useState(false);
-  const audioEnabledRef = useRef(audioEnabled);
-  useEffect(() => { audioEnabledRef.current = audioEnabled; }, [audioEnabled]);
+  const [audioActivating,    setAudioActivating]    = useState(false);
+  const [audioError,         setAudioError]         = useState<string | null>(null);
+  const [audioDebug, setAudioDebug] = useState<{ ctxState: string; sessionReady: boolean; lastChime: string }>(
+    { ctxState: 'none', sessionReady: false, lastChime: '—' },
+  );
 
-  const getOrCreateCtx = (): AudioContext | null => {
+  // Notification permission state (no auto-request; needs explicit button click).
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unavailable'>(
+    () => (typeof Notification !== 'undefined' ? Notification.permission : 'unavailable'),
+  );
+
+  const handleActivateAudio = async () => {
+    setAudioActivating(true);
+    setAudioError(null);
+
+    // Create AudioContext SYNCHRONOUSLY before the first await to satisfy autoplay policy.
     const Ctor = window.AudioContext
       ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return null;
-    const existing = audioCtxRef.current;
-    if (existing && existing.state !== 'closed') return existing;
-    const ctx = new Ctor();
-    audioCtxRef.current = ctx;
-    return ctx;
-  };
+    if (!Ctor) {
+      setAudioError('المتصفح لا يدعم Web Audio API');
+      setAudioActivating(false);
+      return;
+    }
+    let ctx = audioCtxRef.current;
+    if (!ctx || ctx.state === 'closed') {
+      ctx = new Ctor();
+      audioCtxRef.current = ctx;
+    }
 
-  const handleActivateAudio = () => {
-    const ctx = getOrCreateCtx();
-    if (!ctx) return;
-    ctx.resume().then(() => {
-      const c = audioCtxRef.current;
-      if (!c || c.state !== 'running') return;
-      playChime(c);
+    try {
+      await ctx.resume();
+      if (ctx.state !== 'running') {
+        throw new Error(`حالة AudioContext: ${ctx.state}`);
+      }
+
+      // Play an audible two-tone test chime so the caregiver can confirm audio works.
+      playChime(ctx);
+      setAudioDebug({ ctxState: ctx.state, sessionReady: false, lastChime: 'تشغيل…' });
+
+      // Wait for the chime to finish (~650 ms).
+      await new Promise<void>(r => setTimeout(r, 650));
+
+      if (ctx.state !== 'running') {
+        throw new Error('توقف السياق أثناء تشغيل النغمة');
+      }
+
+      // ✓ Success — mark session ready and save preference.
       localStorage.setItem(CAREGIVER_AUDIO_KEY, 'true');
-      audioEnabledRef.current = true;
-      audioActiveRef.current  = true;
-      setAudioEnabled(true);
+      audioSessionReadyRef.current = true;
+      setAudioSessionReady(true);
       setAudioJustActivated(true);
+      setAudioDebug({ ctxState: ctx.state, sessionReady: true, lastChime: 'نجح ✓' });
       setTimeout(() => setAudioJustActivated(false), 3500);
-    }).catch(() => {});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAudioError(`فشل التفعيل: ${msg}`);
+      setAudioDebug(d => ({ ...d, ctxState: ctx?.state ?? 'none', lastChime: `خطأ: ${msg}` }));
+      // Keep button visible — do NOT mark session ready.
+    } finally {
+      setAudioActivating(false);
+    }
   };
 
-  useEffect(() => {
-    if (!audioEnabled) return;
-    const onFirstClick = () => {
-      const ctx = getOrCreateCtx();
-      if (!ctx) return;
-      ctx.resume().then(() => {
-        if (audioCtxRef.current?.state === 'running') {
-          audioActiveRef.current = true;
-        } else {
-          localStorage.removeItem(CAREGIVER_AUDIO_KEY);
-          audioEnabledRef.current = false;
-          setAudioEnabled(false);
-        }
-      }).catch(() => {
-        localStorage.removeItem(CAREGIVER_AUDIO_KEY);
-        audioEnabledRef.current = false;
-        setAudioEnabled(false);
-      });
-    };
-    document.addEventListener('click', onFirstClick, { once: true });
-    return () => document.removeEventListener('click', onFirstClick);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioEnabled]);
+  const handleRequestNotifPermission = async () => {
+    if (typeof Notification === 'undefined') return;
+    const result = await Notification.requestPermission();
+    setNotifPermission(result);
+  };
 
+  // Visibilitychange / focus — attempt to resume a suspended context.
+  // If resume fails (e.g. autoplay policy kicked in again), clear session
+  // readiness and show the activation button again.
   useEffect(() => {
-    const onFocus = () => {
+    const onFocus = async () => {
       const ctx = audioCtxRef.current;
-      if (audioEnabledRef.current && ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+      if (!ctx || !audioSessionReadyRef.current) return;
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+          // If resume() didn't throw, the context should be running again.
+          setAudioDebug(d => ({ ...d, ctxState: audioCtxRef.current?.state ?? 'none' }));
+        } catch {
+          // Resume failed — require a new activation gesture.
+          audioSessionReadyRef.current = false;
+          setAudioSessionReady(false);
+          setAudioDebug(d => ({ ...d, ctxState: audioCtxRef.current?.state ?? 'none', sessionReady: false }));
+        }
       }
     };
     document.addEventListener('visibilitychange', onFocus);
@@ -601,11 +655,8 @@ export function CaregiverDashboard() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  useEffect(() => {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
+  // (Notification permission is no longer requested automatically.
+  //  The caregiver can opt in via the "تفعيل الإشعارات" button.)
 
   useEffect(() => {
     const fresh = requests.filter(
@@ -626,13 +677,19 @@ export function CaregiverDashboard() {
       }
     });
 
-    if (audioActiveRef.current && audioCtxRef.current) {
-      const ctx = audioCtxRef.current;
+    // Play sound only when audio is session-ready. Use emergency chime for urgent requests.
+    if (audioSessionReadyRef.current && audioCtxRef.current) {
+      const ctx      = audioCtxRef.current;
+      const hasUrgent = fresh.some(r => r.priority === 'urgent');
+      const doPlay   = (c: AudioContext) => {
+        if (hasUrgent) playEmergencyChime(c); else playChime(c);
+        setAudioDebug(d => ({ ...d, lastChime: hasUrgent ? 'طارئ 🚨' : 'عادي 🔔' }));
+      };
       if (ctx.state === 'running') {
-        playChime(ctx);
+        doPlay(ctx);
       } else if (ctx.state === 'suspended') {
         ctx.resume().then(() => {
-          if (audioCtxRef.current?.state === 'running') playChime(audioCtxRef.current!);
+          if (audioCtxRef.current?.state === 'running') doPlay(audioCtxRef.current!);
         }).catch(() => {});
       }
     }
@@ -699,6 +756,19 @@ export function CaregiverDashboard() {
     >
       <AmbientBg />
 
+      {/* ── Debug strip (temporary) ─────────────────────────────────────── */}
+      <div style={{
+        position: 'relative', zIndex: 20,
+        display: 'flex', gap: '20px', padding: '5px 24px',
+        background: 'rgba(0,0,0,0.035)', borderBottom: '1px solid rgba(0,0,0,0.06)',
+        fontSize: '0.70rem', fontFamily: 'monospace', color: '#6E6E73',
+        direction: 'ltr', flexWrap: 'wrap',
+      }}>
+        <span>AudioContext: <strong>{audioDebug.ctxState}</strong></span>
+        <span>Session Ready: <strong style={{ color: audioDebug.sessionReady ? '#34C759' : '#FF3B30' }}>{audioDebug.sessionReady ? 'true' : 'false'}</strong></span>
+        <span>Last Chime: <strong>{audioDebug.lastChime}</strong></span>
+      </div>
+
       {/* ── Audio banner / success strip ────────────────────────────────── */}
       <AnimatePresence mode="wait">
         {audioJustActivated ? (
@@ -721,37 +791,71 @@ export function CaregiverDashboard() {
               تم تفعيل صوت التنبيهات
             </span>
           </motion.div>
-        ) : !audioEnabled ? (
+        ) : !audioSessionReady ? (
           <motion.div
             key="audio-banner"
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            onClick={handleActivateAudio}
             style={{
               position: 'relative', zIndex: 20,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: '10px', padding: '13px 24px',
+              display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 24px',
               background: 'linear-gradient(135deg, rgba(255,159,10,0.18) 0%, rgba(255,204,0,0.12) 100%)',
               backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
               borderBottom: '1px solid rgba(255,159,10,0.25)',
-              cursor: 'pointer',
+              flexWrap: 'wrap',
             }}
           >
             <motion.span
               animate={{ scale: [1, 1.18, 1] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ fontSize: '1.15rem' }}
+              style={{ fontSize: '1.1rem', flexShrink: 0 }}
             >
-              🔔
+              🔊
             </motion.span>
-            <span style={{ fontWeight: 600, fontSize: '0.93rem', color: '#92600A' }}>
-              تفعيل صوت التنبيهات
+            <span style={{ fontWeight: 600, fontSize: '0.90rem', color: '#92600A', flexShrink: 0 }}>
+              يلزم تفعيل الصوت في كل جلسة
             </span>
-            <span style={{ marginRight: 'auto', marginLeft: 0, fontSize: '0.78rem', color: 'rgba(146,96,10,0.65)', fontWeight: 500 }}>
-              اضغط مرة واحدة للتفعيل
-            </span>
+            {audioError && (
+              <span style={{ fontSize: '0.78rem', color: '#C0392B', fontWeight: 500 }}>
+                {audioError}
+              </span>
+            )}
+            <button
+              onClick={handleActivateAudio}
+              disabled={audioActivating}
+              style={{
+                marginRight: 'auto',
+                padding: '8px 18px', borderRadius: '999px',
+                background: audioActivating ? 'rgba(146,96,10,0.15)' : '#FF9500',
+                color: audioActivating ? '#92600A' : '#fff',
+                border: 'none', cursor: audioActivating ? 'default' : 'pointer',
+                fontWeight: 700, fontSize: '0.84rem',
+                fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                transition: 'background 0.18s',
+                flexShrink: 0,
+              }}
+            >
+              {audioActivating ? 'جارٍ التفعيل…' : '🔊 تفعيل واختبار الصوت'}
+            </button>
+
+            {/* Optional: browser notification permission */}
+            {notifPermission === 'default' && (
+              <button
+                onClick={handleRequestNotifPermission}
+                style={{
+                  padding: '8px 14px', borderRadius: '999px',
+                  background: 'rgba(10,132,255,0.10)',
+                  color: '#0A84FF', border: '1px solid rgba(10,132,255,0.22)',
+                  cursor: 'pointer', fontWeight: 600, fontSize: '0.80rem',
+                  fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                  flexShrink: 0,
+                }}
+              >
+                🔔 تفعيل الإشعارات
+              </button>
+            )}
           </motion.div>
         ) : null}
       </AnimatePresence>

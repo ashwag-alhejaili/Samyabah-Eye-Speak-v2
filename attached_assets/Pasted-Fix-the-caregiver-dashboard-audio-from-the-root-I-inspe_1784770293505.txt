@@ -1,0 +1,72 @@
+Fix the caregiver dashboard audio from the root.
+
+I inspected caregiverDashboard.tsx. The current bug is that localStorage persists audioEnabled across page reloads, but AudioContext does not persist. This hides the activation banner even though audio is not actually ready in the current browser session.
+
+Required architecture:
+
+1. Separate persistent preference from current-session readiness.
+
+Use:
+- audioPreferenceEnabled: persisted in localStorage
+- audioSessionReady: React state/ref, always false on every fresh page load
+
+2. Never use localStorage alone to hide the activation button.
+
+The button:
+"🔊 تفعيل واختبار الصوت"
+must appear whenever audioSessionReady is false, even if the saved preference is true.
+
+3. On the caregiver's direct click:
+- create AudioContext inside the synchronous click handler
+- store it in audioCtxRef
+- call resume()
+- confirm ctx.state === "running"
+- play an audible two-tone test chime
+- wait until the scheduled chime duration has completed
+- only then set audioSessionReady = true
+- save the user preference in localStorage
+- show:
+  "✅ تم تفعيل صوت التنبيهات"
+
+4. If test activation fails:
+- keep the button visible
+- show the real error message
+- do not mark audio as enabled
+
+5. On every page refresh or new tab:
+- audioSessionReady must start false
+- require one direct caregiver click again because browser autoplay policies require a user gesture per session
+
+6. New request sound:
+- only play when audioSessionReadyRef.current === true
+- play exactly once per genuinely new pending request
+- do not replay old requests after refresh
+- do not play for completed or rejected requests
+
+7. Add two distinct chimes:
+Normal request:
+- 880 Hz then 1175 Hz
+
+Emergency request:
+- louder urgent repeating pattern, clearly different from normal
+
+8. Do not request Notification permission automatically in useEffect.
+Add a separate optional button for browser notification permission because permission requests should occur after a user gesture.
+
+9. Keep AudioContext in audioCtxRef.
+Do not recreate it from notification effects.
+
+10. On visibilitychange/focus:
+- if the existing context is suspended, attempt resume()
+- if resume fails, set audioSessionReady false and show the activation button again
+
+11. Remove the current first-click-anywhere workaround.
+Activation must happen only through the explicit audio activation button.
+
+12. Add temporary debug text:
+- AudioContext state
+- session ready true/false
+- last chime result
+
+Do not modify request synchronization, dashboard cards, layout, patient pages, or gaze tracking.
+Run TypeScript checks before finishing.
