@@ -1704,7 +1704,7 @@ function Home() {
     },
     {
       icon: '🎯',
-      label: 'إعادة المعايرة',
+      label: 'إعادة التهيئة',
       action: () => {
         setMenuOpen(false);
         if (permissionState === 'granted') {

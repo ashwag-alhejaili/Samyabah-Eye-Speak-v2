@@ -386,12 +386,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       sampleBufRef.current = [];
       setPreparingGaze(false);
 
-      // 5c. Launch calibration
-      setCalibrating(true);
-      setCalStep(0);
-      setCalClicks(0);
-      setCalSuccess(false);
-      console.log('[Sameyba/Gaze] Calibration started');
+      // 5c. Show instruction card; launch calibration only when user confirms.
+      pendingCalibrationRef.current = () => {
+        setCalibrating(true);
+        setCalStep(0);
+        setCalClicks(0);
+        setCalSuccess(false);
+        console.log('[Sameyba/Gaze] Calibration started');
+      };
+      setInstructing(true);
     } catch (err) {
       const e = err as Error;
       console.error('[Sameyba/Gaze] wg.begin() ✗', e?.name, e?.message, err);
@@ -401,6 +404,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
     console.groupEnd();
   }, [permissionState]);
+
+  // ── Instruction card state ────────────────────────────────────────────────────
+  const [instructing, setInstructing] = useState(false);
+  const pendingCalibrationRef         = useRef<(() => void) | null>(null);
 
   // ── Calibration click handler ─────────────────────────────────────────────────
   const handleCalClick = useCallback((e: React.MouseEvent) => {
@@ -456,8 +463,12 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     window.webgazer?.clearData();
     setCalStep(0);
     setCalClicks(0);
-    setCalibrating(true);
-    console.log('[Sameyba/Gaze] Recalibration started');
+    // Show instruction card; actual calibration starts on confirmation.
+    pendingCalibrationRef.current = () => {
+      setCalibrating(true);
+    };
+    setInstructing(true);
+    console.log('[Sameyba/Gaze] Recalibration: showing instructions');
   }, [permissionState]);
 
   // ── cancelCalibration ─────────────────────────────────────────────────────────
@@ -467,6 +478,8 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setCalSuccess(false);
     setCalStep(0);
     setCalClicks(0);
+    setInstructing(false);
+    pendingCalibrationRef.current = null;
   }, []);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
@@ -520,6 +533,26 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       {createPortal(
         <AnimatePresence>
           {preparingGaze && <GazePreparingOverlay />}
+        </AnimatePresence>,
+        document.body,
+      )}
+
+      {/* Calibration instruction card */}
+      {createPortal(
+        <AnimatePresence>
+          {instructing && (
+            <CalibrationInstructionCard
+              onBegin={() => {
+                setInstructing(false);
+                pendingCalibrationRef.current?.();
+                pendingCalibrationRef.current = null;
+              }}
+              onCancel={() => {
+                setInstructing(false);
+                pendingCalibrationRef.current = null;
+              }}
+            />
+          )}
         </AnimatePresence>,
         document.body,
       )}
@@ -586,6 +619,167 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── CalibrationInstructionCard ────────────────────────────────────────────────
+function CalibrationInstructionCard({
+  onBegin, onCancel,
+}: {
+  onBegin: () => void;
+  onCancel?: () => void;
+}) {
+  return (
+    <motion.div
+      key="cal-instructions"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000000,
+        background: 'rgba(5, 5, 20, 0.94)',
+        backdropFilter: 'blur(10px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        direction: 'rtl',
+        padding: '24px',
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.90, opacity: 0, y: 28 }}
+        animate={{ scale: 1,    opacity: 1, y: 0  }}
+        exit={{    scale: 0.95, opacity: 0, y: 8  }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          background: 'rgba(255,255,255,0.055)',
+          border: '1px solid rgba(255,255,255,0.13)',
+          borderRadius: 28,
+          padding: '44px 40px 36px',
+          maxWidth: 440,
+          width: '100%',
+          textAlign: 'center',
+        }}
+      >
+
+        {/* Illustration — face → camera */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 14, marginBottom: 28,
+        }}>
+          <span style={{ fontSize: '2.6rem', lineHeight: 1 }}>👤</span>
+          <motion.div
+            animate={{ x: [0, -7, 0] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ display: 'flex', alignItems: 'center' }}
+          >
+            <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
+              <path d="M2 8 H26 M20 2 L28 8 L20 14" stroke="rgba(255,255,255,0.45)"
+                strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </motion.div>
+          <span style={{ fontSize: '2.6rem', lineHeight: 1 }}>📷</span>
+        </div>
+
+        {/* Title */}
+        <h2 style={{
+          fontSize: '1.45rem', fontWeight: 800,
+          color: '#fff', margin: '0 0 24px',
+          letterSpacing: '-0.025em', lineHeight: 1.25,
+        }}>
+          تهيئة تتبع العين
+        </h2>
+
+        {/* Instruction bullets */}
+        <div style={{
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.09)',
+          borderRadius: 16,
+          padding: '20px 22px',
+          textAlign: 'right',
+          marginBottom: 32,
+        }}>
+          <p style={{
+            fontSize: '0.88rem', fontWeight: 700,
+            color: 'rgba(255,255,255,0.65)', margin: '0 0 14px',
+          }}>
+            للحصول على أفضل دقة:
+          </p>
+          {[
+            'انظر مباشرة إلى كل نقطة.',
+            'اضغط على النقطة مع الاستمرار في النظر إليها.',
+            'حافظ على ثبات رأسك قدر الإمكان.',
+            'تأكد من وجود إضاءة جيدة على وجهك.',
+          ].map((tip, i, arr) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                marginBottom: i < arr.length - 1 ? 10 : 0,
+              }}
+            >
+              <span style={{
+                color: '#7BA043', fontSize: '0.55rem',
+                marginTop: 5, flexShrink: 0,
+                lineHeight: 1,
+              }}>
+                ●
+              </span>
+              <span style={{
+                fontSize: '0.875rem',
+                color: 'rgba(255,255,255,0.58)',
+                lineHeight: 1.55,
+              }}>
+                {tip}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Begin button */}
+        <motion.button
+          onClick={onBegin}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 340, damping: 22 }}
+          style={{
+            width: '100%',
+            padding: '17px 0',
+            borderRadius: 999,
+            background: 'linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)',
+            border: 'none',
+            color: '#fff',
+            fontSize: '1.05rem', fontWeight: 800,
+            cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            letterSpacing: '-0.015em',
+            boxShadow: '0 6px 24px rgba(94,126,53,0.45)',
+            marginBottom: onCancel ? 12 : 0,
+          }}
+        >
+          ابدأ التهيئة ✓
+        </motion.button>
+
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            style={{
+              width: '100%',
+              padding: '13px 0',
+              borderRadius: 999,
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.42)',
+              fontSize: '0.90rem', fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            }}
+          >
+            إلغاء
+          </button>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── CalibrationOverlay ────────────────────────────────────────────────────────
 function CalibrationOverlay({
   step, clicks, success, onPointClick, onCancel,
@@ -643,10 +837,10 @@ function CalibrationOverlay({
               ✅
             </motion.div>
             <p style={{ fontSize: '1.35rem', fontWeight: 700, color: '#fff', margin: '0 0 12px' }}>
-              تمت معايرة تتبع العين بنجاح
+              ✅ تمت تهيئة تتبع العين بنجاح
             </p>
             <p style={{ fontSize: '0.92rem', color: 'rgba(255,255,255,0.55)', margin: 0 }}>
-              جاري تفعيل تتبع العيون…
+              سنجري اختباراً سريعاً للتأكد من جودة التتبع.
             </p>
           </motion.div>
         ) : (
@@ -665,10 +859,10 @@ function CalibrationOverlay({
               alignItems: 'center', padding: '32px 24px 0',
             }}>
               <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>
-                معايرة تتبع العين
+                تهيئة تتبع العين
               </p>
               <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>
-                انظر مباشرة إلى النقطة ثم اضغط عليها مرتين دون تحريك رأسك
+                انظر مباشرة إلى النقطة ثم اضغط عليها دون تحريك رأسك
               </p>
               <p style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.35)', margin: '0 0 18px' }}>
                 النقطة {step + 1} من {CAL_POINTS.length}
@@ -859,7 +1053,7 @@ function GazePreparingOverlay() {
 
 // ── CalibrationVerification ───────────────────────────────────────────────────
 const VERIFY_TARGETS = [
-  { id: 'center', label: 'المركز', x: '50%', y: '50%' },
+  { id: 'center', label: 'الوسط',  x: '50%', y: '50%' },
   { id: 'top',    label: 'الأعلى', x: '50%', y: '10%' },
   { id: 'bottom', label: 'الأسفل', x: '50%', y: '90%' },
   { id: 'left',   label: 'اليسار', x: '10%', y: '50%' },
@@ -895,10 +1089,10 @@ function CalibrationVerification({
         textAlign: 'center',
       }}>
         <p style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>
-          تحقق من المعايرة
+          التحقق من جودة التتبع
         </p>
         <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', margin: 0 }}>
-          انظر إلى كل نقطة — هل يتبعها المؤشر الأحمر؟
+          انظر إلى كل نقطة — هل يتابعها المؤشر الأخضر؟
         </p>
       </div>
 
@@ -933,20 +1127,20 @@ function CalibrationVerification({
         </div>
       ))}
 
-      {/* Live gaze dot (red) */}
+      {/* Live gaze cursor (green) */}
       {gazePos && (
         <div
           style={{
             position: 'fixed',
             top: 0, left: 0,
-            width: 22, height: 22, borderRadius: '50%',
-            background: 'rgba(255, 55, 55, 0.55)',
-            border: '2.5px solid rgba(255, 55, 55, 1)',
+            width: 24, height: 24, borderRadius: '50%',
+            background: 'rgba(94,126,53,0.55)',
+            border: '2.5px solid #7BA043',
             pointerEvents: 'none',
             zIndex: 1000002,
-            transform: `translate3d(${gazePos.x - 11}px, ${gazePos.y - 11}px, 0)`,
+            transform: `translate3d(${gazePos.x - 12}px, ${gazePos.y - 12}px, 0)`,
             willChange: 'transform',
-            boxShadow: '0 0 10px rgba(255,55,55,0.6)',
+            boxShadow: '0 0 12px rgba(94,126,53,0.65)',
           }}
         />
       )}
@@ -984,19 +1178,21 @@ function CalibrationVerification({
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
           }}
         >
-          إعادة المعايرة
+          🔄 إعادة التهيئة
         </button>
         <button
           onClick={onConfirm}
           style={{
             padding: '12px 32px', borderRadius: 999,
-            background: '#34C759', border: 'none',
+            background: 'linear-gradient(135deg, #5E7E35, #7BA043)',
+            border: 'none',
             color: '#fff', fontSize: '0.95rem', fontWeight: 700,
             cursor: 'pointer',
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            boxShadow: '0 4px 16px rgba(94,126,53,0.35)',
           }}
         >
-          المعايرة جيدة ✓
+          ✅ المتابعة
         </button>
       </div>
     </motion.div>
@@ -1062,7 +1258,7 @@ function GazeStatusIndicator({
       {/* Recalibrate button */}
       <button
         onClick={onRecalibrate}
-        title="إعادة المعايرة"
+        title="إعادة التهيئة"
         style={{
           display: 'flex', alignItems: 'center', gap: 5,
           padding: '4px 10px',
@@ -1091,7 +1287,7 @@ function GazeStatusIndicator({
           <polyline points="1 4 1 10 7 10" />
           <path d="M3.51 15a9 9 0 1 0 .49-3.5" />
         </svg>
-        معايرة
+        تهيئة
       </button>
     </motion.div>
   );
