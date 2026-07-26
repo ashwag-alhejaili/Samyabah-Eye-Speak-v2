@@ -613,6 +613,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             ) {
               visualLockedRef.current = true;
               visualLockedPosRef.current = { x, y };
+              console.log("VISUAL LOCK");
             }
           }
 
@@ -623,9 +624,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             );
 
             if (movedFromLockPx > VISUAL_RELEASE_RADIUS_PX) {
-              visualLockedRef.current = false;
-              visualLockedPosRef.current = null;
-              visualLockAnchorRef.current = { x, y, ts: now_ms };
+              if (movedFromLockPx > VISUAL_RELEASE_RADIUS_PX) {
+                visualLockedRef.current = false;
+                visualLockedPosRef.current = null;
+                visualLockAnchorRef.current = { x, y, ts: now_ms };
+
+                console.log("VISUAL UNLOCK");
+              } else {
+                visX = visualLockedPosRef.current.x;
+                visY = visualLockedPosRef.current.y;
+              }
             } else {
               visX = visualLockedPosRef.current.x;
               visY = visualLockedPosRef.current.y;
