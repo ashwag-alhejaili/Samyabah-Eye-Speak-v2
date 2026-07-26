@@ -222,6 +222,15 @@ const DEAD_ZONE_PX = 5;
  * it only releases when movement from the locked position exceeds
  * this larger radius. */
 const STABILITY_RELEASE_RADIUS_PX = 9;
+// ── Visible-cursor stability lock tuning (v1.5) ───────────────────────────────
+/** Radius the filtered gaze must stay within to accumulate still time. */
+const VISUAL_LOCK_RADIUS_PX = 6;
+
+/** How long the gaze must remain within the radius before freezing. */
+const VISUAL_LOCK_MS = 350;
+
+/** Distance required to release the visible cursor lock. */
+const VISUAL_RELEASE_RADIUS_PX = 12;
 /** A raw WebGazer sample jumping more than this (px) from the last accepted
  *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
 const OUTLIER_MAX_JUMP_PX = 200;
@@ -306,7 +315,20 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   /** Whether the cursor is currently held by the position hysteresis
    * stability lock (v1.3). */
   const stabilityLockedRef = useRef(false);
+  /** v1.5 — anchor point + timestamp used to measure how long the filtered
+   * gaze has stayed within VISUAL_LOCK_RADIUS_PX. Purely visual; does not
+   * feed hit-testing or dwell. */
+  const visualLockAnchorRef = useRef<{
+    x: number;
+    y: number;
+    ts: number;
+  } | null>(null);
 
+  /** v1.5 — whether the visible cursor is currently frozen. */
+  const visualLockedRef = useRef(false);
+
+  /** v1.5 — the frozen on-screen position while visually locked. */
+  const visualLockedPosRef = useRef<{ x: number; y: number } | null>(null);
   const filterXRef = useRef(
     new OneEuroFilter(
       ONE_EURO_MIN_CUTOFF,
@@ -331,6 +353,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     lastAcceptedRawRef.current = null;
     lastDisplayedPosRef.current = null;
     stabilityLockedRef.current = false;
+    // v1.5 — reset the visual-only stability lock state.
+    visualLockAnchorRef.current = null;
+    visualLockedRef.current = false;
+    visualLockedPosRef.current = null;
   }, []);
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
@@ -429,8 +455,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         scaledMad === 0
           ? samples
           : samples.filter(
-              (v) =>
-                Math.abs(v - targetMedian) <= VBIAS_MAD_K * scaledMad,
+              (v) => Math.abs(v - targetMedian) <= VBIAS_MAD_K * scaledMad,
             );
 
       if (cleaned.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
@@ -522,34 +547,34 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             ts: now_ms,
           };
 
-            const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
-            const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
+          const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
+          const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
 
-            // 2b. Adaptive vertical bias correction (v1.4)
-            const biasCorrectedY = oneEuroY - verticalBiasRef.current;
+          // 2b. Adaptive vertical bias correction (v1.4)
+          const biasCorrectedY = oneEuroY - verticalBiasRef.current;
 
-            // Collect raw One Euro Y samples for the currently active verification target.
-            const activeVerifyStep = verifyStepRef.current;
+          // Collect raw One Euro Y samples for the currently active verification target.
+          const activeVerifyStep = verifyStepRef.current;
 
-            if (activeVerifyStep !== null) {
-              const sinceStepStart = now_ms - verifyStepStartTsRef.current;
+          if (activeVerifyStep !== null) {
+            const sinceStepStart = now_ms - verifyStepStartTsRef.current;
 
-              if (sinceStepStart >= VERIFY_SETTLE_MS) {
-                verifyTargetSamplesRef.current[activeVerifyStep].push(oneEuroY);
-              }
+            if (sinceStepStart >= VERIFY_SETTLE_MS) {
+              verifyTargetSamplesRef.current[activeVerifyStep].push(oneEuroY);
             }
+          }
 
-            // 2c. Position hysteresis / stability lock (v1.3)
-            const lastDisplayed = lastDisplayedPosRef.current;
+          // 2c. Position hysteresis / stability lock (v1.3)
+          const lastDisplayed = lastDisplayedPosRef.current;
 
-            let x = oneEuroX;
-            let y = biasCorrectedY;
+          let x = oneEuroX;
+          let y = biasCorrectedY;
 
-            if (lastDisplayed !== null) {
-              const movedPx = Math.hypot(
-                oneEuroX - lastDisplayed.x,
-                biasCorrectedY - lastDisplayed.y,
-              );
+          if (lastDisplayed !== null) {
+            const movedPx = Math.hypot(
+              oneEuroX - lastDisplayed.x,
+              biasCorrectedY - lastDisplayed.y,
+            );
 
             if (stabilityLockedRef.current) {
               // Stay locked until movement clearly exceeds the larger release radius.
@@ -568,13 +593,54 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           }
 
           lastDisplayedPosRef.current = { x, y };
-          // 3. Move cursor immediately — no stability lock
+
+          // v1.5 — visible-cursor-only stability lock.
+          let visX = x;
+          let visY = y;
+
+          const anchor = visualLockAnchorRef.current;
+
+          if (anchor === null) {
+            visualLockAnchorRef.current = { x, y, ts: now_ms };
+          } else {
+            const driftPx = Math.hypot(x - anchor.x, y - anchor.y);
+
+            if (driftPx > VISUAL_LOCK_RADIUS_PX) {
+              visualLockAnchorRef.current = { x, y, ts: now_ms };
+            } else if (
+              !visualLockedRef.current &&
+              now_ms - anchor.ts >= VISUAL_LOCK_MS
+            ) {
+              visualLockedRef.current = true;
+              visualLockedPosRef.current = { x, y };
+            }
+          }
+
+          if (visualLockedRef.current && visualLockedPosRef.current) {
+            const movedFromLockPx = Math.hypot(
+              x - visualLockedPosRef.current.x,
+              y - visualLockedPosRef.current.y,
+            );
+
+            if (movedFromLockPx > VISUAL_RELEASE_RADIUS_PX) {
+              visualLockedRef.current = false;
+              visualLockedPosRef.current = null;
+              visualLockAnchorRef.current = { x, y, ts: now_ms };
+            } else {
+              visX = visualLockedPosRef.current.x;
+              visY = visualLockedPosRef.current.y;
+            }
+          }
+
+          // 3. Move visible cursor only
           const cursorEl = document.getElementById("sameyba-gaze-cursor");
+
           if (cursorEl) {
-            cursorEl.style.transform = `translate3d(${x - 14}px, ${y - 14}px, 0)`;
+            cursorEl.style.transform = `translate3d(${visX - 14}px, ${visY - 14}px, 0)`;
             cursorEl.style.opacity = "1";
           }
 
+          // Keep real gaze coordinates unchanged for hit-testing and dwell.
           setGazePos({ x, y });
 
           // 4. Hit-test every frame → immediate hover indicator
@@ -826,7 +892,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const [instructing, setInstructing] = useState(false);
   const pendingCalibrationRef = useRef<(() => void) | null>(null);
 
-  // ── Calibration click handler ─────────────────────────────────────────────────
+  // ── Calibration click handler ──────────────────────du�──────────────────────────
   const handleCalClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -1020,19 +1086,19 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       {createPortal(
         <AnimatePresence>
           {verifying && (
-          <CalibrationVerification
-            gazePos={gazePos}
-            verifyStep={verifyStep}
-            onConfirm={() => {
-              estimateAndApplyVerticalBias();
-              verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
-              sampleBufRef.current = [];
-              setCalibrated(true);
-              setVerifying(false);
-            }}
-            onRecalibrate={recalibrate}
-            onCancel={cancelCalibration}
-          />
+            <CalibrationVerification
+              gazePos={gazePos}
+              verifyStep={verifyStep}
+              onConfirm={() => {
+                estimateAndApplyVerticalBias();
+                verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
+                sampleBufRef.current = [];
+                setCalibrated(true);
+                setVerifying(false);
+              }}
+              onRecalibrate={recalibrate}
+              onCancel={cancelCalibration}
+            />
           )}
         </AnimatePresence>,
         document.body,
@@ -1652,19 +1718,19 @@ const VERIFY_TARGETS = [
   { id: "right", label: "اليمين", x: "90%", y: "50%", yFrac: 0.5 },
 ] as const;
 
-  function CalibrationVerification({
-    gazePos,
-    verifyStep,
-    onConfirm,
-    onRecalibrate,
-    onCancel,
-  }: {
-    gazePos: { x: number; y: number } | null;
-    verifyStep: number | null;
-    onConfirm: () => void;
-    onRecalibrate: () => void;
-    onCancel?: () => void;
-  }) {
+function CalibrationVerification({
+  gazePos,
+  verifyStep,
+  onConfirm,
+  onRecalibrate,
+  onCancel,
+}: {
+  gazePos: { x: number; y: number } | null;
+  verifyStep: number | null;
+  onConfirm: () => void;
+  onRecalibrate: () => void;
+  onCancel?: () => void;
+}) {
   return (
     <motion.div
       key="cal-verify"
@@ -1718,67 +1784,60 @@ const VERIFY_TARGETS = [
         const isActive = verifyStep === i;
 
         return (
-        <div
-          key={t.id}
-          style={{
-            position: "absolute",
-            left: t.x,
-            top: t.y,
-            transform: "translate(-50%, -50%)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
           <div
+            key={t.id}
             style={{
-              width: isActive ? 58 : 46,
-              height: isActive ? 58 : 46,
-              background: isActive
-                ? "rgba(94,126,53,0.18)"
-                : "rgba(255,255,255,0.06)",
-              border: isActive
-                ? "3px solid #7BA043"
-                : "2px solid rgba(255,255,255,0.40)",
-              boxShadow: isActive
-                ? "0 0 20px rgba(123,160,67,0.55)"
-                : "none",
-              transition: "all .25s ease",
-              borderRadius: "50%",
+              position: "absolute",
+              left: t.x,
+              top: t.y,
+              transform: "translate(-50%, -50%)",
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
+              gap: 8,
             }}
           >
             <div
               style={{
-                width: isActive ? 14 : 10,
-                height: isActive ? 14 : 10,
+                width: isActive ? 58 : 46,
+                height: isActive ? 58 : 46,
                 background: isActive
-                  ? "#fff"
-                  : "rgba(255,255,255,0.85)",
+                  ? "rgba(94,126,53,0.18)"
+                  : "rgba(255,255,255,0.06)",
+                border: isActive
+                  ? "3px solid #7BA043"
+                  : "2px solid rgba(255,255,255,0.40)",
+                boxShadow: isActive ? "0 0 20px rgba(123,160,67,0.55)" : "none",
                 transition: "all .25s ease",
                 borderRadius: "50%",
-                
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
+            >
+              <div
+                style={{
+                  width: isActive ? 14 : 10,
+                  height: isActive ? 14 : 10,
+                  background: isActive ? "#fff" : "rgba(255,255,255,0.85)",
+                  transition: "all .25s ease",
+                  borderRadius: "50%",
+                }}
+              />
+            </div>
+            <span
+              style={{
+                fontSize: isActive ? "0.80rem" : "0.72rem",
+                color: isActive ? "#fff" : "rgba(255,255,255,0.40)",
+                fontWeight: isActive ? 800 : 600,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t.label}
+            </span>
           </div>
-          <span
-            style={{
-              fontSize: isActive ? "0.80rem" : "0.72rem",
-              color: isActive
-                ? "#fff"
-                : "rgba(255,255,255,0.40)",
-              fontWeight: isActive ? 800 : 600,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t.label}
-          </span>
-        </div>
-            );
-          })}
+        );
+      })}
 
       {/* Live gaze cursor (green) */}
       {gazePos && (
