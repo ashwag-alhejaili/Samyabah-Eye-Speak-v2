@@ -214,6 +214,16 @@ class OneEuroFilter {
     return filteredValue;
   }
 }
+// ── Dead zone / outlier rejection tuning constants (v1.2) ────────────────────
+/** Movements smaller than this (px) are treated as fixation tremor and ignored. */
+const DEAD_ZONE_PX = 3;
+/** A raw WebGazer sample jumping more than this (px) from the last accepted
+ *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
+const OUTLIER_MAX_JUMP_PX = 200;
+/** Outlier check only applies within this time window (ms) since the last
+ *  accepted sample — prevents rejecting legitimate slow drift over time. */
+const OUTLIER_MAX_DT_MS = 150;
+
 // ── Calibration constants ─────────────────────────────────────────────────────
 /** 9-point grid as [col%, row%] fractions of the viewport */
 const CAL_POINTS: [number, number][] = [
@@ -263,6 +273,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
   // Refs — used inside rAF to avoid stale closures
   const rawRef = useRef<{ x: number; y: number } | null>(null);
+  /** Last raw WebGazer sample accepted (post outlier-rejection) — v1.2. */
+  const lastAcceptedRawRef = useRef<{
+    x: number;
+    y: number;
+    ts: number;
+  } | null>(null);
+
+  /** Last displayed cursor position (post dead-zone) — v1.2. */
+  const lastDisplayedPosRef = useRef<{ x: number; y: number } | null>(null);
+
   const filterXRef = useRef(
     new OneEuroFilter(
       ONE_EURO_MIN_CUTOFF,
@@ -283,6 +303,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const resetGazeFilters = useCallback(() => {
     filterXRef.current.reset();
     filterYRef.current.reset();
+
+    lastAcceptedRawRef.current = null;
+    lastDisplayedPosRef.current = null;
   }, []);
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
@@ -312,9 +335,53 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // 2. Exponential moving average (0.70 old + 0.30 raw — responsive)
           // 2. One Euro Filter — replaces EMA smoothing
           const now_ms = performance.now();
+          // 2a. Outlier rejection (v1.2) — ignore a raw WebGazer sample that
+          //     jumps further than OUTLIER_MAX_JUMP_PX within OUTLIER_MAX_DT_MS
+          //     of the last accepted raw sample.
+          const lastAcceptedRaw = lastAcceptedRawRef.current;
 
-          const x = filterXRef.current.filter(raw.x, now_ms);
-          const y = filterYRef.current.filter(raw.y, now_ms);
+          if (lastAcceptedRaw !== null) {
+            const dtMs = now_ms - lastAcceptedRaw.ts;
+
+            const jumpPx = Math.hypot(
+              raw.x - lastAcceptedRaw.x,
+              raw.y - lastAcceptedRaw.y,
+            );
+
+            if (dtMs <= OUTLIER_MAX_DT_MS && jumpPx > OUTLIER_MAX_JUMP_PX) {
+              requestAnimationFrame(loop);
+              return;
+            }
+          }
+
+          lastAcceptedRawRef.current = {
+            x: raw.x,
+            y: raw.y,
+            ts: now_ms,
+          };
+
+          const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
+          const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
+
+          // 2b. Dead zone (v1.2)
+          const lastDisplayed = lastDisplayedPosRef.current;
+
+          let x = oneEuroX;
+          let y = oneEuroY;
+
+          if (lastDisplayed !== null) {
+            const movedPx = Math.hypot(
+              oneEuroX - lastDisplayed.x,
+              oneEuroY - lastDisplayed.y,
+            );
+
+            if (movedPx < DEAD_ZONE_PX) {
+              x = lastDisplayed.x;
+              y = lastDisplayed.y;
+            }
+          }
+
+          lastDisplayedPosRef.current = { x, y };
 
           // 3. Move cursor immediately — no stability lock
           const cursorEl = document.getElementById("sameyba-gaze-cursor");
