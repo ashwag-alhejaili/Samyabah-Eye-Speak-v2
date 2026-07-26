@@ -228,7 +228,23 @@ const OUTLIER_MAX_JUMP_PX = 200;
 /** Outlier check only applies within this time window (ms) since the last
  *  accepted sample — prevents rejecting legitimate slow drift over time. */
 const OUTLIER_MAX_DT_MS = 150;
-
+// ── Adaptive vertical bias correction tuning (v1.4) ──────────────────────────
+/** localStorage key used to persist the learned vertical bias across sessions. */
+const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
+/** How long each VERIFY_TARGETS entry stays highlighted / active (ms). */
+const VERIFY_DWELL_MS = 1500;
+/** Samples collected within this window (ms) after a target becomes active
+ *  are discarded — the eye is still saccading in from the previous target. */
+const VERIFY_SETTLE_MS = 300;
+/** Minimum (post-settle) samples a single target needs before its residual
+ *  is trusted at all. */
+const VBIAS_MIN_SAMPLES_PER_TARGET = 10;
+/** MAD multiplier for per-target outlier rejection. */
+const VBIAS_MAD_K = 3;
+/** Minimum number of valid targets required. */
+const VBIAS_MIN_VALID_TARGETS = 3;
+/** Safety clamp on the learned vertical correction. */
+const VBIAS_CLAMP_PX = 160;
 // ── Calibration constants ─────────────────────────────────────────────────────
 /** 9-point grid as [col%, row%] fractions of the viewport */
 const CAL_POINTS: [number, number][] = [
@@ -319,6 +335,143 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
   const sampleBufRef = useRef<GazeSample[]>([]);
+  // ── Adaptive vertical bias correction (v1.4) ──────────────────────────────
+  /** Index (0-4) of the VERIFY_TARGETS entry currently highlighted / being
+   * looked at, or null when no verification sweep is in progress. */
+  const [verifyStep, setVerifyStep] = useState<number | null>(null);
+
+  /** Mirrors verifyStep inside the rAF loop. */
+  const verifyStepRef = useRef<number | null>(null);
+
+  /** Timestamp of when the current verifyStep began. */
+  const verifyStepStartTsRef = useRef<number>(0);
+
+  useEffect(() => {
+    verifyStepRef.current = verifyStep;
+    verifyStepStartTsRef.current = performance.now();
+  }, [verifyStep]);
+
+  /** One predicted-Y sample bucket per verification target. */
+  const verifyTargetSamplesRef = useRef<number[][]>(
+    VERIFY_TARGETS.map(() => []),
+  );
+  // Drive the sequential sweep across VERIFY_TARGETS while verification is open.
+  useEffect(() => {
+    if (!verifying) {
+      setVerifyStep(null);
+      return;
+    }
+
+    setVerifyStep(0);
+
+    const interval = setInterval(() => {
+      setVerifyStep((prev) => {
+        if (prev === null) return prev;
+
+        const next = prev + 1;
+        return next < VERIFY_TARGETS.length ? next : null;
+      });
+    }, VERIFY_DWELL_MS);
+
+    return () => clearInterval(interval);
+  }, [verifying]);
+
+  /** Learned vertical bias in pixels.
+   * correctedY = predictedY - verticalBiasRef.current */
+  const verticalBiasRef = useRef<number>(0);
+
+  // Load the previously learned bias when the app opens.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(VBIAS_STORAGE_KEY);
+      const parsed = stored !== null ? parseFloat(stored) : NaN;
+
+      if (!Number.isNaN(parsed)) {
+        verticalBiasRef.current = Math.max(
+          -VBIAS_CLAMP_PX,
+          Math.min(VBIAS_CLAMP_PX, parsed),
+        );
+
+        console.log(
+          `[Sameyba/Gaze] Loaded persisted vertical bias: ${verticalBiasRef.current.toFixed(1)}px`,
+        );
+      }
+    } catch {
+      // localStorage unavailable — use zero bias.
+    }
+  }, []);
+
+  const estimateAndApplyVerticalBias = useCallback(() => {
+    const median = (arr: number[]): number => {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+
+      return sorted.length % 2 !== 0
+        ? sorted[mid]
+        : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+
+    const perTargetResiduals: number[] = [];
+
+    VERIFY_TARGETS.forEach((target, i) => {
+      const samples = verifyTargetSamplesRef.current[i];
+
+      if (samples.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
+        return;
+      }
+
+      const targetMedian = median(samples);
+      const absDevs = samples.map((v) => Math.abs(v - targetMedian));
+      const mad = median(absDevs);
+      const scaledMad = mad * 1.4826;
+
+      const cleaned =
+        scaledMad === 0
+          ? samples
+          : samples.filter(
+              (v) =>
+                Math.abs(v - targetMedian) <= VBIAS_MAD_K * scaledMad,
+            );
+
+      if (cleaned.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
+        return;
+      }
+
+      const meanCleanedY =
+        cleaned.reduce((sum, v) => sum + v, 0) / cleaned.length;
+
+      const expectedTargetY = window.innerHeight * target.yFrac;
+      const residual = meanCleanedY - expectedTargetY;
+
+      perTargetResiduals.push(residual);
+    });
+
+    if (perTargetResiduals.length < VBIAS_MIN_VALID_TARGETS) {
+      console.log(
+        `[Sameyba/Gaze] Bias estimate skipped — only ${perTargetResiduals.length} valid targets`,
+      );
+      return;
+    }
+
+    const rawBias = median(perTargetResiduals);
+
+    const clampedBias = Math.max(
+      -VBIAS_CLAMP_PX,
+      Math.min(VBIAS_CLAMP_PX, rawBias),
+    );
+
+    verticalBiasRef.current = clampedBias;
+
+    try {
+      localStorage.setItem(VBIAS_STORAGE_KEY, String(clampedBias));
+    } catch {
+      // Bias still applies during this session.
+    }
+
+    console.log(
+      `[Sameyba/Gaze] Vertical bias updated: ${clampedBias.toFixed(1)}px`,
+    );
+  }, []);
 
   // ── RAF loop ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -369,20 +522,34 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             ts: now_ms,
           };
 
-          const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
-          const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
+            const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
+            const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
 
-          // 2b. Position hysteresis / stability lock (v1.3)
-          const lastDisplayed = lastDisplayedPosRef.current;
+            // 2b. Adaptive vertical bias correction (v1.4)
+            const biasCorrectedY = oneEuroY - verticalBiasRef.current;
 
-          let x = oneEuroX;
-          let y = oneEuroY;
+            // Collect raw One Euro Y samples for the currently active verification target.
+            const activeVerifyStep = verifyStepRef.current;
 
-          if (lastDisplayed !== null) {
-            const movedPx = Math.hypot(
-              oneEuroX - lastDisplayed.x,
-              oneEuroY - lastDisplayed.y,
-            );
+            if (activeVerifyStep !== null) {
+              const sinceStepStart = now_ms - verifyStepStartTsRef.current;
+
+              if (sinceStepStart >= VERIFY_SETTLE_MS) {
+                verifyTargetSamplesRef.current[activeVerifyStep].push(oneEuroY);
+              }
+            }
+
+            // 2c. Position hysteresis / stability lock (v1.3)
+            const lastDisplayed = lastDisplayedPosRef.current;
+
+            let x = oneEuroX;
+            let y = biasCorrectedY;
+
+            if (lastDisplayed !== null) {
+              const movedPx = Math.hypot(
+                oneEuroX - lastDisplayed.x,
+                biasCorrectedY - lastDisplayed.y,
+              );
 
             if (stabilityLockedRef.current) {
               // Stay locked until movement clearly exceeds the larger release radius.
@@ -694,6 +861,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           rawRef.current = null;
           resetGazeFilters();
           sampleBufRef.current = [];
+          verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
           // Enable gaze so cursor moves during verification
           setGazeEnabled(true);
           setVerifying(true);
@@ -852,16 +1020,19 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       {createPortal(
         <AnimatePresence>
           {verifying && (
-            <CalibrationVerification
-              gazePos={gazePos}
-              onConfirm={() => {
-                sampleBufRef.current = [];
-                setCalibrated(true);
-                setVerifying(false);
-              }}
-              onRecalibrate={recalibrate}
-              onCancel={cancelCalibration}
-            />
+          <CalibrationVerification
+            gazePos={gazePos}
+            verifyStep={verifyStep}
+            onConfirm={() => {
+              estimateAndApplyVerticalBias();
+              verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
+              sampleBufRef.current = [];
+              setCalibrated(true);
+              setVerifying(false);
+            }}
+            onRecalibrate={recalibrate}
+            onCancel={cancelCalibration}
+          />
           )}
         </AnimatePresence>,
         document.body,
@@ -1474,24 +1645,26 @@ function GazePreparingOverlay() {
 
 // ── CalibrationVerification ───────────────────────────────────────────────────
 const VERIFY_TARGETS = [
-  { id: "center", label: "الوسط", x: "50%", y: "50%" },
-  { id: "top", label: "الأعلى", x: "50%", y: "10%" },
-  { id: "bottom", label: "الأسفل", x: "50%", y: "90%" },
-  { id: "left", label: "اليسار", x: "10%", y: "50%" },
-  { id: "right", label: "اليمين", x: "90%", y: "50%" },
+  { id: "center", label: "الوسط", x: "50%", y: "50%", yFrac: 0.5 },
+  { id: "top", label: "الأعلى", x: "50%", y: "10%", yFrac: 0.1 },
+  { id: "bottom", label: "الأسفل", x: "50%", y: "90%", yFrac: 0.9 },
+  { id: "left", label: "اليسار", x: "10%", y: "50%", yFrac: 0.5 },
+  { id: "right", label: "اليمين", x: "90%", y: "50%", yFrac: 0.5 },
 ] as const;
 
-function CalibrationVerification({
-  gazePos,
-  onConfirm,
-  onRecalibrate,
-  onCancel,
-}: {
-  gazePos: { x: number; y: number } | null;
-  onConfirm: () => void;
-  onRecalibrate: () => void;
-  onCancel?: () => void;
-}) {
+  function CalibrationVerification({
+    gazePos,
+    verifyStep,
+    onConfirm,
+    onRecalibrate,
+    onCancel,
+  }: {
+    gazePos: { x: number; y: number } | null;
+    verifyStep: number | null;
+    onConfirm: () => void;
+    onRecalibrate: () => void;
+    onCancel?: () => void;
+  }) {
   return (
     <motion.div
       key="cal-verify"
@@ -1541,7 +1714,10 @@ function CalibrationVerification({
       </div>
 
       {/* Test targets */}
-      {VERIFY_TARGETS.map((t) => (
+      {VERIFY_TARGETS.map((t, i) => {
+        const isActive = verifyStep === i;
+
+        return (
         <div
           key={t.id}
           style={{
@@ -1557,11 +1733,19 @@ function CalibrationVerification({
         >
           <div
             style={{
-              width: 46,
-              height: 46,
+              width: isActive ? 58 : 46,
+              height: isActive ? 58 : 46,
+              background: isActive
+                ? "rgba(94,126,53,0.18)"
+                : "rgba(255,255,255,0.06)",
+              border: isActive
+                ? "3px solid #7BA043"
+                : "2px solid rgba(255,255,255,0.40)",
+              boxShadow: isActive
+                ? "0 0 20px rgba(123,160,67,0.55)"
+                : "none",
+              transition: "all .25s ease",
               borderRadius: "50%",
-              background: "rgba(255,255,255,0.06)",
-              border: "2px solid rgba(255,255,255,0.40)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1569,25 +1753,32 @@ function CalibrationVerification({
           >
             <div
               style={{
-                width: 10,
-                height: 10,
+                width: isActive ? 14 : 10,
+                height: isActive ? 14 : 10,
+                background: isActive
+                  ? "#fff"
+                  : "rgba(255,255,255,0.85)",
+                transition: "all .25s ease",
                 borderRadius: "50%",
-                background: "rgba(255,255,255,0.85)",
+                
               }}
             />
           </div>
           <span
             style={{
-              fontSize: "0.72rem",
-              color: "rgba(255,255,255,0.40)",
-              fontWeight: 600,
+              fontSize: isActive ? "0.80rem" : "0.72rem",
+              color: isActive
+                ? "#fff"
+                : "rgba(255,255,255,0.40)",
+              fontWeight: isActive ? 800 : 600,
               whiteSpace: "nowrap",
             }}
           >
             {t.label}
           </span>
         </div>
-      ))}
+            );
+          })}
 
       {/* Live gaze cursor (green) */}
       {gazePos && (
