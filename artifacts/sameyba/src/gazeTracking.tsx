@@ -290,6 +290,12 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   // Gaze output
   const [gazeEnabled, setGazeEnabled] = useState(false);
   const [gazePos, setGazePos] = useState<{ x: number; y: number } | null>(null);
+  /** v1.5.1 — visual-lock-adjusted cursor position, for React-rendered
+   * cursors such as CalibrationVerification only. */
+  const [visualCursorPos, setVisualCursorPos] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [gazeTargetId, setGazeTargetId] = useState<string | null>(null);
   const [gazeHoverId, setGazeHoverId] = useState<string | null>(null); // pre-stability hover
   // Calibration
@@ -647,6 +653,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             cursorEl.style.transform = `translate3d(${visX - 14}px, ${visY - 14}px, 0)`;
             cursorEl.style.opacity = "1";
           }
+
+          // v1.5.1 — mirror the visual-lock output for React-rendered cursors.
+          setVisualCursorPos({ x: visX, y: visY });
 
           // Keep real gaze coordinates unchanged for hit-testing and dwell.
           setGazePos({ x, y });
@@ -1096,6 +1105,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           {verifying && (
             <CalibrationVerification
               gazePos={gazePos}
+              visualPos={visualCursorPos}
               verifyStep={verifyStep}
               onConfirm={() => {
                 estimateAndApplyVerticalBias();
@@ -1728,12 +1738,14 @@ const VERIFY_TARGETS = [
 
 function CalibrationVerification({
   gazePos,
+  visualPos,
   verifyStep,
   onConfirm,
   onRecalibrate,
   onCancel,
 }: {
   gazePos: { x: number; y: number } | null;
+  visualPos: { x: number; y: number } | null;
   verifyStep: number | null;
   onConfirm: () => void;
   onRecalibrate: () => void;
@@ -1848,7 +1860,7 @@ function CalibrationVerification({
       })}
 
       {/* Live gaze cursor (green) */}
-      {gazePos && (
+      {visualPos && (
         <div
           style={{
             position: "fixed",
@@ -1861,7 +1873,7 @@ function CalibrationVerification({
             border: "2.5px solid #7BA043",
             pointerEvents: "none",
             zIndex: 1000002,
-            transform: `translate3d(${gazePos.x - 12}px, ${gazePos.y - 12}px, 0)`,
+            transform: `translate3d(${visualPos.x - 12}px, ${visualPos.y - 12}px, 0)`,
             willChange: "transform",
             boxShadow: "0 0 12px rgba(94,126,53,0.65)",
           }}
