@@ -216,7 +216,12 @@ class OneEuroFilter {
 }
 // ── Dead zone / outlier rejection tuning constants (v1.2) ────────────────────
 /** Movements smaller than this (px) are treated as fixation tremor and ignored. */
-const DEAD_ZONE_PX = 3;
+const DEAD_ZONE_PX = 5;
+
+/** Position hysteresis (v1.3): once the cursor is locked,
+ * it only releases when movement from the locked position exceeds
+ * this larger radius. */
+const STABILITY_RELEASE_RADIUS_PX = 9;
 /** A raw WebGazer sample jumping more than this (px) from the last accepted
  *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
 const OUTLIER_MAX_JUMP_PX = 200;
@@ -282,6 +287,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
   /** Last displayed cursor position (post dead-zone) — v1.2. */
   const lastDisplayedPosRef = useRef<{ x: number; y: number } | null>(null);
+  /** Whether the cursor is currently held by the position hysteresis
+   * stability lock (v1.3). */
+  const stabilityLockedRef = useRef(false);
 
   const filterXRef = useRef(
     new OneEuroFilter(
@@ -306,6 +314,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
     lastAcceptedRawRef.current = null;
     lastDisplayedPosRef.current = null;
+    stabilityLockedRef.current = false;
   }, []);
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
@@ -363,7 +372,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
           const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
 
-          // 2b. Dead zone (v1.2)
+          // 2b. Position hysteresis / stability lock (v1.3)
           const lastDisplayed = lastDisplayedPosRef.current;
 
           let x = oneEuroX;
@@ -375,14 +384,23 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               oneEuroY - lastDisplayed.y,
             );
 
-            if (movedPx < DEAD_ZONE_PX) {
+            if (stabilityLockedRef.current) {
+              // Stay locked until movement clearly exceeds the larger release radius.
+              if (movedPx < STABILITY_RELEASE_RADIUS_PX) {
+                x = lastDisplayed.x;
+                y = lastDisplayed.y;
+              } else {
+                stabilityLockedRef.current = false;
+              }
+            } else if (movedPx < DEAD_ZONE_PX) {
+              // Enter the stability lock once movement falls inside the dead zone.
               x = lastDisplayed.x;
               y = lastDisplayed.y;
+              stabilityLockedRef.current = true;
             }
           }
 
           lastDisplayedPosRef.current = { x, y };
-
           // 3. Move cursor immediately — no stability lock
           const cursorEl = document.getElementById("sameyba-gaze-cursor");
           if (cursorEl) {
