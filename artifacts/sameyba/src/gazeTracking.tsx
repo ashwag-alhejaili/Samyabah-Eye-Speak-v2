@@ -345,12 +345,14 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   /** v1.6 — unified absolute stability lock. Replaces lastDisplayedPosRef /
    * stabilityLockedRef (v1.3) and visualLockAnchorRef / visualLockedRef /
    * visualLockedPosRef (v1.5). Now drives the visible cursor, hit-testing,
-   * hover state, and dwell voting — not just the rendered cursor. */
+   * hover state, and dwell voting — not just the rendered cursor.
+   * v1.6.3 — rolling time-windowed buffer of {x,y,ts} samples, replacing the
+   * v1.6/v1.6.2 "every sample must stay within radius of the first sample"
+   * anchor test. See the fixation test at the unified lock site below for
+   * why the anchor test was too fragile. */
   const stillWindowRef = useRef<{
-    anchor: { x: number; y: number; ts: number } | null;
-    samplesX: number[];
-    samplesY: number[];
-  }>({ anchor: null, samplesX: [], samplesY: [] });
+    samples: { x: number; y: number; ts: number }[];
+  }>({ samples: [] });
 
   /** v1.6 — whether the unified lock is currently frozen. */
   const lockedRef = useRef(false);
@@ -394,7 +396,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
     lastAcceptedRawRef.current = null;
     // v1.6 — reset the unified stability lock state.
-    stillWindowRef.current = { anchor: null, samplesX: [], samplesY: [] };
+    stillWindowRef.current = { samples: [] };
     lockedRef.current = false;
     lockedPosRef.current = null;
     releaseCandidateRef.current = null;
@@ -645,78 +647,92 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // stage was added to catch before it reaches here. STILL_WINDOW_
           // RADIUS_PX, STILL_WINDOW_MS, LOCK_RELEASE_RADIUS_PX, and
           // LOCK_RELEASE_SUSTAIN_MS are all unchanged.
+          //
+          // v1.6.3 — acquisition test rewritten. The old test anchored the
+          // window to its *first* sample and discarded the whole window the
+          // instant any later sample drifted past STILL_WINDOW_RADIUS_PX of
+          // that one anchor. Diagnostic captures showed this was too
+          // fragile: the corrected signal's own frame-to-frame noise
+          // regularly exceeded the radius relative to a single fixed point,
+          // so windows were discarded after only 1-4 samples almost every
+          // time and the lock rarely reached STILL_WINDOW_MS of accumulated
+          // time. The fixation test below instead keeps a rolling buffer of
+          // samples from the last STILL_WINDOW_MS and checks dispersion
+          // around the *window's own median* (which moves with the data)
+          // rather than a fixed first sample. A single sample that is far
+          // from the current cluster no longer wipes out the whole window —
+          // it, and only the stale samples that no longer belong with the
+          // current cluster, are trimmed, so genuine noise spikes don't
+          // reset accumulated still time. A real saccade still clears the
+          // window quickly, because every sample in it becomes stale
+          // relative to the new gaze position.
           const stillWindow = stillWindowRef.current;
 
           if (!lockedRef.current) {
-            // Collecting — validate / accumulate the still window.
-            if (stillWindow.anchor === null) {
-              stillWindow.anchor = {
-                x: preLockX,
-                y: preLockY,
-                ts: now_ms,
-              };
-              stillWindow.samplesX = [preLockX];
-              stillWindow.samplesY = [preLockY];
-            } else {
-              const driftFromAnchorPx = Math.hypot(
-                preLockX - stillWindow.anchor.x,
-                preLockY - stillWindow.anchor.y,
-              );
+            const buf = stillWindow.samples;
+            buf.push({ x: preLockX, y: preLockY, ts: now_ms });
 
-              if (driftFromAnchorPx > STILL_WINDOW_RADIUS_PX) {
-                // [DIAG] temporary — still window discarded, distance exceeded radius.
-                console.log(
-                  `[DIAG] still window discarded — distance exceeded radius (drift ${driftFromAnchorPx.toFixed(1)}px > ${STILL_WINDOW_RADIUS_PX}px), had ${stillWindow.samplesX.length} sample(s)`,
-                );
-                // Window broken — discard entirely, restart from this sample.
-                stillWindow.anchor = {
-                  x: preLockX,
-                  y: preLockY,
-                  ts: now_ms,
-                };
-                stillWindow.samplesX = [preLockX];
-                stillWindow.samplesY = [preLockY];
-              } else {
-                stillWindow.samplesX.push(preLockX);
-                stillWindow.samplesY.push(preLockY);
+            // Rolling time window — drop anything older than STILL_WINDOW_MS.
+            const windowCutoffTs = now_ms - STILL_WINDOW_MS;
+            while (buf.length > 0 && buf[0].ts < windowCutoffTs) {
+              buf.shift();
+            }
 
-                // [DIAG] temporary — current still window sample count.
-                console.log(
-                  `[DIAG] still window samples: ${stillWindow.samplesX.length}`,
-                );
+            const medianOf = (arr: number[]): number => {
+              const sorted = [...arr].sort((a, b) => a - b);
+              const mid = Math.floor(sorted.length / 2);
+              return sorted.length % 2 !== 0
+                ? sorted[mid]
+                : (sorted[mid - 1] + sorted[mid]) / 2;
+            };
 
-                if (now_ms - stillWindow.anchor.ts >= STILL_WINDOW_MS) {
-                  // Window qualifies — freeze to the per-axis median.
-                  const medianOf = (arr: number[]): number => {
-                    const sorted = [...arr].sort((a, b) => a - b);
-                    const mid = Math.floor(sorted.length / 2);
-                    return sorted.length % 2 !== 0
-                      ? sorted[mid]
-                      : (sorted[mid - 1] + sorted[mid]) / 2;
-                  };
+            let medX = medianOf(buf.map((s) => s.x));
+            let medY = medianOf(buf.map((s) => s.y));
+            let dispersionPx = Math.max(
+              ...buf.map((s) => Math.hypot(s.x - medX, s.y - medY)),
+            );
 
-                  lockedPosRef.current = {
-                    x: medianOf(stillWindow.samplesX),
-                    y: medianOf(stillWindow.samplesY),
-                  };
-                  lockedRef.current = true;
-                  releaseCandidateRef.current = null;
-
-                  // [DIAG] temporary — capture sample count before the window is cleared below.
-                  const diagQualifyingSampleCount = stillWindow.samplesX.length;
-
-                  // Clear the window — a fresh one only begins after release.
-                  stillWindow.anchor = null;
-                  stillWindow.samplesX = [];
-                  stillWindow.samplesY = [];
-
-                  // [DIAG] temporary — unified stability lock entered LOCKED.
-                  console.log(
-                    `[DIAG] LOCK ENTER — frozen at (${lockedPosRef.current.x.toFixed(1)}, ${lockedPosRef.current.y.toFixed(1)}), window had ${diagQualifyingSampleCount} sample(s)`,
-                  );
-                  console.log("STABILITY LOCK");
-                }
+            if (dispersionPx > STILL_WINDOW_RADIUS_PX) {
+              // The window as a whole is too spread out to be a fixation.
+              // Rather than discarding it entirely (which is what threw
+              // away 1-4 sample windows constantly), drop only the samples
+              // that are stale relative to *where the eye is now* — this
+              // is the "intentional movement" case, and it clears in one
+              // pass since a real saccade leaves every older sample far
+              // from the new position.
+              while (
+                buf.length > 1 &&
+                Math.hypot(buf[0].x - preLockX, buf[0].y - preLockY) >
+                  STILL_WINDOW_RADIUS_PX
+              ) {
+                buf.shift();
               }
+              medX = medianOf(buf.map((s) => s.x));
+              medY = medianOf(buf.map((s) => s.y));
+              dispersionPx =
+                buf.length > 0
+                  ? Math.max(
+                      ...buf.map((s) => Math.hypot(s.x - medX, s.y - medY)),
+                    )
+                  : 0;
+            }
+
+            const windowSpanMs = buf.length > 0 ? now_ms - buf[0].ts : 0;
+
+            if (
+              buf.length > 0 &&
+              dispersionPx <= STILL_WINDOW_RADIUS_PX &&
+              windowSpanMs >= STILL_WINDOW_MS
+            ) {
+              // Window qualifies — freeze to the per-axis median.
+              lockedPosRef.current = { x: medX, y: medY };
+              lockedRef.current = true;
+              releaseCandidateRef.current = null;
+
+              // Clear the window — a fresh one only begins after release.
+              stillWindow.samples = [];
+
+              console.log("STABILITY LOCK");
             }
           } else if (lockedPosRef.current) {
             // Locked — require a sustained deviation before releasing.
@@ -732,26 +748,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                 now_ms - releaseCandidateRef.current.since >=
                 LOCK_RELEASE_SUSTAIN_MS
               ) {
-                // [DIAG] temporary — capture sustain duration before releaseCandidateRef is cleared below.
-                const diagSustainedMs =
-                  now_ms - releaseCandidateRef.current.since;
-
                 // Deviation sustained long enough — release, and start a
-                // completely new still window anchored at the current sample.
+                // completely new still window seeded with the current sample.
                 lockedRef.current = false;
                 lockedPosRef.current = null;
                 releaseCandidateRef.current = null;
 
                 stillWindowRef.current = {
-                  anchor: { x: preLockX, y: preLockY, ts: now_ms },
-                  samplesX: [preLockX],
-                  samplesY: [preLockY],
+                  samples: [{ x: preLockX, y: preLockY, ts: now_ms }],
                 };
 
-                // [DIAG] temporary — unified stability lock exited LOCKED.
-                console.log(
-                  `[DIAG] LOCK EXIT — deviation ${deviationPx.toFixed(1)}px sustained ${diagSustainedMs.toFixed(0)}ms, new window anchored at (${preLockX.toFixed(1)}, ${preLockY.toFixed(1)})`,
-                );
                 console.log("STABILITY UNLOCK");
               }
             } else {
@@ -2340,4 +2346,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V1.6.2");
+console.log("ASHWAG TEST V1.6.3");
