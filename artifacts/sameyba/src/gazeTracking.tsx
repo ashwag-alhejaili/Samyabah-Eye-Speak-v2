@@ -232,6 +232,24 @@ const OUTLIER_MAX_DT_MS = 150;
 // with hysteresis (see CARD_ENTER_THRESHOLD / CARD_EXIT_THRESHOLD /
 // CARD_CONFIDENCE_MARGIN below) — there is no frozen cursor position and no
 // fixed-size sample window to fill before a decision can be made.
+//
+// V2.1: the "nearest card wins" geometry above was never the bug — it always
+// gives the correct answer for the point it's handed. The remaining
+// neighboring-card errors ("الصحة" → "احتياجاتي", "أريد ماء" → "أريد الحمام")
+// came from the point itself being systematically off to one side, because
+// V2.0 only ever corrected the *vertical* axis (see VBIAS_* below): the X
+// coordinate went into the nearest-card lookup completely raw. WebGazer's
+// regression can carry a horizontal offset just as easily as a vertical one
+// (webcam not centered under the screen, asymmetric lighting on one iris,
+// a head pose that isn't quite frontal), and a raw X offset shifts the gaze
+// point across the true midpoint of a horizontal (or diagonal) gap between
+// two cards well before it clears CARD_NEAR_CUTOFF_PX — so the "wrong"
+// neighbor looks, geometrically, like the nearest card. The verification
+// sweep already visits a "left" (10%) and "right" (90%) target for exactly
+// this kind of measurement; V2.0 just never recorded their X samples. V2.1
+// adds that missing half of the estimator (see HBIAS_* below) and applies it
+// to gazeX the same way biasCorrectedY already applied to gazeY — no change
+// to the scoring/hysteresis logic itself, because it was never the problem.
 /** Maximum distance (px) from a card's actual bounding rect that the gaze
  *  point may sit and still count as "on" that card. This is intentionally
  *  small and uniform (not gap-aware / per-neighbor) — because assignment is
@@ -265,6 +283,14 @@ const CARD_CONFIDENCE_MARGIN = 0.12;
 // ── Adaptive vertical bias correction tuning (v1.4) ──────────────────────────
 /** localStorage key used to persist the learned vertical bias across sessions. */
 const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
+// ── Adaptive horizontal bias correction tuning (V2.1) ────────────────────────
+// V2.0's verification sweep already visits a "left" (10%) and "right" (90%)
+// target — but only ever recorded their Y samples. Every other axis-specific
+// number below (settle window, min samples, MAD outlier threshold, minimum
+// valid targets, clamp) is identical to the vertical scheme by design: this
+// is the same estimator, run on the other axis, not a new algorithm.
+/** localStorage key used to persist the learned horizontal bias across sessions. */
+const HBIAS_STORAGE_KEY = "sameyba_gaze_hbias_px";
 /** How long each VERIFY_TARGETS entry stays highlighted / active (ms). */
 const VERIFY_DWELL_MS = 1500;
 /** Samples collected within this window (ms) after a target becomes active
@@ -401,6 +427,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const verifyTargetSamplesRef = useRef<number[][]>(
     VERIFY_TARGETS.map(() => []),
   );
+  /** One predicted-X sample bucket per verification target (V2.1) — same
+   *  sweep, same targets, collected in parallel with the Y buckets above. */
+  const verifyTargetXSamplesRef = useRef<number[][]>(
+    VERIFY_TARGETS.map(() => []),
+  );
   // Drive the sequential sweep across VERIFY_TARGETS while verification is open.
   useEffect(() => {
     if (!verifying) {
@@ -425,8 +456,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   /** Learned vertical bias in pixels.
    * correctedY = predictedY - verticalBiasRef.current */
   const verticalBiasRef = useRef<number>(0);
+  /** Learned horizontal bias in pixels (V2.1).
+   * correctedX = predictedX - horizontalBiasRef.current */
+  const horizontalBiasRef = useRef<number>(0);
 
-  // Load the previously learned bias when the app opens.
+  // Load the previously learned biases when the app opens.
   useEffect(() => {
     try {
       const stored = localStorage.getItem(VBIAS_STORAGE_KEY);
@@ -445,78 +479,131 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // localStorage unavailable — use zero bias.
     }
-  }, []);
-
-  const estimateAndApplyVerticalBias = useCallback(() => {
-    const median = (arr: number[]): number => {
-      const sorted = [...arr].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-
-      return sorted.length % 2 !== 0
-        ? sorted[mid]
-        : (sorted[mid - 1] + sorted[mid]) / 2;
-    };
-
-    const perTargetResiduals: number[] = [];
-
-    VERIFY_TARGETS.forEach((target, i) => {
-      const samples = verifyTargetSamplesRef.current[i];
-
-      if (samples.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
-        return;
-      }
-
-      const targetMedian = median(samples);
-      const absDevs = samples.map((v) => Math.abs(v - targetMedian));
-      const mad = median(absDevs);
-      const scaledMad = mad * 1.4826;
-
-      const cleaned =
-        scaledMad === 0
-          ? samples
-          : samples.filter(
-              (v) => Math.abs(v - targetMedian) <= VBIAS_MAD_K * scaledMad,
-            );
-
-      if (cleaned.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
-        return;
-      }
-
-      const meanCleanedY =
-        cleaned.reduce((sum, v) => sum + v, 0) / cleaned.length;
-
-      const expectedTargetY = window.innerHeight * target.yFrac;
-      const residual = meanCleanedY - expectedTargetY;
-
-      perTargetResiduals.push(residual);
-    });
-
-    if (perTargetResiduals.length < VBIAS_MIN_VALID_TARGETS) {
-      console.log(
-        `[Sameyba/Gaze] Bias estimate skipped — only ${perTargetResiduals.length} valid targets`,
-      );
-      return;
-    }
-
-    const rawBias = median(perTargetResiduals);
-
-    const clampedBias = Math.max(
-      -VBIAS_CLAMP_PX,
-      Math.min(VBIAS_CLAMP_PX, rawBias),
-    );
-
-    verticalBiasRef.current = clampedBias;
 
     try {
-      localStorage.setItem(VBIAS_STORAGE_KEY, String(clampedBias));
-    } catch {
-      // Bias still applies during this session.
-    }
+      const storedH = localStorage.getItem(HBIAS_STORAGE_KEY);
+      const parsedH = storedH !== null ? parseFloat(storedH) : NaN;
 
-    console.log(
-      `[Sameyba/Gaze] Vertical bias updated: ${clampedBias.toFixed(1)}px`,
-    );
+      if (!Number.isNaN(parsedH)) {
+        horizontalBiasRef.current = Math.max(
+          -VBIAS_CLAMP_PX,
+          Math.min(VBIAS_CLAMP_PX, parsedH),
+        );
+
+        console.log(
+          `[Sameyba/Gaze] Loaded persisted horizontal bias: ${horizontalBiasRef.current.toFixed(1)}px`,
+        );
+      }
+    } catch {
+      // localStorage unavailable — use zero bias.
+    }
   }, []);
+
+  const median = (arr: number[]): number => {
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+
+    return sorted.length % 2 !== 0
+      ? sorted[mid]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+
+  /** Shared per-axis bias estimator (V2.1). Both the vertical estimate (v1.4,
+   *  unchanged in behavior) and the new horizontal estimate run this exact
+   *  same procedure against their own sample buckets — median-of-cleaned-
+   *  means per target, MAD outlier rejection per target, then a median-of-
+   *  residuals combine across targets. Keeping this as one function means
+   *  X and Y can never silently drift into different correction logic. */
+  const estimateAxisBias = useCallback(
+    (
+      samplesPerTarget: number[][],
+      expectedOf: (targetIdx: number) => number,
+      axisLabel: "Vertical" | "Horizontal",
+      storageKey: string,
+      biasRef: React.MutableRefObject<number>,
+    ) => {
+      const perTargetResiduals: number[] = [];
+
+      VERIFY_TARGETS.forEach((_target, i) => {
+        const samples = samplesPerTarget[i];
+
+        if (samples.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
+          return;
+        }
+
+        const targetMedian = median(samples);
+        const absDevs = samples.map((v) => Math.abs(v - targetMedian));
+        const mad = median(absDevs);
+        const scaledMad = mad * 1.4826;
+
+        const cleaned =
+          scaledMad === 0
+            ? samples
+            : samples.filter(
+                (v) => Math.abs(v - targetMedian) <= VBIAS_MAD_K * scaledMad,
+              );
+
+        if (cleaned.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
+          return;
+        }
+
+        const meanCleaned =
+          cleaned.reduce((sum, v) => sum + v, 0) / cleaned.length;
+
+        const expected = expectedOf(i);
+        const residual = meanCleaned - expected;
+
+        perTargetResiduals.push(residual);
+      });
+
+      if (perTargetResiduals.length < VBIAS_MIN_VALID_TARGETS) {
+        console.log(
+          `[Sameyba/Gaze] ${axisLabel} bias estimate skipped — only ${perTargetResiduals.length} valid targets`,
+        );
+        return;
+      }
+
+      const rawBias = median(perTargetResiduals);
+
+      const clampedBias = Math.max(
+        -VBIAS_CLAMP_PX,
+        Math.min(VBIAS_CLAMP_PX, rawBias),
+      );
+
+      biasRef.current = clampedBias;
+
+      try {
+        localStorage.setItem(storageKey, String(clampedBias));
+      } catch {
+        // Bias still applies during this session.
+      }
+
+      console.log(
+        `[Sameyba/Gaze] ${axisLabel} bias updated: ${clampedBias.toFixed(1)}px`,
+      );
+    },
+    [],
+  );
+
+  /** Runs the vertical estimate (v1.4 behavior, unchanged) followed by the
+   *  new horizontal estimate (V2.1) — both read from the same verification
+   *  sweep, so this always replaces the old vertical-only call site. */
+  const estimateAndApplyBiasCorrections = useCallback(() => {
+    estimateAxisBias(
+      verifyTargetSamplesRef.current,
+      (i) => window.innerHeight * VERIFY_TARGETS[i].yFrac,
+      "Vertical",
+      VBIAS_STORAGE_KEY,
+      verticalBiasRef,
+    );
+    estimateAxisBias(
+      verifyTargetXSamplesRef.current,
+      (i) => window.innerWidth * VERIFY_TARGETS[i].xFrac,
+      "Horizontal",
+      HBIAS_STORAGE_KEY,
+      horizontalBiasRef,
+    );
+  }, [estimateAxisBias]);
 
   // ── RAF loop ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -581,8 +668,19 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
             if (sinceStepStart >= VERIFY_SETTLE_MS) {
               verifyTargetSamplesRef.current[activeVerifyStep].push(oneEuroY);
+              // V2.1 — collect the matching X sample. The verification
+              // sweep already visits a "left" (10%) and "right" (90%)
+              // target for exactly this purpose; V2.0 computed them but
+              // never recorded the X value, so no horizontal correction
+              // was ever learned.
+              verifyTargetXSamplesRef.current[activeVerifyStep].push(oneEuroX);
             }
           }
+
+          // 2b'. Adaptive horizontal bias correction (V2.1) — same
+          // treatment as the vertical correction above, using the bias
+          // learned from the verification sweep's X residuals.
+          const biasCorrectedX = oneEuroX - horizontalBiasRef.current;
 
           // 2c. Card-Intent Engine (V2) — everything from here down replaces
           // the old pre-lock median filter, unified stability lock, padded
@@ -590,7 +688,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // no frozen cursor position anywhere in this pipeline: the point
           // used for card scoring is the One-Euro-filtered, bias-corrected
           // sample computed above (gazeX/gazeY), fresh every frame.
-          const gazeX = oneEuroX;
+          const gazeX = biasCorrectedX;
           const gazeY = biasCorrectedY;
 
           // 3. Visible cursor — a small, separate EMA purely so the dot on
@@ -983,6 +1081,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           rawRef.current = null;
           resetGazeFilters();
           verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
+          verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
           // Enable gaze so cursor moves during verification
           setGazeEnabled(true);
           setVerifying(true);
@@ -1145,8 +1244,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               visualPos={visualCursorPos}
               verifyStep={verifyStep}
               onConfirm={() => {
-                estimateAndApplyVerticalBias();
+                estimateAndApplyBiasCorrections();
                 verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
+                verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
                 setCalibrated(true);
                 setVerifying(false);
               }}
@@ -1765,11 +1865,11 @@ function GazePreparingOverlay() {
 
 // ── CalibrationVerification ───────────────────────────────────────────────────
 const VERIFY_TARGETS = [
-  { id: "center", label: "الوسط", x: "50%", y: "50%", yFrac: 0.5 },
-  { id: "top", label: "الأعلى", x: "50%", y: "10%", yFrac: 0.1 },
-  { id: "bottom", label: "الأسفل", x: "50%", y: "90%", yFrac: 0.9 },
-  { id: "left", label: "اليسار", x: "10%", y: "50%", yFrac: 0.5 },
-  { id: "right", label: "اليمين", x: "90%", y: "50%", yFrac: 0.5 },
+  { id: "center", label: "الوسط", x: "50%", y: "50%", xFrac: 0.5, yFrac: 0.5 },
+  { id: "top", label: "الأعلى", x: "50%", y: "10%", xFrac: 0.5, yFrac: 0.1 },
+  { id: "bottom", label: "الأسفل", x: "50%", y: "90%", xFrac: 0.5, yFrac: 0.9 },
+  { id: "left", label: "اليسار", x: "10%", y: "50%", xFrac: 0.1, yFrac: 0.5 },
+  { id: "right", label: "اليمين", x: "90%", y: "50%", xFrac: 0.9, yFrac: 0.5 },
 ] as const;
 
 function CalibrationVerification({
@@ -2246,4 +2346,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V2.0 — Card-Intent Engine");
+console.log("ASHWAG TEST V2.1 — Card-Intent Engine (+ horizontal bias)");
