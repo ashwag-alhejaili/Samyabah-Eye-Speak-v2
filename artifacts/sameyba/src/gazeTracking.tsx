@@ -306,6 +306,15 @@ const DWELL_THRESHOLD = 0.7;
 const DEPARTURE_TOLERANCE_MS = 200;
 /** Minimum window age (ms) before a vote can fire — avoids false positives */
 const DWELL_MIN_WINDOW_MS = 600;
+// ── Hit-test region padding (Phase 1) ─────────────────────────────────────────
+// Isolation test: replaces exact-pixel elementFromPoint() hit-testing with a
+// padded-rect containment test against every [data-gaze-id] card, so a noisy/
+// imprecise lockOutputX/Y point still resolves to the intended card. Does NOT
+// touch the Unified Stability Lock, the smoothing pipeline feeding it, or the
+// dwell-vote block that consumes the resulting hitId — those are unchanged.
+/** Outward padding (px), applied on all four sides of each [data-gaze-id]
+ *  element's bounding rect, before testing point containment. */
+const HIT_REGION_PADDING_PX = 28;
 
 // ── GazeProvider ──────────────────────────────────────────────────────────────
 export function GazeProvider({ children }: { children: React.ReactNode }) {
@@ -797,11 +806,52 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           setGazePos({ x: oneEuroX, y: biasCorrectedY });
 
           // 4. Hit-test every frame using the unified lock output (v1.6)
-          const hoverEl = document.elementFromPoint(lockOutputX, lockOutputY);
-          const hovTgt = hoverEl?.closest(
-            "[data-gaze-id]",
-          ) as HTMLElement | null;
-          const hitId = hovTgt?.dataset.gazeId ?? null;
+          // Phase 1 (isolation test): padded-rect containment instead of
+          // exact-pixel elementFromPoint(). lockOutputX/Y is UNCHANGED — same
+          // stability-lock output as before; only how it's mapped to a card
+          // id changes. Cards are re-queried every frame (no caching yet —
+          // correctness first, for this isolation test).
+          const gazeCardEls =
+            document.querySelectorAll<HTMLElement>("[data-gaze-id]");
+
+          let hitId: string | null = null;
+          let bestCenterDist = Infinity;
+
+          gazeCardEls.forEach((el) => {
+            const id = el.dataset.gazeId;
+            if (!id) return;
+
+            const rect = el.getBoundingClientRect();
+            const paddedLeft = rect.left - HIT_REGION_PADDING_PX;
+            const paddedRight = rect.right + HIT_REGION_PADDING_PX;
+            const paddedTop = rect.top - HIT_REGION_PADDING_PX;
+            const paddedBottom = rect.bottom + HIT_REGION_PADDING_PX;
+
+            const inside =
+              lockOutputX >= paddedLeft &&
+              lockOutputX <= paddedRight &&
+              lockOutputY >= paddedTop &&
+              lockOutputY <= paddedBottom;
+
+            if (!inside) return;
+
+            // Nearest-center tie-break: when the point falls inside more
+            // than one card's padded region (adjacent cards with generous
+            // padding), prefer whichever card's *unpadded* center is closest
+            // to the point, rather than DOM order.
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const centerDist = Math.hypot(
+              lockOutputX - centerX,
+              lockOutputY - centerY,
+            );
+
+            if (centerDist < bestCenterDist) {
+              bestCenterDist = centerDist;
+              hitId = id;
+            }
+          });
+
           if (hitId !== gazeHoverRef.current) {
             gazeHoverRef.current = hitId;
             setGazeHoverId(hitId);
@@ -2346,4 +2396,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V1.6.3");
+console.log("ASHWAG TEST V1.6.4");
