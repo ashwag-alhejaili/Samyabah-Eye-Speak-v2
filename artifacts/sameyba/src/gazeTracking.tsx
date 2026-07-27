@@ -524,7 +524,37 @@ function solveLinearSystem(a: number[][], b: number[]): number[] {
 
 /** Fits w such that X·w ≈ y via ridge regression. `samples` is n×d (d =
  *  GAZE_FEATURE_COUNT, feature 0 is always the bias term). Returns null if
- *  there isn't enough data to fit reliably. */
+ *  there isn't enough data to fit reliably.
+ *
+ * ── ROOT CAUSE OF "cursor fixed near center after calibration" (V3.1.1) ──
+ * This is where the freeze actually came from. It is NOT a wiring bug —
+ * rawRef.current, latestFeaturesRef, the detect loop, and the cursor RAF
+ * loop are all fine (see the DIAG instrumentation elsewhere in this file,
+ * which was already built to catch exactly this and was pointing right at
+ * it: "non-bias weight magnitude ~0 ⇒ regression is ~ignoring eye-geometry
+ * features and just predicting the mean click position").
+ *
+ * The bug is a feature-scale / regularization mismatch. RIDGE_LAMBDA (4.0)
+ * was carried over from when this estimator worked on much larger raw
+ * pixel-scale inputs. The current geometric features are all tiny by
+ * comparison — rNormX/rNormY/lNormX/lNormY are O(0.1), yaw/pitch are
+ * radians O(0.1–0.4), headCenterX/Y are O(1) in normalized image space —
+ * so across ~18 calibration samples, each feature's own sum-of-squares in
+ * the normal equations (xtx[a][a]) is typically well under 1. Adding
+ * RIDGE_LAMBDA=4.0 on top of that doesn't gently regularize — it swamps
+ * the signal outright, so every non-bias weight solves out to ~0 and the
+ * fitted model degenerates to "predict the mean training-click position",
+ * i.e. a constant point near screen center that doesn't move with gaze.
+ * That also explains why it looks like a hard freeze rather than noisy/
+ * inaccurate tracking: the weights are non-null (fitRidgeRegression isn't
+ * returning null, dot() isn't reading stale data), they're just constant.
+ *
+ * Fix: standardize each non-bias feature (zero mean, unit variance) before
+ * fitting, so RIDGE_LAMBDA applies the same *relative* shrinkage to every
+ * feature regardless of its native units, then convert the fitted
+ * standardized-space weights back into original-feature-space weights so
+ * dot(w, features) at inference time (which always uses raw, unstandardized
+ * features — see runInference) keeps working unchanged. */
 function fitRidgeRegression(
   samples: number[][],
   targets: number[],
@@ -533,11 +563,38 @@ function fitRidgeRegression(
   if (n < 6) return null;
   const d = GAZE_FEATURE_COUNT;
 
+  // 1. Standardize features 1..d-1 (feature 0 is the constant bias term and
+  //    is left untouched). A near-constant column (std ~0 — e.g.
+  //    headCenterX/Y when the user's head barely moved during calibration)
+  //    is left unscaled (std treated as 1) rather than dividing by ~0; its
+  //    fitted weight will simply solve out near 0 on its own, which is the
+  //    correct outcome for a feature that carries no information.
+  const means = new Array(d).fill(0);
+  const stds = new Array(d).fill(1);
+  for (let a = 1; a < d; a++) {
+    let m = 0;
+    for (let i = 0; i < n; i++) m += samples[i][a];
+    m /= n;
+    let variance = 0;
+    for (let i = 0; i < n; i++) variance += (samples[i][a] - m) ** 2;
+    variance /= n;
+    const s = Math.sqrt(variance);
+    means[a] = m;
+    stds[a] = s > 1e-8 ? s : 1;
+  }
+
+  const standardized: number[][] = samples.map((row) => {
+    const z = new Array(d);
+    z[0] = 1;
+    for (let a = 1; a < d; a++) z[a] = (row[a] - means[a]) / stds[a];
+    return z;
+  });
+
   const xtx: number[][] = Array.from({ length: d }, () => new Array(d).fill(0));
   const xty: number[] = new Array(d).fill(0);
 
   for (let i = 0; i < n; i++) {
-    const row = samples[i];
+    const row = standardized[i];
     const t = targets[i];
     for (let a = 0; a < d; a++) {
       xty[a] += row[a] * t;
@@ -548,10 +605,27 @@ function fitRidgeRegression(
   }
 
   // Regularize everything except the bias term (index 0), so the intercept
-  // isn't artificially shrunk toward zero.
+  // isn't artificially shrunk toward zero. Now that every non-bias feature
+  // has unit variance, this shrinkage is fair/comparable across all of
+  // them instead of disproportionately erasing whichever features happen
+  // to have small natural units.
   for (let a = 1; a < d; a++) xtx[a][a] += RIDGE_LAMBDA;
 
-  return solveLinearSystem(xtx, xty);
+  const wStd = solveLinearSystem(xtx, xty);
+
+  // 2. Map the standardized-space weights back to original feature space:
+  //    z_a = (x_a - mean_a) / std_a, so
+  //    ŷ = wStd[0] + Σ wStd[a]·z_a
+  //      = (wStd[0] − Σ wStd[a]·mean_a/std_a) + Σ (wStd[a]/std_a)·x_a
+  const w = new Array(d).fill(0);
+  let biasAdjustment = 0;
+  for (let a = 1; a < d; a++) {
+    w[a] = wStd[a] / stds[a];
+    biasAdjustment += wStd[a] * (means[a] / stds[a]);
+  }
+  w[0] = wStd[0] - biasAdjustment;
+
+  return w;
 }
 
 function dot(w: number[], x: number[]): number {
@@ -1533,7 +1607,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     ) {
       console.error("[Sameyba/Gaze] navigator.mediaDevices not available");
       console.groupEnd();
-      setErrorLabel("المتصفح لا يدعم الوصول إلى الكامير��");
+      setErrorLabel("المتصفح لا يدعم الوصول إلى الكاميرا");
       setPermissionState("denied");
       return;
     }
@@ -3325,5 +3399,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.1 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
+  "ASHWAG TEST V3.2 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
 );
