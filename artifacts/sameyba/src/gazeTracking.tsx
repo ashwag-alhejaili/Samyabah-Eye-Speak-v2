@@ -558,10 +558,12 @@ function solveLinearSystem(a: number[][], b: number[]): number[] {
 function fitRidgeRegression(
   samples: number[][],
   targets: number[],
+  featureCount: number = GAZE_FEATURE_COUNT,
+  ridgeLambda: number = RIDGE_LAMBDA,
 ): number[] | null {
   const n = samples.length;
   if (n < 6) return null;
-  const d = GAZE_FEATURE_COUNT;
+  const d = featureCount;
 
   // 1. Standardize features 1..d-1 (feature 0 is the constant bias term and
   //    is left untouched). A near-constant column (std ~0 — e.g.
@@ -609,7 +611,7 @@ function fitRidgeRegression(
   // has unit variance, this shrinkage is fair/comparable across all of
   // them instead of disproportionately erasing whichever features happen
   // to have small natural units.
-  for (let a = 1; a < d; a++) xtx[a][a] += RIDGE_LAMBDA;
+  for (let a = 1; a < d; a++) xtx[a][a] += ridgeLambda;
 
   const wStd = solveLinearSystem(xtx, xty);
 
@@ -632,6 +634,180 @@ function dot(w: number[], x: number[]): number {
   let s = 0;
   for (let i = 0; i < w.length; i++) s += w[i] * x[i];
   return s;
+}
+
+// ── Dedicated vertical (Y) gaze model (V3.2) ──────────────────────────────────
+// ── ROOT CAUSE OF "cursor dragged downward, Y range compressed" (V3.2) ──
+// The V3.1.1 standardization fix made X and Y share one 9-feature ridge
+// model with one RIDGE_LAMBDA, and it was right to do that for X — the
+// horizontal-bias notes above confirm X now tracks correctly across its
+// full range. But the two axes are not actually symmetric, and forcing
+// them through the same model is what produced this bug:
+//
+//  1. Orientation: rNormY/lNormY are NOT flipped. Both are computed as
+//     (iris.y − min(eyeTop.y, eyeBottom.y)) / eyeHeight in MediaPipe's
+//     image space, where y grows downward. Looking up moves the iris
+//     toward eyeTop ⇒ rNormY → 0; looking down moves it toward eyeBottom
+//     ⇒ rNormY → 1 — the same direction screen-Y grows in. Verified against
+//     this run's own verify-sweep log: mean raw Y for the top target (71)
+//     was 482.0, for the bottom target (641) was 557.5 — 482 < 557.5, so
+//     the *direction* of the mapping is correct. The problem is scale, not
+//     sign.
+//
+//  2. Dynamic range: the iris can only travel within the eyelid aperture,
+//     which is a much smaller physical range vertically than horizontally
+//     (eyelids clip iris-Y far more than the eye corners clip iris-X). This
+//     run's own between-target variance log shows rNormY (3.354e-3) is the
+//     same order of magnitude as rNormX (4.131e-3) — so the *feature
+//     extractor* is not broken — but that comparable *feature*-space
+//     variance still has to explain a much larger *pixel*-space spread once
+//     you account for how little of a real person's vertical eye rotation
+//     range 9 calibration clicks actually sample. The needed regression
+//     slope for Y is intrinsically larger and intrinsically noisier than
+//     for X, for a fixed calibration set.
+//
+//  3/4. Cross-axis leakage + regularization: because X and Y were fit from
+//     the *same* 9-feature vector, the Y fit was free to put real weight on
+//     X-only features. This run's own fitted-weight log shows exactly that:
+//     wy's lNormX weight was −477.1 — a horizontal iris feature getting a
+//     large vertical-prediction weight — which is pure calibration-noise
+//     overfitting, not signal (lNormX has no physical reason to predict Y).
+//     With only 9 independent calibration locations (18 clicks, 2 near-
+//     duplicates each) feeding an 8-dimensional non-bias fit, the system is
+//     barely more constrained than parameters, so ridge is fighting real
+//     overfitting risk on both axes — but only Y's own signal (rNormY/
+//     lNormY) is small enough that this cross-talk and noise can swamp it.
+//
+//  5. The 9-point averaging itself (2 clicks/point, features averaged from
+//     a ≤6-frame rolling buffer at click time) was confirmed NOT to be the
+//     problem — this run logged "18/18 unique feature vectors", so the
+//     extractor is not collapsing distinct fixations into duplicate
+//     samples. It's the ridge fit's *behavior* on those 18 real samples
+//     that's wrong for Y, not the samples themselves.
+//
+//  6/7. Fix: give Y its own dedicated model instead of trying to patch the
+//     shared one:
+//       a) YSubFeatures fits from only the four features with a physical
+//          reason to predict vertical gaze — bias, rNormY, lNormY, pitch,
+//          headCenterY — dropping rNormX/lNormX/yaw/headCenterX entirely so
+//          they can no longer soak up calibration noise as spurious
+//          "vertical" signal (fixes #3/#4).
+//       b) RIDGE_LAMBDA_Y regularizes that smaller, cleaner feature set on
+//          its own terms rather than reusing X's lambda by coincidence.
+//       c) Critically, an explicit *affine* (scale + offset) recalibration
+//          stage is fit on top of the ridge output, directly against the
+//          9 calibration targets' true screen Y. A ridge fit systematically
+//          shrinks its own output range (that's what regularization does by
+//          construction) — no purely *additive* correction can undo a
+//          *scale* error, which is exactly why the existing runtime
+//          verticalBiasRef (median-of-residuals, additive-only, see
+//          estimateAxisBias above) could not fix this: it was already doing
+//          its job correctly, on top of a model whose output range was
+//          wrong to begin with. The affine stage restores the correct
+//          scale *before* that runtime bias correction ever runs, so
+//          verticalBiasRef goes back to correcting what it was designed
+//          for — small residual drift — instead of trying to stretch a
+//          ~75px raw spread across a ~570px target range with a ±160px
+//          clamp (see VBIAS_CLAMP_PX) that was never going to be enough.
+//     This is the standard "regularize, then recalibrate" pattern: ridge
+//     keeps the underlying fit stable against per-click noise, and the
+//     affine stage restores the dynamic range and corrects the offset that
+//     stability costs — both learned straight from this user's own 9-point
+//     calibration, so it adapts per-session rather than assuming a fixed
+//     compression factor.
+
+/** Indices into the full 9-element extractGazeFeatures() vector that are
+ *  physically relevant to *vertical* gaze: bias, rNormY, lNormY, pitch,
+ *  headCenterY. Deliberately excludes rNormX/lNormX/yaw/headCenterX — see
+ *  the V3.2 note above for why leaving those in was letting the Y model
+ *  fit noise on irrelevant horizontal features. */
+const Y_FEATURE_INDICES = [0, 2, 4, 6, 8] as const;
+
+/** Feature count for the dedicated Y model (bias + 4 vertical features). */
+const GAZE_FEATURE_COUNT_Y = Y_FEATURE_INDICES.length;
+
+/** Ridge regularization strength for the dedicated Y model. Applied to a
+ *  smaller (5-feature) standardized space than RIDGE_LAMBDA/X's 9, on
+ *  purpose — see the V3.2 note above: Y's real signal (rNormY/lNormY) is
+ *  naturally smaller and noisier than X's, so this is intentionally
+ *  heavier than RIDGE_LAMBDA per remaining feature. The dynamic range this
+ *  costs is restored afterward by the affine recalibration stage below,
+ *  not by loosening this. */
+const RIDGE_LAMBDA_Y = 6.0;
+
+/** Projects a full 9-element extractGazeFeatures() vector down to the
+ *  5-element vertical-only subset (see Y_FEATURE_INDICES) used to fit and
+ *  evaluate the dedicated Y model. Used identically at calibration-fit time
+ *  and at every-frame inference time so the two never drift apart. */
+function extractYSubFeatures(fullFeatures: number[]): number[] {
+  return Y_FEATURE_INDICES.map((i) => fullFeatures[i]);
+}
+
+/** Human-readable names for the Y-only feature subset, in the same order as
+ *  Y_FEATURE_INDICES (bias, rNormY, lNormY, pitch, headCenterY) — hardcoded
+ *  rather than derived from GAZE_FEATURE_NAMES below to avoid a load-order
+ *  dependency; wy is 5-wide now, not 9-wide, so it needs its own labels
+ *  anyway. Diagnostics-only. */
+const Y_FEATURE_NAMES = ["bias", "rNormY", "lNormY", "pitch", "headCenterY"];
+
+/** scale/offset applied as: correctedY = rawModelY * scale + offset. */
+interface AffineParams {
+  scale: number;
+  offset: number;
+}
+
+const IDENTITY_AFFINE: AffineParams = { scale: 1, offset: 0 };
+
+/** Ridge regression shrinks its own output range by construction — that's
+ *  the point of regularizing — so a model tuned to survive noisy 9-point
+ *  calibration data will *always* under-predict the true spread unless
+ *  something restores it afterward. This fits that restoration directly:
+ *  ordinary least-squares scale + offset mapping the ridge model's own
+ *  in-sample predictions on the calibration set onto the true clicked
+ *  screen-Y values, i.e. the 1-D regression correctedY ≈ scale·rawModelY +
+ *  offset. Clamped to a sane range so a degenerate calibration (e.g. near-
+ *  zero variance in rawModelY) can't produce a wild multiplier — falls back
+ *  to identity (no-op) in that case, same as "no affine correction learned
+ *  yet" before the first calibration completes. */
+function fitYAffine(rawModelY: number[], trueY: number[]): AffineParams {
+  const n = rawModelY.length;
+  if (n < 3) return IDENTITY_AFFINE;
+
+  let meanRaw = 0,
+    meanTrue = 0;
+  for (let i = 0; i < n; i++) {
+    meanRaw += rawModelY[i] / n;
+    meanTrue += trueY[i] / n;
+  }
+
+  let cov = 0,
+    varRaw = 0;
+  for (let i = 0; i < n; i++) {
+    const dr = rawModelY[i] - meanRaw;
+    const dt = trueY[i] - meanTrue;
+    cov += dr * dt;
+    varRaw += dr * dr;
+  }
+
+  if (varRaw < 1e-6) return IDENTITY_AFFINE; // rawModelY has ~no spread to rescale
+
+  let scale = cov / varRaw;
+
+  // Safety clamp — the point of this stage is to *restore* range a ridge
+  // fit compressed (scale > 1 is expected and normal here), not to let a
+  // pathological 9-point calibration produce an unbounded multiplier that
+  // would amplify ordinary per-frame jitter into huge cursor swings.
+  const Y_AFFINE_MIN_SCALE = 0.5;
+  const Y_AFFINE_MAX_SCALE = 6;
+  scale = Math.max(Y_AFFINE_MIN_SCALE, Math.min(Y_AFFINE_MAX_SCALE, scale));
+
+  const offset = meanTrue - scale * meanRaw;
+
+  if (!Number.isFinite(scale) || !Number.isFinite(offset)) {
+    return IDENTITY_AFFINE;
+  }
+
+  return { scale, offset };
 }
 
 // ── DIAGNOSTICS (V3.1 instrumentation) ────────────────────────────────────────
@@ -943,9 +1119,17 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const trainingFeaturesRef = useRef<number[][]>([]);
   const trainingTargetXRef = useRef<number[]>([]);
   const trainingTargetYRef = useRef<number[]>([]);
-  /** Fitted regression weights. Null until calibration completes. */
+  /** Fitted regression weights. Null until calibration completes.
+   *  weightsYRef holds the *dedicated* Y model's weights (see
+   *  GAZE_FEATURE_COUNT_Y / Y_FEATURE_INDICES above) — 5 elements, not 9 —
+   *  and must always be evaluated against extractYSubFeatures(features),
+   *  never the full 9-element feature vector. */
   const weightsXRef = useRef<number[] | null>(null);
   const weightsYRef = useRef<number[] | null>(null);
+  /** Learned scale+offset (V3.2) restoring the dedicated Y model's output
+   *  range/offset — see fitYAffine above for why this is a scale+offset
+   *  fit, not just an offset. Identity (no-op) until calibration completes. */
+  const yAffineRef = useRef<AffineParams>(IDENTITY_AFFINE);
 
   // ── DIAGNOSTICS-ONLY refs (V3.1 instrumentation) ────────────────────────────
   /** Tracks rawRef.current frame-to-frame to answer "does the prediction
@@ -1812,7 +1996,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             // Map back from FaceLandmarker's normalized-image-space
             // features to screen pixels — the regression was trained
             // directly against clientX/clientY, so this is just w·features.
-            rawRef.current = { x: dot(wx, features), y: dot(wy, features) };
+            // X: unchanged, full 9-feature model. Y: dedicated 5-feature
+            // model (see GAZE_FEATURE_COUNT_Y above) followed by the
+            // learned affine (scale+offset) recalibration — see fitYAffine
+            // above for why an affine stage, not just an offset, is needed.
+            const rawModelY = dot(wy, extractYSubFeatures(features));
+            const { scale, offset } = yAffineRef.current;
+            rawRef.current = {
+              x: dot(wx, features),
+              y: rawModelY * scale + offset,
+            };
           }
         }
       };
@@ -1889,6 +2082,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       trainingTargetYRef.current = [];
       weightsXRef.current = null;
       weightsYRef.current = null;
+      yAffineRef.current = IDENTITY_AFFINE;
       rawRef.current = null;
       resetGazeFilters();
       setPreparingGaze(false);
@@ -1972,7 +2166,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         // observational, changes nothing about the fit itself. ─────────────
         {
           const allFeatures = trainingFeaturesRef.current;
-          console.group("[Sameyba/Gaze][DIAG] Calibration feature diagnostics");
+          console.group(
+            "[Sameyba/Gaze][DIAG] Calibration feature diagnostics",
+          );
 
           // 1. Feature-vector variance for each calibration target (the
           //    CLICKS_PER_POINT samples recorded at that point).
@@ -2024,25 +2220,66 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           trainingFeaturesRef.current,
           trainingTargetXRef.current,
         );
+        // V3.2 — Y gets its own dedicated model: the vertical-only feature
+        // subset (see Y_FEATURE_INDICES) and its own ridge lambda
+        // (RIDGE_LAMBDA_Y), instead of reusing the full 9-feature X-tuned
+        // fit. See the "Dedicated vertical (Y) gaze model" note above for
+        // why this run's own diagnostics (wy's large lNormX weight) point
+        // straight at this as the fix.
+        const yTrainingFeatures =
+          trainingFeaturesRef.current.map(extractYSubFeatures);
         const wy = fitRidgeRegression(
-          trainingFeaturesRef.current,
+          yTrainingFeatures,
           trainingTargetYRef.current,
+          GAZE_FEATURE_COUNT_Y,
+          RIDGE_LAMBDA_Y,
         );
         weightsXRef.current = wx;
         weightsYRef.current = wy;
+
+        // V3.2 — fit the Y affine (scale+offset) recalibration directly
+        // against this calibration set: rawModelY[i] = wy·yFeatures[i] for
+        // each of the 18 recorded clicks, regressed onto their true clicked
+        // screen-Y. See fitYAffine above for why this — not another
+        // additive-only correction — is what actually fixes a compressed
+        // range. Falls back to identity (no-op) if wy failed to fit.
+        if (wy) {
+          const rawModelYOnTrainingSet = yTrainingFeatures.map((f) =>
+            dot(wy, f),
+          );
+          yAffineRef.current = fitYAffine(
+            rawModelYOnTrainingSet,
+            trainingTargetYRef.current,
+          );
+        } else {
+          yAffineRef.current = IDENTITY_AFFINE;
+        }
+
         console.log(
           `[Sameyba/Gaze] Calibration complete ✓ — regression fit from ${trainingFeaturesRef.current.length} samples`,
           wx && wy ? "" : "(fit failed — too few valid samples)",
         );
 
-        // 3. The fitted X and Y ridge-regression weights themselves.
+        // 3. The fitted X and Y ridge-regression weights themselves. wy is
+        // now the dedicated 5-feature vertical model — labeled with
+        // Y_FEATURE_NAMES, not the full 9-feature GAZE_FEATURE_NAMES.
         console.log(
           "[Sameyba/Gaze][DIAG] Fitted weights — wx:",
           wx ? diagLabelVector(wx, (n) => n.toFixed(4)) : null,
         );
         console.log(
-          "[Sameyba/Gaze][DIAG] Fitted weights — wy:",
-          wy ? diagLabelVector(wy, (n) => n.toFixed(4)) : null,
+          "[Sameyba/Gaze][DIAG] Fitted weights — wy (dedicated Y model):",
+          wy
+            ? Object.fromEntries(
+                Y_FEATURE_NAMES.map((name, i) => [name, wy[i].toFixed(4)]),
+              )
+            : null,
+        );
+        console.log(
+          `[Sameyba/Gaze][DIAG] Y affine recalibration — scale=${yAffineRef.current.scale.toFixed(3)}, offset=${yAffineRef.current.offset.toFixed(1)}px` +
+            (yAffineRef.current.scale === 1 && yAffineRef.current.offset === 0
+              ? " (identity — fit skipped or degenerate)"
+              : ""),
         );
         if (wx && wy) {
           // A weight vector that's ~all-zero outside the bias term means
@@ -2096,6 +2333,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     trainingTargetYRef.current = [];
     weightsXRef.current = null;
     weightsYRef.current = null;
+    yAffineRef.current = IDENTITY_AFFINE;
     setCalStep(0);
     setCalClicks(0);
     // Show instruction card; actual calibration starts on confirmation.
@@ -3399,5 +3637,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.2 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
+  "ASHWAG TEST V3.3 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator with a dedicated vertical (Y) model + affine recalibration (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
 );
