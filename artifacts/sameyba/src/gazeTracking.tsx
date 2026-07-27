@@ -313,8 +313,18 @@ const DWELL_MIN_WINDOW_MS = 600;
 // the eye directly rather than inheriting whatever position the lock froze
 // on. Value unchanged from Phase 1 — the fix is what feeds the test, not
 // this padding.
-/** Outward padding (px), applied on all four sides of each [data-gaze-id]
- *  element's bounding rect, before testing point containment. */
+// v1.8 — HIT_REGION_PADDING_PX is now a *cap*, not a flat outward padding.
+// Diagnostic captures showed same-row cards can sit as close as ~11px apart,
+// while this constant was being applied in full (28px) on every side — so
+// two same-row neighbors' padded regions overlapped across nearly the whole
+// seam between them, and an ordinary noisy sample near that seam was decided
+// solely by the nearest-center tie-break below. Vertical padding still uses
+// this value directly (top/bottom padding is unchanged). Horizontal padding
+// is now computed per-card from the real gap to same-row neighbors and
+// capped at this value — see computeHorizontalPadding() at the hit-test site.
+/** Outward padding (px). Used as-is for the top/bottom sides of every
+ *  [data-gaze-id] element's bounding rect. Used as an upper bound (cap) for
+ *  the left/right sides — see computeHorizontalPadding(). */
 const HIT_REGION_PADDING_PX = 28;
 // ── Card-level vote confidence margin (Phase 2) ───────────────────────────────
 /** Minimum lead (as a fraction of window samples) the top card must hold
@@ -834,19 +844,86 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // to drive only the visible cursor above (a responsive approximate
           // indicator; it no longer feeds selection). Cards are re-queried
           // every frame (no caching yet — correctness first).
+          //
+          // v1.8 — gap-aware horizontal padding. Diagnostic captures showed
+          // two same-row cards can be as close as ~11px apart while
+          // HIT_REGION_PADDING_PX (28px) was applied in full on every side —
+          // so the padded regions of same-row neighbors overlapped across
+          // nearly the entire seam between them, and the nearest-center
+          // tie-break below (originally meant as a rare fallback) was in
+          // practice deciding every seam crossing on ordinary sample noise.
+          // Fix: rects are gathered first, then each card's LEFT/RIGHT
+          // padding is capped at half the real gap to its nearest same-row
+          // neighbor on that side (computeHorizontalPadding), so two
+          // same-row neighbors' padded regions can never overlap. TOP/BOTTOM
+          // padding is untouched (still HIT_REGION_PADDING_PX flat), and the
+          // vote/dwell logic below is untouched — only the geometry feeding
+          // instantHitId changes.
           const gazeCardEls =
             document.querySelectorAll<HTMLElement>("[data-gaze-id]");
+
+          type GazeCardRect = { id: string; rect: DOMRect };
+          const gazeCardRects: GazeCardRect[] = [];
+          gazeCardEls.forEach((el) => {
+            const id = el.dataset.gazeId;
+            if (!id) return;
+            gazeCardRects.push({ id, rect: el.getBoundingClientRect() });
+          });
+
+          // Two rects are "same-row" for padding purposes if their vertical
+          // extents overlap at all — this deliberately excludes cards in a
+          // different row (which have their own, unrelated horizontal gaps)
+          // from constraining each other's horizontal padding.
+          const verticallyOverlaps = (a: DOMRect, b: DOMRect): boolean =>
+            a.top < b.bottom && a.bottom > b.top;
+
+          // For a given card, find the nearest same-row neighbor's edge on
+          // each side and cap outward padding at half that gap — so, in the
+          // worst case, two neighbors each claim exactly half the gap and
+          // their padded regions meet but never overlap.
+          const computeHorizontalPadding = (
+            id: string,
+            target: DOMRect,
+            all: GazeCardRect[],
+          ): { left: number; right: number } => {
+            let leftGap = Infinity;
+            let rightGap = Infinity;
+
+            for (const other of all) {
+              if (other.id === id) continue;
+              if (!verticallyOverlaps(target, other.rect)) continue;
+
+              if (other.rect.right <= target.left) {
+                leftGap = Math.min(leftGap, target.left - other.rect.right);
+              } else if (other.rect.left >= target.right) {
+                rightGap = Math.min(rightGap, other.rect.left - target.right);
+              }
+            }
+
+            const left =
+              leftGap === Infinity
+                ? HIT_REGION_PADDING_PX
+                : Math.max(0, Math.min(HIT_REGION_PADDING_PX, leftGap / 2));
+            const right =
+              rightGap === Infinity
+                ? HIT_REGION_PADDING_PX
+                : Math.max(0, Math.min(HIT_REGION_PADDING_PX, rightGap / 2));
+
+            return { left, right };
+          };
 
           let instantHitId: string | null = null;
           let bestCenterDist = Infinity;
 
-          gazeCardEls.forEach((el) => {
-            const id = el.dataset.gazeId;
-            if (!id) return;
+          gazeCardRects.forEach(({ id, rect }) => {
+            const { left: padLeft, right: padRight } = computeHorizontalPadding(
+              id,
+              rect,
+              gazeCardRects,
+            );
 
-            const rect = el.getBoundingClientRect();
-            const paddedLeft = rect.left - HIT_REGION_PADDING_PX;
-            const paddedRight = rect.right + HIT_REGION_PADDING_PX;
+            const paddedLeft = rect.left - padLeft;
+            const paddedRight = rect.right + padRight;
             const paddedTop = rect.top - HIT_REGION_PADDING_PX;
             const paddedBottom = rect.bottom + HIT_REGION_PADDING_PX;
 
@@ -858,10 +935,12 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
             if (!inside) return;
 
-            // Nearest-center tie-break: when the point falls inside more
-            // than one card's padded region (adjacent cards with generous
-            // padding), prefer whichever card's *unpadded* center is closest
-            // to the point, rather than DOM order.
+            // Nearest-center tie-break: now a genuine fallback rather than
+            // the normal seam behavior. With horizontal padding capped
+            // above, same-row neighbors' padded regions no longer overlap,
+            // so this only fires for remaining edge cases (e.g. vertical
+            // padding overlap between rows, or corner overlap) — prefer
+            // whichever card's *unpadded* center is closest to the point.
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const centerDist = Math.hypot(
@@ -2456,4 +2535,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V1.6.5");
+console.log("ASHWAG TEST V1.6.6");
