@@ -9,61 +9,102 @@ import {
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 
-// ── WebGazer type declarations ────────────────────────────────────────────────
-declare global {
-  interface Window {
-    webgazer?: {
-      setGazeListener(
-        cb: (data: { x: number; y: number } | null, elapsed: number) => void,
-      ): Window["webgazer"];
-      begin(): Promise<unknown>;
-      end(): void;
-      showVideoPreview(show: boolean): Window["webgazer"];
-      showPredictionPoints(show: boolean): Window["webgazer"];
-      showFaceOverlay?(show: boolean): Window["webgazer"];
-      showFaceFeedbackBox?(show: boolean): Window["webgazer"];
-      setPause(pause: boolean): Window["webgazer"];
-      clearData(): Window["webgazer"];
-      recordScreenPosition?(x: number, y: number, type: "click" | "move"): void;
-      params?: Record<string, unknown>;
-    };
-  }
+// ── MediaPipe Face Landmarker (Tasks Vision) types ────────────────────────────
+// V3.0 — WebGazer + the legacy (deprecated) MediaPipe "Solutions" face_mesh
+// runtime it depends on (see the fetch-patch hack this replaced) have been
+// removed entirely. Landmarks now come from Google's actively-maintained
+// MediaPipe Tasks Vision `FaceLandmarker`, loaded at runtime from jsDelivr —
+// no npm dependency / build-step change required, mirroring how this file
+// already pulled MediaPipe assets from a CDN before. The point-of-gaze
+// estimate itself is a small custom ridge regression (see GazeEstimator
+// below) trained directly from this app's existing 9-point calibration
+// clicks — WebGazer's own internal regression is gone too.
+type Mat4 = number[]; // 16 numbers, column-major, per MediaPipe convention
+
+interface FaceLandmarkerResult {
+  faceLandmarks: { x: number; y: number; z: number }[][];
+  facialTransformationMatrixes?: { data: Mat4 }[];
 }
 
-// ── MediaPipe CDN redirect ────────────────────────────────────────────────────
-// WebGazer's default faceMeshSolutionPath is "./mediapipe/face_mesh" — a
-// relative path that resolves to the local dev server and returns HTML.
-const MEDIAPIPE_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
-const FACE_MESH_FILENAMES = new Set([
-  "face_mesh_solution_packed_assets_loader.js",
-  "face_mesh_solution_simd_wasm_bin.js",
-  "face_mesh_solution_wasm_bin.js",
-  "face_mesh_solution_simd_wasm_bin.wasm",
-  "face_mesh_solution_wasm_bin.wasm",
-  "face_mesh_solution_packed_assets.data",
-  "face_mesh.binarypb",
-]);
-let fetchPatched = false;
-function installMediaPipeFetchPatch() {
-  if (fetchPatched) return;
-  fetchPatched = true;
-  const _orig = window.fetch.bind(window);
-  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-    const raw =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.href
-          : (input as Request).url;
-    const filename = raw.split("/").pop()?.split("?")[0] ?? "";
-    if (FACE_MESH_FILENAMES.has(filename) && !raw.startsWith(MEDIAPIPE_CDN)) {
-      const cdnUrl = `${MEDIAPIPE_CDN}/${filename}`;
-      console.log(`[Sameyba/Gaze] 🔀 fetch redirect: ${raw} → ${cdnUrl}`);
-      return _orig(cdnUrl, init);
-    }
-    return _orig(input, init);
+interface FaceLandmarkerInstance {
+  detectForVideo(
+    video: HTMLVideoElement,
+    timestampMs: number,
+  ): FaceLandmarkerResult;
+  close(): void;
+}
+
+interface TasksVisionModule {
+  FilesetResolver: {
+    forVisionTasks(wasmBaseUrl: string): Promise<unknown>;
   };
-  console.log("[Sameyba/Gaze] fetch interceptor installed");
+  FaceLandmarker: {
+    createFromOptions(
+      fileset: unknown,
+      options: {
+        baseOptions: { modelAssetPath: string; delegate: "GPU" | "CPU" };
+        runningMode: "VIDEO";
+        numFaces: number;
+        outputFaceBlendshapes: boolean;
+        outputFacialTransformationMatrixes: boolean;
+      },
+    ): Promise<FaceLandmarkerInstance>;
+  };
+}
+
+// Pinned version — bundle (.mjs) and wasm runtime must match.
+const TASKS_VISION_VERSION = "0.10.20";
+const TASKS_VISION_BUNDLE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/vision_bundle.mjs`;
+const TASKS_VISION_WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/wasm`;
+const FACE_LANDMARKER_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
+// Module-level cache so the (fairly heavy) wasm + model download only ever
+// happens once per page load, even across recalibration / remount.
+let tasksVisionModulePromise: Promise<TasksVisionModule> | null = null;
+function loadTasksVisionModule(): Promise<TasksVisionModule> {
+  if (!tasksVisionModulePromise) {
+    tasksVisionModulePromise = import(
+      /* @vite-ignore */ TASKS_VISION_BUNDLE_URL
+    ) as Promise<TasksVisionModule>;
+  }
+  return tasksVisionModulePromise;
+}
+
+let faceLandmarkerPromise: Promise<FaceLandmarkerInstance> | null = null;
+async function getFaceLandmarker(): Promise<FaceLandmarkerInstance> {
+  if (!faceLandmarkerPromise) {
+    faceLandmarkerPromise = (async () => {
+      const { FilesetResolver, FaceLandmarker } = await loadTasksVisionModule();
+      const fileset = await FilesetResolver.forVisionTasks(
+        TASKS_VISION_WASM_BASE,
+      );
+      const commonOptions = {
+        baseOptions: {
+          modelAssetPath: FACE_LANDMARKER_MODEL_URL,
+          delegate: "GPU" as const,
+        },
+        runningMode: "VIDEO" as const,
+        numFaces: 1,
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: true,
+      };
+      try {
+        console.log("[Sameyba/Gaze] Creating FaceLandmarker (GPU delegate)...");
+        return await FaceLandmarker.createFromOptions(fileset, commonOptions);
+      } catch (gpuErr) {
+        console.warn(
+          "[Sameyba/Gaze] GPU delegate failed, retrying with CPU:",
+          gpuErr,
+        );
+        return await FaceLandmarker.createFromOptions(fileset, {
+          ...commonOptions,
+          baseOptions: { ...commonOptions.baseOptions, delegate: "CPU" },
+        });
+      }
+    })();
+  }
+  return faceLandmarkerPromise;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -214,6 +255,181 @@ class OneEuroFilter {
     return filteredValue;
   }
 }
+// ── Gaze estimator (V3.0) — replaces WebGazer's built-in ridge regression ────
+// WebGazer regresses screen position directly from raw eye-patch pixels,
+// which is why head movement and lighting could shift a prediction sideways
+// (see the V2.1 horizontal-bias notes below — that was a symptom of exactly
+// this). Instead of raw pixels, this estimator regresses from a small set of
+// *geometric* features computed from MediaPipe's iris + eyelid landmarks and
+// its head-pose transformation matrix — each feature is head-pose-normalized
+// by construction, which is the property that should make adjacent-card
+// discrimination more reliable, not just a differently-tuned version of the
+// same problem.
+//
+// Standard MediaPipe Face Mesh / iris landmark indices (478-point model):
+const LM = {
+  rightEyeOuter: 33,
+  rightEyeInner: 133,
+  rightEyeTop: 159,
+  rightEyeBottom: 145,
+  rightIrisCenter: 468,
+  leftEyeOuter: 263,
+  leftEyeInner: 362,
+  leftEyeTop: 386,
+  leftEyeBottom: 374,
+  leftIrisCenter: 473,
+};
+
+/** Number of features fed to the regression, including the bias/intercept
+ *  term (always 1) as feature 0. */
+const GAZE_FEATURE_COUNT = 9;
+
+/** Ridge regularization strength. Kept relatively high on purpose — the
+ *  calibration set is small (9 points × 2 clicks = 18 samples) and this
+ *  keeps the fit from chasing single-frame landmark noise. */
+const RIDGE_LAMBDA = 4.0;
+
+type FaceLandmark = { x: number; y: number; z: number };
+
+/** Decompose a MediaPipe facial transformation matrix (column-major 4x4)
+ *  into yaw/pitch (radians) — the two head-pose angles that matter for
+ *  on-screen gaze; roll is left out since it barely affects point-of-regard. */
+function yawPitchFromMatrix(m: Mat4): { yaw: number; pitch: number } {
+  // Column-major: m[0],m[1],m[2] = column 0 (rotated X axis), etc.
+  const r20 = m[2],
+    r21 = m[6],
+    r22 = m[10];
+  const yaw = Math.atan2(-r20, Math.sqrt(m[0] * m[0] + m[4] * m[4]));
+  const pitch = Math.atan2(r21, r22);
+  return { yaw, pitch };
+}
+
+/** Extracts a fixed-length, head-pose-aware feature vector from one frame's
+ *  landmarks. Returns null if the eyes can't be confidently located (e.g. a
+ *  blink, or a landmark set that doesn't look like a real face this frame). */
+function extractGazeFeatures(
+  landmarks: FaceLandmark[],
+  transform: Mat4 | null,
+): number[] | null {
+  if (!landmarks || landmarks.length < 478) return null;
+
+  const rEyeL = landmarks[LM.rightEyeOuter];
+  const rEyeR = landmarks[LM.rightEyeInner];
+  const rEyeT = landmarks[LM.rightEyeTop];
+  const rEyeB = landmarks[LM.rightEyeBottom];
+  const rIris = landmarks[LM.rightIrisCenter];
+  const lEyeL = landmarks[LM.leftEyeInner];
+  const lEyeR = landmarks[LM.leftEyeOuter];
+  const lEyeT = landmarks[LM.leftEyeTop];
+  const lEyeB = landmarks[LM.leftEyeBottom];
+  const lIris = landmarks[LM.leftIrisCenter];
+
+  const rWidth = Math.hypot(rEyeR.x - rEyeL.x, rEyeR.y - rEyeL.y);
+  const rHeight = Math.hypot(rEyeB.x - rEyeT.x, rEyeB.y - rEyeT.y);
+  const lWidth = Math.hypot(lEyeR.x - lEyeL.x, lEyeR.y - lEyeL.y);
+  const lHeight = Math.hypot(lEyeB.x - lEyeT.x, lEyeB.y - lEyeT.y);
+
+  if (rWidth < 1e-4 || lWidth < 1e-4 || rHeight < 1e-4 || lHeight < 1e-4) {
+    return null; // degenerate geometry (eyes closed / bad detection this frame)
+  }
+
+  // Normalized iris position within each eye's box: 0..1 on each axis.
+  const rNormX = (rIris.x - Math.min(rEyeL.x, rEyeR.x)) / rWidth;
+  const rNormY = (rIris.y - Math.min(rEyeT.y, rEyeB.y)) / rHeight;
+  const lNormX = (lIris.x - Math.min(lEyeL.x, lEyeR.x)) / lWidth;
+  const lNormY = (lIris.y - Math.min(lEyeT.y, lEyeB.y)) / lHeight;
+
+  const { yaw, pitch } = transform
+    ? yawPitchFromMatrix(transform)
+    : { yaw: 0, pitch: 0 };
+
+  // Head center in normalized image coordinates — lets the regression
+  // partially compensate for the user shifting side-to-side without
+  // rotating (yaw alone doesn't capture lateral translation).
+  const headCenterX = (rIris.x + lIris.x) / 2;
+  const headCenterY = (rIris.y + lIris.y) / 2;
+
+  return [
+    1, // bias / intercept
+    rNormX,
+    rNormY,
+    lNormX,
+    lNormY,
+    yaw,
+    pitch,
+    headCenterX,
+    headCenterY,
+  ];
+}
+
+/** Solves (A + λI)w = b for w via Gauss-Jordan elimination with partial
+ *  pivoting. `a` is mutated in place; small, fixed-size (≤9×9) systems only —
+ *  no external linear-algebra dependency needed. */
+function solveLinearSystem(a: number[][], b: number[]): number[] {
+  const n = b.length;
+  const aug = a.map((row, i) => [...row, b[i]]);
+
+  for (let col = 0; col < n; col++) {
+    let pivotRow = col;
+    for (let r = col + 1; r < n; r++) {
+      if (Math.abs(aug[r][col]) > Math.abs(aug[pivotRow][col])) pivotRow = r;
+    }
+    [aug[col], aug[pivotRow]] = [aug[pivotRow], aug[col]];
+
+    const pivot = aug[col][col];
+    if (Math.abs(pivot) < 1e-10) continue; // singular-ish; leave weight at 0
+
+    for (let k = col; k <= n; k++) aug[col][k] /= pivot;
+
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue;
+      const factor = aug[r][col];
+      if (factor === 0) continue;
+      for (let k = col; k <= n; k++) aug[r][k] -= factor * aug[col][k];
+    }
+  }
+
+  return aug.map((row) => row[n]);
+}
+
+/** Fits w such that X·w ≈ y via ridge regression. `samples` is n×d (d =
+ *  GAZE_FEATURE_COUNT, feature 0 is always the bias term). Returns null if
+ *  there isn't enough data to fit reliably. */
+function fitRidgeRegression(
+  samples: number[][],
+  targets: number[],
+): number[] | null {
+  const n = samples.length;
+  if (n < 6) return null;
+  const d = GAZE_FEATURE_COUNT;
+
+  const xtx: number[][] = Array.from({ length: d }, () => new Array(d).fill(0));
+  const xty: number[] = new Array(d).fill(0);
+
+  for (let i = 0; i < n; i++) {
+    const row = samples[i];
+    const t = targets[i];
+    for (let a = 0; a < d; a++) {
+      xty[a] += row[a] * t;
+      for (let b = 0; b < d; b++) {
+        xtx[a][b] += row[a] * row[b];
+      }
+    }
+  }
+
+  // Regularize everything except the bias term (index 0), so the intercept
+  // isn't artificially shrunk toward zero.
+  for (let a = 1; a < d; a++) xtx[a][a] += RIDGE_LAMBDA;
+
+  return solveLinearSystem(xtx, xty);
+}
+
+function dot(w: number[], x: number[]): number {
+  let s = 0;
+  for (let i = 0; i < w.length; i++) s += w[i] * x[i];
+  return s;
+}
+
 // ── Outlier rejection tuning constants (v1.2, unchanged) ─────────────────────
 /** A raw WebGazer sample jumping more than this (px) from the last accepted
  *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
@@ -388,6 +604,37 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   );
   const gazeTargetRef = useRef<string | null>(null);
   const gazeHoverRef = useRef<string | null>(null);
+
+  // ── V3.0 — MediaPipe FaceLandmarker camera/detection state ─────────────────
+  /** Hidden <video> element the FaceLandmarker reads frames from. Created
+   *  once and kept for the component's lifetime. */
+  const videoElRef = useRef<HTMLVideoElement | null>(null);
+  /** The getUserMedia stream backing videoElRef, so it can be stopped on
+   *  unmount / cleanup. */
+  const streamRef = useRef<MediaStream | null>(null);
+  const faceLandmarkerRef = useRef<FaceLandmarkerInstance | null>(null);
+  /** Set false to stop the detection rAF loop (unmount / cleanup only — it
+   *  otherwise runs for the whole session, independent of gazeEnabled). */
+  const detectionActiveRef = useRef(false);
+  /** Most recent per-frame feature vector, or null when no face/eyes were
+   *  confidently found this frame. */
+  const latestFeaturesRef = useRef<number[] | null>(null);
+  /** Small rolling buffer of recent feature vectors, averaged at the moment
+   *  of a calibration click to reduce single-frame landmark jitter — the
+   *  geometric-feature analogue of what WebGazer's own click-time sampling
+   *  did implicitly. */
+  const recentFeaturesRef = useRef<number[][]>([]);
+  /** Count of frames with a confidently-detected face since warm-up started;
+   *  used only to gate the "camera + model are actually working" check. */
+  const warmupDetectionCountRef = useRef(0);
+  /** Calibration training set — one entry per recorded click. */
+  const trainingFeaturesRef = useRef<number[][]>([]);
+  const trainingTargetXRef = useRef<number[]>([]);
+  const trainingTargetYRef = useRef<number[]>([]);
+  /** Fitted regression weights. Null until calibration completes. */
+  const weightsXRef = useRef<number[] | null>(null);
+  const weightsYRef = useRef<number[] | null>(null);
+
   const resetGazeFilters = useCallback(() => {
     filterXRef.current.reset();
     filterYRef.current.reset();
@@ -883,10 +1130,6 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       "getUserMedia available    :",
       typeof navigator.mediaDevices?.getUserMedia,
     );
-    console.log(
-      "window.webgazer at start  :",
-      window.webgazer ? "loaded" : "not yet loaded",
-    );
     console.log("location.protocol         :", location.protocol);
 
     // 1. Check mediaDevices support
@@ -927,96 +1170,138 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 3. Wait for WebGazer CDN script (up to 10 s)
-    let attempts = 0;
-    while (!window.webgazer && attempts < 100) {
-      await new Promise<void>((r) => setTimeout(r, 100));
-      attempts++;
-    }
-    console.log(
-      "[Sameyba/Gaze] webgazer:",
-      window.webgazer ? "✓ loaded" : "✗ NOT loaded",
-      `(${attempts * 100} ms wait)`,
-    );
-
-    if (!window.webgazer) {
+    // 3. Load the MediaPipe FaceLandmarker (wasm runtime + .task model, both
+    //    from CDN — see loadTasksVisionModule/getFaceLandmarker above).
+    console.log("[Sameyba/Gaze] Loading MediaPipe FaceLandmarker...");
+    let landmarker: FaceLandmarkerInstance;
+    try {
+      landmarker = await getFaceLandmarker();
+      console.log("[Sameyba/Gaze] FaceLandmarker ✓ ready");
+    } catch (err) {
       probeStream.getTracks().forEach((t) => t.stop());
-      console.error("[Sameyba/Gaze] WebGazer script missing after 10 s");
+      console.error("[Sameyba/Gaze] FaceLandmarker load ✗", err);
       console.groupEnd();
-      setErrorLabel("تم تشغيل الكاميرا ولكن تعذر تحميل نظام تتبع العين");
+      setErrorLabel("تم تشغيل الكاميرا ولكن تعذر تحميل نموذج تتبع العين");
       setPermissionState("denied");
       return;
     }
+    faceLandmarkerRef.current = landmarker;
 
-    // 4. Release probe stream — WebGazer opens its own
+    // 4. Release the probe stream and open our own persistent stream, bound
+    //    to a hidden <video> element the FaceLandmarker reads frames from.
     probeStream.getTracks().forEach((t) => t.stop());
     console.log("[Sameyba/Gaze] Probe stream released; pausing 250 ms...");
     await new Promise<void>((r) => setTimeout(r, 250));
 
-    // 5. Initialise WebGazer
     try {
-      const wg = window.webgazer!;
-
-      // Override the default relative MediaPipe asset path
-      if (wg.params) {
-        const old = wg.params.faceMeshSolutionPath;
-        wg.params.faceMeshSolutionPath = MEDIAPIPE_CDN;
-        console.log(
-          `[Sameyba/Gaze] faceMeshSolutionPath: "${String(old)}" → "${MEDIAPIPE_CDN}"`,
-        );
-      } else {
-        console.warn(
-          "[Sameyba/Gaze] wg.params missing — relying on fetch interceptor",
-        );
-      }
-      installMediaPipeFetchPatch();
-
-      wg.setGazeListener((data) => {
-        if (data) rawRef.current = { x: data.x, y: data.y };
+      console.log("[Sameyba/Gaze] Opening persistent camera stream...");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
+        audio: false,
       });
-      wg.showVideoPreview(false);
-      wg.showPredictionPoints(false);
-      wg.showFaceOverlay?.(false);
-      wg.showFaceFeedbackBox?.(false);
+      streamRef.current = stream;
 
-      console.log("[Sameyba/Gaze] Calling wg.begin()...");
-      const result = await wg.begin();
-      console.log("[Sameyba/Gaze] wg.begin() ✓ result:", result);
+      let video = videoElRef.current;
+      if (!video) {
+        video = document.createElement("video");
+        video.playsInline = true;
+        video.muted = true;
+        video.autoplay = true;
+        // Kept in the DOM (off-screen, invisible) rather than display:none —
+        // some browsers throttle/pause frame decoding for display:none video.
+        video.style.position = "fixed";
+        video.style.top = "0";
+        video.style.left = "0";
+        video.style.width = "2px";
+        video.style.height = "2px";
+        video.style.opacity = "0";
+        video.style.pointerEvents = "none";
+        document.body.appendChild(video);
+        videoElRef.current = video;
+      }
+      video.srcObject = stream;
+      await video.play();
+      await new Promise<void>((resolve) => {
+        if (video!.readyState >= 2) return resolve();
+        video!.onloadeddata = () => resolve();
+      });
+      console.log("[Sameyba/Gaze] Camera stream ✓ attached to video element");
 
       setPermissionState("granted");
 
-      // 5a. Wait for ≥10 non-null gaze predictions before calibrating.
-      //     This warms up MediaPipe's face-mesh so calibration dots get real data.
+      // 5. Start the continuous detection loop — runs for the whole session
+      //    (independent of gazeEnabled/calibrated), feeding rawRef.current
+      //    from the fitted regression once one exists, and latestFeaturesRef
+      //    always (used both for warm-up detection and calibration clicks).
+      detectionActiveRef.current = true;
+      const detectLoop = () => {
+        if (!detectionActiveRef.current) return;
+        const v = videoElRef.current;
+        const fl = faceLandmarkerRef.current;
+        if (v && fl && v.readyState >= 2) {
+          const result = fl.detectForVideo(v, performance.now());
+          const lm = result.faceLandmarks?.[0] ?? null;
+          const transform =
+            result.facialTransformationMatrixes?.[0]?.data ?? null;
+          const features = lm ? extractGazeFeatures(lm, transform) : null;
+
+          latestFeaturesRef.current = features;
+          if (features) {
+            warmupDetectionCountRef.current++;
+            const buf = recentFeaturesRef.current;
+            buf.push(features);
+            if (buf.length > 6) buf.shift();
+
+            const wx = weightsXRef.current;
+            const wy = weightsYRef.current;
+            if (wx && wy) {
+              // Map back from FaceLandmarker's normalized-image-space
+              // features to screen pixels — the regression was trained
+              // directly against clientX/clientY, so this is just w·features.
+              rawRef.current = { x: dot(wx, features), y: dot(wy, features) };
+            }
+          }
+        }
+        requestAnimationFrame(detectLoop);
+      };
+      requestAnimationFrame(detectLoop);
+
+      // 5a. Wait for ≥10 frames with a confidently-detected face before
+      //     calibrating — the direct equivalent of WebGazer's old warm-up
+      //     wait, just counting landmark detections instead of predictions
+      //     (there's nothing to "predict" yet — no regression has been
+      //     fitted until calibration completes).
       setPreparingGaze(true);
       console.log("[Sameyba/Gaze] Waiting for 10 warm-up samples...");
+      warmupDetectionCountRef.current = 0;
       await new Promise<void>((resolve) => {
-        let resolved = false;
-        let count = 0;
-        const done = () => {
-          if (!resolved) {
-            resolved = true;
-            // Restore the permanent gaze listener
-            wg.setGazeListener((d) => {
-              if (d) rawRef.current = { x: d.x, y: d.y };
-            });
+        const start = performance.now();
+        const check = () => {
+          if (
+            warmupDetectionCountRef.current >= 10 ||
+            performance.now() - start > 5000
+          ) {
             resolve();
+            return;
           }
+          requestAnimationFrame(check);
         };
-        wg.setGazeListener((data) => {
-          if (data) {
-            rawRef.current = { x: data.x, y: data.y };
-            count++;
-            if (count >= 10) done();
-          }
-        });
-        setTimeout(done, 5000); // 5 s fallback
+        requestAnimationFrame(check);
       });
 
       // 5b. Discard warm-up data so it doesn't corrupt the regression model.
       console.log(
         "[Sameyba/Gaze] Warm-up done — clearing data before calibration",
       );
-      wg.clearData?.();
+      trainingFeaturesRef.current = [];
+      trainingTargetXRef.current = [];
+      trainingTargetYRef.current = [];
+      weightsXRef.current = null;
+      weightsYRef.current = null;
       rawRef.current = null;
       resetGazeFilters();
       setPreparingGaze(false);
@@ -1032,7 +1317,12 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       setInstructing(true);
     } catch (err) {
       const e = err as Error;
-      console.error("[Sameyba/Gaze] wg.begin() ✗", e?.name, e?.message, err);
+      console.error(
+        "[Sameyba/Gaze] camera/detection setup ✗",
+        e?.name,
+        e?.message,
+        err,
+      );
       setErrorLabel(
         `تم تشغيل الكاميرا ولكن تعذر تشغيل تتبع العين. (${e?.name}: ${e?.message})`,
       );
@@ -1051,12 +1341,28 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     (e: React.MouseEvent) => {
       e.stopPropagation();
 
-      // Record the ACTUAL pixel the user clicked — not a recomputed centre.
-      if (window.webgazer?.recordScreenPosition) {
-        window.webgazer.recordScreenPosition(e.clientX, e.clientY, "click");
+      // Record the ACTUAL pixel the user clicked — not a recomputed centre —
+      // against the averaged feature vector from the last few frames (V3.0:
+      // replaces webgazer.recordScreenPosition; see GazeEstimator above).
+      const buf = recentFeaturesRef.current;
+      if (buf.length > 0) {
+        const d = GAZE_FEATURE_COUNT;
+        const avg = new Array(d).fill(0);
+        buf.forEach((f) => {
+          for (let i = 0; i < d; i++) avg[i] += f[i] / buf.length;
+        });
+        avg[0] = 1; // keep the bias term exact
+        trainingFeaturesRef.current.push(avg);
+        trainingTargetXRef.current.push(e.clientX);
+        trainingTargetYRef.current.push(e.clientY);
         console.log(
           `[Sameyba/Gaze] Cal ${calStep + 1}/9 click ${calClicks + 1}/${CLICKS_PER_POINT}` +
             ` at (${e.clientX}, ${e.clientY})`,
+        );
+      } else {
+        console.warn(
+          `[Sameyba/Gaze] Cal ${calStep + 1}/9 click ${calClicks + 1}/${CLICKS_PER_POINT}` +
+            ` — no face detected this frame, sample skipped`,
         );
       }
 
@@ -1072,8 +1378,22 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         setCalStep(nextStep);
         setCalClicks(0);
       } else {
-        // All 9 points done — show success, then open verification screen
-        console.log("[Sameyba/Gaze] Calibration complete ✓");
+        // All 9 points done — fit the regression from the 18 collected
+        // samples, show success, then open verification screen.
+        const wx = fitRidgeRegression(
+          trainingFeaturesRef.current,
+          trainingTargetXRef.current,
+        );
+        const wy = fitRidgeRegression(
+          trainingFeaturesRef.current,
+          trainingTargetYRef.current,
+        );
+        weightsXRef.current = wx;
+        weightsYRef.current = wy;
+        console.log(
+          `[Sameyba/Gaze] Calibration complete ✓ — regression fit from ${trainingFeaturesRef.current.length} samples`,
+          wx && wy ? "" : "(fit failed — too few valid samples)",
+        );
         setCalSuccess(true);
         setTimeout(() => {
           setCalibrating(false);
@@ -1100,7 +1420,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setCalSuccess(false);
     resetGazeFilters();
     rawRef.current = null;
-    window.webgazer?.clearData();
+    trainingFeaturesRef.current = [];
+    trainingTargetXRef.current = [];
+    trainingTargetYRef.current = [];
+    weightsXRef.current = null;
+    weightsYRef.current = null;
     setCalStep(0);
     setCalClicks(0);
     // Show instruction card; actual calibration starts on confirmation.
@@ -1123,17 +1447,30 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
+  // Stops the camera stream and detection loop on unmount. Deliberately NOT
+  // scoped to gazeEnabled — the detection loop runs for the whole session
+  // (see requestCamera above) independent of that flag, so it must be torn
+  // down independently too. The FaceLandmarker instance itself is left open
+  // (module-level singleton) so a remount doesn't re-download the model.
   useEffect(() => {
     return () => {
-      if (gazeEnabled) {
+      detectionActiveRef.current = false;
+      try {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* ignore */
+      }
+      const v = videoElRef.current;
+      if (v) {
         try {
-          window.webgazer?.end();
+          v.srcObject = null;
+          v.remove();
         } catch {
           /* ignore */
         }
       }
     };
-  }, [gazeEnabled]);
+  }, []);
 
   // ── Derived status ────────────────────────────────────────────────────────────
   const gazeStatus: GazeStatus = preparingGaze
@@ -2346,4 +2683,6 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V2.1 — Card-Intent Engine (+ horizontal bias)");
+console.log(
+  "ASHWAG TEST V3.0 — MediaPipe FaceLandmarker + custom ridge-regression gaze estimator (Card-Intent Engine unchanged)",
+);
