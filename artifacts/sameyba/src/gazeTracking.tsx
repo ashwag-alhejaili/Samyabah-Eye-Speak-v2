@@ -2316,4 +2316,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V1.6.1");
+console.log("ASHWAG TEST V1.6.2");
