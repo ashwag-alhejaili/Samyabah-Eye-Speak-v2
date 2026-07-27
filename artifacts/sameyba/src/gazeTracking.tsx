@@ -560,6 +560,62 @@ function dot(w: number[], x: number[]): number {
   return s;
 }
 
+// ── DIAGNOSTICS (V3.1 instrumentation) ────────────────────────────────────────
+// Pure investigation instrumentation for the "prediction collapses toward
+// screen center" report — nothing below this point changes the estimator,
+// smoothing, scoring, or calibration flow. Everything here only reads
+// existing refs/values and writes to console.
+/** Human-readable labels for extractGazeFeatures' return vector, in order —
+ *  used purely to make diagnostic console output legible. */
+const GAZE_FEATURE_NAMES = [
+  "bias",
+  "rNormX",
+  "rNormY",
+  "lNormX",
+  "lNormY",
+  "yaw",
+  "pitch",
+  "headCenterX",
+  "headCenterY",
+];
+
+/** Per-dimension variance across a set of feature vectors (population
+ *  variance — fine for diagnostic purposes on tiny n). Returns an all-zero
+ *  vector for n=0 so callers don't need to special-case it. */
+function diagFeatureVariance(vectors: number[][]): number[] {
+  const d = GAZE_FEATURE_COUNT;
+  const n = vectors.length;
+  if (n === 0) return new Array(d).fill(0);
+  const mean = new Array(d).fill(0);
+  vectors.forEach((v) => {
+    for (let i = 0; i < d; i++) mean[i] += v[i] / n;
+  });
+  const variance = new Array(d).fill(0);
+  vectors.forEach((v) => {
+    for (let i = 0; i < d; i++) variance[i] += (v[i] - mean[i]) ** 2 / n;
+  });
+  return variance;
+}
+
+/** Deterministic string key for a feature vector, rounded to 6dp, so
+ *  "unique feature vectors" counting isn't defeated by float noise far past
+ *  any resolution that matters for gaze estimation. */
+function diagFeatureKey(v: number[]): string {
+  return v.map((x) => x.toFixed(6)).join(",");
+}
+
+/** Formats a per-dimension diagnostic vector (variance, mean, etc.) as a
+ *  {featureName: value} object for readable console.log output, using
+ *  GAZE_FEATURE_NAMES for labels. */
+function diagLabelVector(
+  values: number[],
+  fmt: (n: number) => string = (n) => n.toExponential(3),
+): Record<string, string> {
+  return Object.fromEntries(
+    GAZE_FEATURE_NAMES.map((name, i) => [name, fmt(values[i] ?? NaN)]),
+  );
+}
+
 // ── Outlier rejection tuning constants (v1.2, unchanged) ─────────────────────
 /** A raw WebGazer sample jumping more than this (px) from the last accepted
  *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
@@ -817,6 +873,49 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const weightsXRef = useRef<number[] | null>(null);
   const weightsYRef = useRef<number[] | null>(null);
 
+  // ── DIAGNOSTICS-ONLY refs (V3.1 instrumentation) ────────────────────────────
+  /** Tracks rawRef.current frame-to-frame to answer "does the prediction
+   *  actually move" independent of any downstream filtering/bias/scoring. */
+  const diagRawFrameRef = useRef<{
+    last: { x: number; y: number } | null;
+    unchangedStreak: number;
+    maxUnchangedStreak: number;
+    totalFrames: number;
+    unchangedFrames: number;
+    lastSummaryLogTs: number;
+  }>({
+    last: null,
+    unchangedStreak: 0,
+    maxUnchangedStreak: 0,
+    totalFrames: 0,
+    unchangedFrames: 0,
+    lastSummaryLogTs: 0,
+  });
+  /** Throttle for the per-frame "instantaneous nearest card" diagnostic log. */
+  const diagNearestCardLastLogTsRef = useRef(0);
+  /** Raw (pre One-Euro-filter) predicted x/y samples collected per
+   *  verification target — separate from verifyTargetSamplesRef/
+   *  verifyTargetXSamplesRef above, which store the *filtered* oneEuro
+   *  values used for bias estimation. This diagnostic bucket exists purely
+   *  to see what the regression itself output before any smoothing/bias
+   *  correction touches it. */
+  const diagVerifyRawXSamplesRef = useRef<number[][]>(
+    VERIFY_TARGETS.map(() => []),
+  );
+  const diagVerifyRawYSamplesRef = useRef<number[][]>(
+    VERIFY_TARGETS.map(() => []),
+  );
+  /** Running min/max of raw predicted x/y across the whole verification
+   *  sweep (reset each time a new sweep starts). */
+  const diagVerifyMinMaxRef = useRef<{
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }>({ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+  /** Throttle for the per-verification-target raw-prediction console log. */
+  const diagVerifyLogLastTsRef = useRef(0);
+
   const resetGazeFilters = useCallback(() => {
     filterXRef.current.reset();
     filterYRef.current.reset();
@@ -1070,6 +1169,41 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       if (!running) return;
 
       const raw = rawRef.current;
+
+      // ── DIAGNOSTICS (V3.1 instrumentation) — does rawRef.current (the
+      // *unfiltered* regression output) actually change frame-to-frame, or
+      // is the regression itself outputting a near-constant value? This is
+      // checked before any of the validation/filtering/bias-correction
+      // below runs, so it isolates the estimator from everything
+      // downstream of it. ─────────────────────────────────────────────────
+      if (raw != null) {
+        const rd = diagRawFrameRef.current;
+        rd.totalFrames++;
+        const nowDiag = performance.now();
+        if (rd.last !== null && rd.last.x === raw.x && rd.last.y === raw.y) {
+          rd.unchangedStreak++;
+          rd.unchangedFrames++;
+          rd.maxUnchangedStreak = Math.max(
+            rd.maxUnchangedStreak,
+            rd.unchangedStreak,
+          );
+          if (rd.unchangedStreak === 15) {
+            console.warn(
+              `[Sameyba/Gaze][DIAG] rawRef.current has been IDENTICAL for ${rd.unchangedStreak} consecutive processed frames: (${raw.x.toFixed(2)}, ${raw.y.toFixed(2)}) — the regression is not producing a new prediction even though inference is still running.`,
+            );
+          }
+        } else {
+          rd.unchangedStreak = 0;
+        }
+        rd.last = { x: raw.x, y: raw.y };
+        if (nowDiag - rd.lastSummaryLogTs > 3000) {
+          rd.lastSummaryLogTs = nowDiag;
+          console.log(
+            `[Sameyba/Gaze][DIAG] rawRef.current change stats — ${rd.unchangedFrames}/${rd.totalFrames} frames unchanged since last frame (${((rd.unchangedFrames / rd.totalFrames) * 100).toFixed(0)}%), longest identical streak: ${rd.maxUnchangedStreak}, current raw=(${raw.x.toFixed(1)}, ${raw.y.toFixed(1)})`,
+          );
+        }
+      }
+
       if (raw != null) {
         // 1. Validate: reject NaN or off-screen coords
         const vw = window.innerWidth,
@@ -1130,6 +1264,24 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               // never recorded the X value, so no horizontal correction
               // was ever learned.
               verifyTargetXSamplesRef.current[activeVerifyStep].push(oneEuroX);
+
+              // ── DIAGNOSTICS (V3.1 instrumentation) — 4. raw predicted
+              // x/y (pre-filter) during every verification target, and
+              // 5. running min/max of raw predicted x/y across the sweep.
+              diagVerifyRawXSamplesRef.current[activeVerifyStep].push(raw.x);
+              diagVerifyRawYSamplesRef.current[activeVerifyStep].push(raw.y);
+              const mm = diagVerifyMinMaxRef.current;
+              mm.minX = Math.min(mm.minX, raw.x);
+              mm.maxX = Math.max(mm.maxX, raw.x);
+              mm.minY = Math.min(mm.minY, raw.y);
+              mm.maxY = Math.max(mm.maxY, raw.y);
+              if (now_ms - diagVerifyLogLastTsRef.current > 200) {
+                diagVerifyLogLastTsRef.current = now_ms;
+                const t = VERIFY_TARGETS[activeVerifyStep];
+                console.log(
+                  `[Sameyba/Gaze][DIAG] verify target ${activeVerifyStep} [${(t.xFrac * 100).toFixed(0)}%,${(t.yFrac * 100).toFixed(0)}%] rawPredicted=(${raw.x.toFixed(1)}, ${raw.y.toFixed(1)}) oneEuro=(${oneEuroX.toFixed(1)}, ${oneEuroY.toFixed(1)})`,
+                );
+              }
             }
           }
 
@@ -1233,6 +1385,18 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           if (instantHitId !== gazeHoverRef.current) {
             gazeHoverRef.current = instantHitId;
             setGazeHoverId(instantHitId);
+          }
+
+          // ── DIAGNOSTICS (V3.1 instrumentation) — 7. instantaneous
+          // nearest card, if any, throttled so it stays readable in the
+          // console instead of firing every processed frame. ─────────────
+          if (now_ms - diagNearestCardLastLogTsRef.current > 500) {
+            diagNearestCardLastLogTsRef.current = now_ms;
+            console.log(
+              `[Sameyba/Gaze][DIAG] instantaneous nearest card: ${instantHitId ?? "(none within cutoff)"}` +
+                ` dist=${bestDist === Infinity ? "n/a" : bestDist.toFixed(1) + "px"}` +
+                ` gaze=(${gazeX.toFixed(1)}, ${gazeY.toFixed(1)})`,
+            );
           }
 
           // 5. Per-card confidence accumulator — replaces the fixed-size
@@ -1369,7 +1533,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     ) {
       console.error("[Sameyba/Gaze] navigator.mediaDevices not available");
       console.groupEnd();
-      setErrorLabel("المتصفح لا يدعم الوصول إلى الكاميرا");
+      setErrorLabel("المتصفح لا يدعم الوصول إلى الكامير��");
       setPermissionState("denied");
       return;
     }
@@ -1729,6 +1893,59 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       } else {
         // All 9 points done — fit the regression from the 18 collected
         // samples, show success, then open verification screen.
+
+        // ── DIAGNOSTICS (V3.1 instrumentation) — run BEFORE fitting, purely
+        // observational, changes nothing about the fit itself. ─────────────
+        {
+          const allFeatures = trainingFeaturesRef.current;
+          console.group("[Sameyba/Gaze][DIAG] Calibration feature diagnostics");
+
+          // 1. Feature-vector variance for each calibration target (the
+          //    CLICKS_PER_POINT samples recorded at that point).
+          const perTargetMeans: number[][] = [];
+          CAL_POINTS.forEach((pt, p) => {
+            const group = allFeatures.slice(
+              p * CLICKS_PER_POINT,
+              p * CLICKS_PER_POINT + CLICKS_PER_POINT,
+            );
+            const variance = diagFeatureVariance(group);
+            const d = GAZE_FEATURE_COUNT;
+            const mean = new Array(d).fill(0);
+            group.forEach((v: number[]) => {
+              for (let i = 0; i < d; i++) mean[i] += v[i] / (group.length || 1);
+            });
+            perTargetMeans.push(mean);
+            console.log(
+              `  target ${p} @ [${pt[0]}, ${pt[1]}] — ${group.length} samples, variance:`,
+              diagLabelVector(variance),
+            );
+          });
+
+          // Between-target variance of the per-target means — the feature
+          // extractor is "working" only if this is large relative to the
+          // within-target (above) variance. If between ≈ within, the
+          // features aren't distinguishing calibration targets at all.
+          const betweenTargetVariance = diagFeatureVariance(perTargetMeans);
+          console.log(
+            "  between-target variance (of per-target means):",
+            diagLabelVector(betweenTargetVariance),
+          );
+
+          // 2. Number of unique calibration feature vectors (rounded 6dp)
+          //    out of the total collected — catches a frozen/stale feature
+          //    extractor even before looking at variance magnitudes.
+          const uniqueKeys = new Set(allFeatures.map(diagFeatureKey));
+          console.log(
+            `  unique feature vectors: ${uniqueKeys.size} / ${allFeatures.length} total samples`,
+          );
+          if (uniqueKeys.size <= CAL_POINTS.length) {
+            console.warn(
+              `  ⚠ only ${uniqueKeys.size} unique feature vector(s) across ${allFeatures.length} clicks spanning ${CAL_POINTS.length} distinct screen targets — the feature extractor is producing near-identical (or literally identical) output regardless of where the user looked. This alone would explain a regression that predicts close to a single fixed point.`,
+            );
+          }
+          console.groupEnd();
+        }
+
         const wx = fitRidgeRegression(
           trainingFeaturesRef.current,
           trainingTargetXRef.current,
@@ -1743,6 +1960,28 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           `[Sameyba/Gaze] Calibration complete ✓ — regression fit from ${trainingFeaturesRef.current.length} samples`,
           wx && wy ? "" : "(fit failed — too few valid samples)",
         );
+
+        // 3. The fitted X and Y ridge-regression weights themselves.
+        console.log(
+          "[Sameyba/Gaze][DIAG] Fitted weights — wx:",
+          wx ? diagLabelVector(wx, (n) => n.toFixed(4)) : null,
+        );
+        console.log(
+          "[Sameyba/Gaze][DIAG] Fitted weights — wy:",
+          wy ? diagLabelVector(wy, (n) => n.toFixed(4)) : null,
+        );
+        if (wx && wy) {
+          // A weight vector that's ~all-zero outside the bias term means
+          // the regression learned to ignore the eye-geometry features
+          // entirely and just predict (roughly) the mean click position —
+          // exactly "fixed near screen center" behavior.
+          const nonBiasMagX = Math.hypot(...wx.slice(1));
+          const nonBiasMagY = Math.hypot(...wy.slice(1));
+          console.log(
+            `[Sameyba/Gaze][DIAG] non-bias weight magnitude — |wx[1:]|=${nonBiasMagX.toFixed(4)}, |wy[1:]|=${nonBiasMagY.toFixed(4)} (near-zero ⇒ regression is ~ignoring eye-geometry features and just predicting the mean click position)`,
+          );
+        }
+
         setCalSuccess(true);
         setTimeout(() => {
           setCalibrating(false);
@@ -1751,6 +1990,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           resetGazeFilters();
           verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
           verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
+          // DIAGNOSTICS — fresh raw-sample buckets + min/max for this sweep.
+          diagVerifyRawXSamplesRef.current = VERIFY_TARGETS.map(() => []);
+          diagVerifyRawYSamplesRef.current = VERIFY_TARGETS.map(() => []);
+          diagVerifyMinMaxRef.current = {
+            minX: Infinity,
+            maxX: -Infinity,
+            minY: Infinity,
+            maxY: -Infinity,
+          };
           // Enable gaze so cursor moves during verification
           setGazeEnabled(true);
           setVerifying(true);
@@ -1930,6 +2178,50 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               visualPos={visualCursorPos}
               verifyStep={verifyStep}
               onConfirm={() => {
+                // ── DIAGNOSTICS (V3.1 instrumentation) — evaluate the raw
+                // (pre-filter, pre-bias-correction) verification-sweep
+                // predictions before the existing bias estimator runs.
+                // Purely observational; does not change what
+                // estimateAndApplyBiasCorrections() below does. ────────────
+                {
+                  const mm = diagVerifyMinMaxRef.current;
+                  console.group(
+                    "[Sameyba/Gaze][DIAG] Verification sweep summary",
+                  );
+                  console.log(
+                    `  raw predicted x range: [${mm.minX === Infinity ? "n/a" : mm.minX.toFixed(1)}, ${mm.maxX === -Infinity ? "n/a" : mm.maxX.toFixed(1)}] px (spread ${mm.maxX === -Infinity ? "n/a" : (mm.maxX - mm.minX).toFixed(1)}px)`,
+                  );
+                  console.log(
+                    `  raw predicted y range: [${mm.minY === Infinity ? "n/a" : mm.minY.toFixed(1)}, ${mm.maxY === -Infinity ? "n/a" : mm.maxY.toFixed(1)}] px (spread ${mm.maxY === -Infinity ? "n/a" : (mm.maxY - mm.minY).toFixed(1)}px)`,
+                  );
+                  VERIFY_TARGETS.forEach((t, i) => {
+                    const rxs = diagVerifyRawXSamplesRef.current[i];
+                    const rys = diagVerifyRawYSamplesRef.current[i];
+                    const expX = window.innerWidth * t.xFrac;
+                    const expY = window.innerHeight * t.yFrac;
+                    if (rxs.length === 0) {
+                      console.log(
+                        `  target ${i} [${(t.xFrac * 100).toFixed(0)}%,${(t.yFrac * 100).toFixed(0)}%] — no post-settle samples collected`,
+                      );
+                      return;
+                    }
+                    const meanX =
+                      rxs.reduce((s: number, v: number) => s + v, 0) /
+                      rxs.length;
+                    const meanY =
+                      rys.reduce((s: number, v: number) => s + v, 0) /
+                      rys.length;
+                    console.log(
+                      `  target ${i} [${(t.xFrac * 100).toFixed(0)}%,${(t.yFrac * 100).toFixed(0)}%] expected=(${expX.toFixed(0)},${expY.toFixed(0)}) meanRawPredicted=(${meanX.toFixed(1)},${meanY.toFixed(1)}) n=${rxs.length}`,
+                    );
+                  });
+                  const rawDiagFrame = diagRawFrameRef.current;
+                  console.log(
+                    `  rawRef.current unchanged-frame-to-frame: ${rawDiagFrame.unchangedFrames}/${rawDiagFrame.totalFrames} frames identical to the previous frame (longest identical streak: ${rawDiagFrame.maxUnchangedStreak})`,
+                  );
+                  console.groupEnd();
+                }
+
                 estimateAndApplyBiasCorrections();
                 verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
                 verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
