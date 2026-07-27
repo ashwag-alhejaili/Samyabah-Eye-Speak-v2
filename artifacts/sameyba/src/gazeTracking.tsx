@@ -214,29 +214,30 @@ class OneEuroFilter {
     return filteredValue;
   }
 }
-// ── Dead zone / outlier rejection tuning constants (v1.2) ────────────────────
-/** Movements smaller than this (px) are treated as fixation tremor and ignored. */
-const DEAD_ZONE_PX = 5;
-
-/** Position hysteresis (v1.3): once the cursor is locked,
- * it only releases when movement from the locked position exceeds
- * this larger radius. */
-const STABILITY_RELEASE_RADIUS_PX = 9;
-// ── Visible-cursor stability lock tuning (v1.5) ───────────────────────────────
-/** Radius the filtered gaze must stay within to accumulate still time. */
-const VISUAL_LOCK_RADIUS_PX = 6;
-
-/** How long the gaze must remain within the radius before freezing. */
-const VISUAL_LOCK_MS = 350;
-
-/** Distance required to release the visible cursor lock. */
-const VISUAL_RELEASE_RADIUS_PX = 12;
+// ── Outlier rejection tuning constants (v1.2, unchanged) ─────────────────────
 /** A raw WebGazer sample jumping more than this (px) from the last accepted
  *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
 const OUTLIER_MAX_JUMP_PX = 200;
 /** Outlier check only applies within this time window (ms) since the last
  *  accepted sample — prevents rejecting legitimate slow drift over time. */
 const OUTLIER_MAX_DT_MS = 150;
+// ── Unified absolute stability lock tuning (v1.6) ─────────────────────────────
+// Replaces the v1.2/v1.3 dead-zone + position-hysteresis pair and the v1.5
+// visual-only lock with a single lock stage that drives the visible cursor,
+// hit-testing, hover, and dwell voting. All values tunable after testing.
+/** Radius (px), relative to the still-window's anchor sample, that the
+ *  corrected gaze must stay within to keep accumulating still time.
+ *  Exceeding this discards the current window and restarts collection. */
+const STILL_WINDOW_RADIUS_PX = 6;
+/** How long (ms) the gaze must remain within STILL_WINDOW_RADIUS_PX before
+ *  the window qualifies and the cursor freezes to its per-axis median. */
+const STILL_WINDOW_MS = 300;
+/** Distance (px) from the frozen locked position that counts as a deviation
+ *  candidate. A single frame past this radius does NOT release the lock. */
+const LOCK_RELEASE_RADIUS_PX = 12;
+/** How long (ms) a deviation past LOCK_RELEASE_RADIUS_PX must be sustained,
+ *  continuously, before the lock actually releases. */
+const LOCK_RELEASE_SUSTAIN_MS = 150;
 // ── Adaptive vertical bias correction tuning (v1.4) ──────────────────────────
 /** localStorage key used to persist the learned vertical bias across sessions. */
 const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
@@ -316,25 +317,27 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     ts: number;
   } | null>(null);
 
-  /** Last displayed cursor position (post dead-zone) — v1.2. */
-  const lastDisplayedPosRef = useRef<{ x: number; y: number } | null>(null);
-  /** Whether the cursor is currently held by the position hysteresis
-   * stability lock (v1.3). */
-  const stabilityLockedRef = useRef(false);
-  /** v1.5 — anchor point + timestamp used to measure how long the filtered
-   * gaze has stayed within VISUAL_LOCK_RADIUS_PX. Purely visual; does not
-   * feed hit-testing or dwell. */
-  const visualLockAnchorRef = useRef<{
-    x: number;
-    y: number;
-    ts: number;
-  } | null>(null);
+  /** v1.6 — unified absolute stability lock. Replaces lastDisplayedPosRef /
+   * stabilityLockedRef (v1.3) and visualLockAnchorRef / visualLockedRef /
+   * visualLockedPosRef (v1.5). Now drives the visible cursor, hit-testing,
+   * hover state, and dwell voting — not just the rendered cursor. */
+  const stillWindowRef = useRef<{
+    anchor: { x: number; y: number; ts: number } | null;
+    samplesX: number[];
+    samplesY: number[];
+  }>({ anchor: null, samplesX: [], samplesY: [] });
 
-  /** v1.5 — whether the visible cursor is currently frozen. */
-  const visualLockedRef = useRef(false);
+  /** v1.6 — whether the unified lock is currently frozen. */
+  const lockedRef = useRef(false);
 
-  /** v1.5 — the frozen on-screen position while visually locked. */
-  const visualLockedPosRef = useRef<{ x: number; y: number } | null>(null);
+  /** v1.6 — the frozen position while locked (per-axis median of the
+   * qualifying still window's samples). */
+  const lockedPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  /** v1.6 — start time of a sustained deviation candidate while locked;
+   * null when no deviation is currently being tracked. A single noisy
+   * frame past LOCK_RELEASE_RADIUS_PX does not release the lock by itself. */
+  const releaseCandidateRef = useRef<{ since: number } | null>(null);
   const filterXRef = useRef(
     new OneEuroFilter(
       ONE_EURO_MIN_CUTOFF,
@@ -357,12 +360,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     filterYRef.current.reset();
 
     lastAcceptedRawRef.current = null;
-    lastDisplayedPosRef.current = null;
-    stabilityLockedRef.current = false;
-    // v1.5 — reset the visual-only stability lock state.
-    visualLockAnchorRef.current = null;
-    visualLockedRef.current = false;
-    visualLockedPosRef.current = null;
+    // v1.6 — reset the unified stability lock state.
+    stillWindowRef.current = { anchor: null, samplesX: [], samplesY: [] };
+    lockedRef.current = false;
+    lockedPosRef.current = null;
+    releaseCandidateRef.current = null;
   }, []);
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
@@ -570,98 +572,134 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // 2c. Position hysteresis / stability lock (v1.3)
-          const lastDisplayed = lastDisplayedPosRef.current;
+          // 2c. Unified absolute stability lock (v1.6) — replaces the v1.3
+          // dead-zone/position-hysteresis pair and the v1.5 visual-only lock.
+          // Collects a still window of corrected samples; once the window
+          // qualifies, freezes to the per-axis median of that window (not
+          // the latest sample). Releases only after a *sustained* deviation,
+          // never a single noisy frame, and always starts a brand-new window
+          // on release rather than inheriting the old anchor/lock state.
+          const stillWindow = stillWindowRef.current;
 
-          let x = oneEuroX;
-          let y = biasCorrectedY;
+          if (!lockedRef.current) {
+            // Collecting — validate / accumulate the still window.
+            if (stillWindow.anchor === null) {
+              stillWindow.anchor = {
+                x: oneEuroX,
+                y: biasCorrectedY,
+                ts: now_ms,
+              };
+              stillWindow.samplesX = [oneEuroX];
+              stillWindow.samplesY = [biasCorrectedY];
+            } else {
+              const driftFromAnchorPx = Math.hypot(
+                oneEuroX - stillWindow.anchor.x,
+                biasCorrectedY - stillWindow.anchor.y,
+              );
 
-          if (lastDisplayed !== null) {
-            const movedPx = Math.hypot(
-              oneEuroX - lastDisplayed.x,
-              biasCorrectedY - lastDisplayed.y,
-            );
-
-            if (stabilityLockedRef.current) {
-              // Stay locked until movement clearly exceeds the larger release radius.
-              if (movedPx < STABILITY_RELEASE_RADIUS_PX) {
-                x = lastDisplayed.x;
-                y = lastDisplayed.y;
+              if (driftFromAnchorPx > STILL_WINDOW_RADIUS_PX) {
+                // Window broken — discard entirely, restart from this sample.
+                stillWindow.anchor = {
+                  x: oneEuroX,
+                  y: biasCorrectedY,
+                  ts: now_ms,
+                };
+                stillWindow.samplesX = [oneEuroX];
+                stillWindow.samplesY = [biasCorrectedY];
               } else {
-                stabilityLockedRef.current = false;
+                stillWindow.samplesX.push(oneEuroX);
+                stillWindow.samplesY.push(biasCorrectedY);
+
+                if (now_ms - stillWindow.anchor.ts >= STILL_WINDOW_MS) {
+                  // Window qualifies — freeze to the per-axis median.
+                  const medianOf = (arr: number[]): number => {
+                    const sorted = [...arr].sort((a, b) => a - b);
+                    const mid = Math.floor(sorted.length / 2);
+                    return sorted.length % 2 !== 0
+                      ? sorted[mid]
+                      : (sorted[mid - 1] + sorted[mid]) / 2;
+                  };
+
+                  lockedPosRef.current = {
+                    x: medianOf(stillWindow.samplesX),
+                    y: medianOf(stillWindow.samplesY),
+                  };
+                  lockedRef.current = true;
+                  releaseCandidateRef.current = null;
+
+                  // Clear the window — a fresh one only begins after release.
+                  stillWindow.anchor = null;
+                  stillWindow.samplesX = [];
+                  stillWindow.samplesY = [];
+
+                  console.log("STABILITY LOCK");
+                }
               }
-            } else if (movedPx < DEAD_ZONE_PX) {
-              // Enter the stability lock once movement falls inside the dead zone.
-              x = lastDisplayed.x;
-              y = lastDisplayed.y;
-              stabilityLockedRef.current = true;
             }
-          }
-
-          lastDisplayedPosRef.current = { x, y };
-
-          // v1.5 — visible-cursor-only stability lock.
-          let visX = x;
-          let visY = y;
-
-          const anchor = visualLockAnchorRef.current;
-
-          if (anchor === null) {
-            visualLockAnchorRef.current = { x, y, ts: now_ms };
-          } else {
-            const driftPx = Math.hypot(x - anchor.x, y - anchor.y);
-
-            if (driftPx > VISUAL_LOCK_RADIUS_PX) {
-              visualLockAnchorRef.current = { x, y, ts: now_ms };
-            } else if (
-              !visualLockedRef.current &&
-              now_ms - anchor.ts >= VISUAL_LOCK_MS
-            ) {
-              visualLockedRef.current = true;
-              visualLockedPosRef.current = { x, y };
-              console.log("VISUAL LOCK");
-            }
-          }
-
-          if (visualLockedRef.current && visualLockedPosRef.current) {
-            const movedFromLockPx = Math.hypot(
-              x - visualLockedPosRef.current.x,
-              y - visualLockedPosRef.current.y,
+          } else if (lockedPosRef.current) {
+            // Locked — require a sustained deviation before releasing.
+            const deviationPx = Math.hypot(
+              oneEuroX - lockedPosRef.current.x,
+              biasCorrectedY - lockedPosRef.current.y,
             );
 
-            if (movedFromLockPx > VISUAL_RELEASE_RADIUS_PX) {
-              if (movedFromLockPx > VISUAL_RELEASE_RADIUS_PX) {
-                visualLockedRef.current = false;
-                visualLockedPosRef.current = null;
-                visualLockAnchorRef.current = { x, y, ts: now_ms };
+            if (deviationPx > LOCK_RELEASE_RADIUS_PX) {
+              if (releaseCandidateRef.current === null) {
+                releaseCandidateRef.current = { since: now_ms };
+              } else if (
+                now_ms - releaseCandidateRef.current.since >=
+                LOCK_RELEASE_SUSTAIN_MS
+              ) {
+                // Deviation sustained long enough — release, and start a
+                // completely new still window anchored at the current sample.
+                lockedRef.current = false;
+                lockedPosRef.current = null;
+                releaseCandidateRef.current = null;
 
-                console.log("VISUAL UNLOCK");
-              } else {
-                visX = visualLockedPosRef.current.x;
-                visY = visualLockedPosRef.current.y;
+                stillWindowRef.current = {
+                  anchor: { x: oneEuroX, y: biasCorrectedY, ts: now_ms },
+                  samplesX: [oneEuroX],
+                  samplesY: [biasCorrectedY],
+                };
+
+                console.log("STABILITY UNLOCK");
               }
             } else {
-              visX = visualLockedPosRef.current.x;
-              visY = visualLockedPosRef.current.y;
+              // Back within radius — cancel any pending release candidate.
+              releaseCandidateRef.current = null;
             }
           }
 
-          // 3. Move visible cursor only
+          // Unified lock output — drives the visible cursor, hit-testing,
+          // hover state, and dwell voting.
+          const lockOutputX =
+            lockedRef.current && lockedPosRef.current
+              ? lockedPosRef.current.x
+              : oneEuroX;
+          const lockOutputY =
+            lockedRef.current && lockedPosRef.current
+              ? lockedPosRef.current.y
+              : biasCorrectedY;
+
+          // 3. Move visible cursor — unified lock output (v1.6)
           const cursorEl = document.getElementById("sameyba-gaze-cursor");
 
           if (cursorEl) {
-            cursorEl.style.transform = `translate3d(${visX - 14}px, ${visY - 14}px, 0)`;
+            cursorEl.style.transform = `translate3d(${lockOutputX - 14}px, ${lockOutputY - 14}px, 0)`;
             cursorEl.style.opacity = "1";
           }
 
-          // v1.5.1 — mirror the visual-lock output for React-rendered cursors.
-          setVisualCursorPos({ x: visX, y: visY });
+          // Mirror the unified lock output for React-rendered cursors
+          // (e.g. CalibrationVerification).
+          setVisualCursorPos({ x: lockOutputX, y: lockOutputY });
 
-          // Keep real gaze coordinates unchanged for hit-testing and dwell.
-          setGazePos({ x, y });
+          // Diagnostic / calibration / bias-estimation coordinate — direct
+          // corrected value, intentionally NOT passed through the stability
+          // lock. No longer used for hit-testing or dwell (v1.6).
+          setGazePos({ x: oneEuroX, y: biasCorrectedY });
 
-          // 4. Hit-test every frame → immediate hover indicator
-          const hoverEl = document.elementFromPoint(x, y);
+          // 4. Hit-test every frame using the unified lock output (v1.6)
+          const hoverEl = document.elementFromPoint(lockOutputX, lockOutputY);
           const hovTgt = hoverEl?.closest(
             "[data-gaze-id]",
           ) as HTMLElement | null;
