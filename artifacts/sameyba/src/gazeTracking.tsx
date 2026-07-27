@@ -244,6 +244,25 @@ const LOCK_RELEASE_RADIUS_PX = 28;
 /** How long (ms) a deviation past LOCK_RELEASE_RADIUS_PX must be sustained,
  *  continuously, before the lock actually releases. */
 const LOCK_RELEASE_SUSTAIN_MS = 150;
+// ── Pre-lock median filter tuning (v1.6.2) ───────────────────────────────────
+// Sits strictly between the One Euro + bias-corrected output and the unified
+// stability lock's input. Does NOT touch STILL_WINDOW_RADIUS_PX, STILL_WINDOW_MS,
+// LOCK_RELEASE_RADIUS_PX, LOCK_RELEASE_SUSTAIN_MS, or the One Euro constants above.
+// Added because pixel-tracked evidence from recorded sessions showed the
+// One-Euro-filtered, bias-corrected signal has a tight core (median frame-to-
+// frame movement ~10px) but a heavy tail — roughly 30% of individual frames
+// spike past STILL_WINDOW_RADIUS_PX even during nominal fixation, which was
+// enough to break the still-window's anchor on nearly every collection
+// attempt and prevent the lock from ever engaging. A retune of One Euro was
+// deliberately NOT used to address this: One Euro's cutoff is velocity-
+// adaptive, so a sample that jumps far is read as fast intentional movement
+// and gets LESS smoothing, not more — the opposite of what a noise spike
+// needs. A short rolling median rejects a minority of outlier samples
+// regardless of how "fast" they look, which matches this failure mode.
+/** Rolling time window (ms) of pre-lock samples the median is taken over.
+ *  Short enough to resolve a genuine step (saccade landing) well within
+ *  STILL_WINDOW_MS, so intentional gaze shifts are not made sluggish. */
+const MEDIAN_PRELOCK_WINDOW_MS = 90;
 // ── Adaptive vertical bias correction tuning (v1.4) ──────────────────────────
 /** localStorage key used to persist the learned vertical bias across sessions. */
 const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
@@ -344,6 +363,14 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
    * null when no deviation is currently being tracked. A single noisy
    * frame past LOCK_RELEASE_RADIUS_PX does not release the lock by itself. */
   const releaseCandidateRef = useRef<{ since: number } | null>(null);
+
+  /** v1.6.2 — rolling buffer of recent One-Euro + bias-corrected samples,
+   * used to compute a short robust median before the sample reaches the
+   * unified stability lock. See MEDIAN_PRELOCK_WINDOW_MS above. */
+  const medianPreLockBufRef = useRef<{ x: number; y: number; ts: number }[]>(
+    [],
+  );
+
   const filterXRef = useRef(
     new OneEuroFilter(
       ONE_EURO_MIN_CUTOFF,
@@ -371,6 +398,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     lockedRef.current = false;
     lockedPosRef.current = null;
     releaseCandidateRef.current = null;
+    // v1.6.2 — reset the pre-lock median buffer too, so stale samples from
+    // before a recalibration/reset can't bleed into the next session.
+    medianPreLockBufRef.current = [];
   }, []);
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
@@ -578,43 +608,73 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // 2c. Unified absolute stability lock (v1.6) — replaces the v1.3
+          // 2c. Pre-lock median filter (v1.6.2) — sits strictly between the
+          // One Euro + bias-corrected output above and the unified stability
+          // lock below. Rejects short noise spikes (a lone outlier sample)
+          // without changing how the lock itself behaves and without
+          // retuning One Euro. See MEDIAN_PRELOCK_WINDOW_MS for rationale.
+          const medianBuf = medianPreLockBufRef.current;
+
+          medianBuf.push({ x: oneEuroX, y: biasCorrectedY, ts: now_ms });
+
+          const medianCutoffTs = now_ms - MEDIAN_PRELOCK_WINDOW_MS;
+          while (medianBuf.length > 0 && medianBuf[0].ts < medianCutoffTs) {
+            medianBuf.shift();
+          }
+
+          const medianOfPreLock = (values: number[]): number => {
+            const sorted = [...values].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 !== 0
+              ? sorted[mid]
+              : (sorted[mid - 1] + sorted[mid]) / 2;
+          };
+
+          const preLockX = medianOfPreLock(medianBuf.map((s) => s.x));
+          const preLockY = medianOfPreLock(medianBuf.map((s) => s.y));
+
+          // 2d. Unified absolute stability lock (v1.6) — replaces the v1.3
           // dead-zone/position-hysteresis pair and the v1.5 visual-only lock.
           // Collects a still window of corrected samples; once the window
           // qualifies, freezes to the per-axis median of that window (not
           // the latest sample). Releases only after a *sustained* deviation,
           // never a single noisy frame, and always starts a brand-new window
           // on release rather than inheriting the old anchor/lock state.
+          // v1.6.2 — now fed by the pre-lock median (preLockX/preLockY)
+          // instead of the raw One Euro output, since that's the noise this
+          // stage was added to catch before it reaches here. STILL_WINDOW_
+          // RADIUS_PX, STILL_WINDOW_MS, LOCK_RELEASE_RADIUS_PX, and
+          // LOCK_RELEASE_SUSTAIN_MS are all unchanged.
           const stillWindow = stillWindowRef.current;
 
           if (!lockedRef.current) {
             // Collecting — validate / accumulate the still window.
             if (stillWindow.anchor === null) {
               stillWindow.anchor = {
-                x: oneEuroX,
-                y: biasCorrectedY,
+                x: preLockX,
+                y: preLockY,
                 ts: now_ms,
               };
-              stillWindow.samplesX = [oneEuroX];
-              stillWindow.samplesY = [biasCorrectedY];
+              stillWindow.samplesX = [preLockX];
+              stillWindow.samplesY = [preLockY];
             } else {
               const driftFromAnchorPx = Math.hypot(
-                oneEuroX - stillWindow.anchor.x,
-                biasCorrectedY - stillWindow.anchor.y,
+                preLockX - stillWindow.anchor.x,
+                preLockY - stillWindow.anchor.y,
               );
 
               if (driftFromAnchorPx > STILL_WINDOW_RADIUS_PX) {
                 // Window broken — discard entirely, restart from this sample.
                 stillWindow.anchor = {
-                  x: oneEuroX,
-                  y: biasCorrectedY,
+                  x: preLockX,
+                  y: preLockY,
                   ts: now_ms,
                 };
-                stillWindow.samplesX = [oneEuroX];
-                stillWindow.samplesY = [biasCorrectedY];
+                stillWindow.samplesX = [preLockX];
+                stillWindow.samplesY = [preLockY];
               } else {
-                stillWindow.samplesX.push(oneEuroX);
-                stillWindow.samplesY.push(biasCorrectedY);
+                stillWindow.samplesX.push(preLockX);
+                stillWindow.samplesY.push(preLockY);
 
                 if (now_ms - stillWindow.anchor.ts >= STILL_WINDOW_MS) {
                   // Window qualifies — freeze to the per-axis median.
@@ -645,8 +705,8 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           } else if (lockedPosRef.current) {
             // Locked — require a sustained deviation before releasing.
             const deviationPx = Math.hypot(
-              oneEuroX - lockedPosRef.current.x,
-              biasCorrectedY - lockedPosRef.current.y,
+              preLockX - lockedPosRef.current.x,
+              preLockY - lockedPosRef.current.y,
             );
 
             if (deviationPx > LOCK_RELEASE_RADIUS_PX) {
@@ -663,9 +723,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                 releaseCandidateRef.current = null;
 
                 stillWindowRef.current = {
-                  anchor: { x: oneEuroX, y: biasCorrectedY, ts: now_ms },
-                  samplesX: [oneEuroX],
-                  samplesY: [biasCorrectedY],
+                  anchor: { x: preLockX, y: preLockY, ts: now_ms },
+                  samplesX: [preLockX],
+                  samplesY: [preLockY],
                 };
 
                 console.log("STABILITY UNLOCK");
@@ -677,15 +737,17 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           }
 
           // Unified lock output — drives the visible cursor, hit-testing,
-          // hover state, and dwell voting.
+          // hover state, and dwell voting. v1.6.2 — the unlocked fallback is
+          // now the pre-lock median (preLockX/preLockY) rather than the raw
+          // One Euro output, for the same noise-rejection reason as above.
           const lockOutputX =
             lockedRef.current && lockedPosRef.current
               ? lockedPosRef.current.x
-              : oneEuroX;
+              : preLockX;
           const lockOutputY =
             lockedRef.current && lockedPosRef.current
               ? lockedPosRef.current.y
-              : biasCorrectedY;
+              : preLockY;
 
           // 3. Move visible cursor — unified lock output (v1.6)
           const cursorEl = document.getElementById("sameyba-gaze-cursor");
@@ -2254,3 +2316,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
+console.log("ASHWAG TEST V1.6.1");
