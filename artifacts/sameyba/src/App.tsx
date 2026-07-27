@@ -1,27 +1,58 @@
-import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
-import { GazeContext, GazeProvider, useGazeContext } from './gazeTracking';
-import { AIAssistantButton } from './aiAssistant';
-import { CaregiverDashboard } from './caregiverDashboard';
-import { CaregiverNotificationProvider } from './caregiverNotification';
-import { createPortal } from 'react-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Route, Switch, Router as WouterRouter, useLocation, useRoute } from 'wouter';
-import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import {
-  Eye, Volume2, Smartphone, ChevronRight,
-  HeartPulse, Utensils, Heart, Sparkles, Home as HomeIcon, Users,
-  Droplets, UtensilsCrossed, BellOff,
-  Cross, Footprints, Stethoscope,
-  Lightbulb, LightbulbOff, Tv,
-  Smile, Frown, Annoyed, HeartHandshake,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  createContext,
+  useContext,
+} from "react";
+import { GazeContext, GazeProvider, useGazeContext } from "./gazeTracking";
+import { AIAssistantButton } from "./aiAssistant";
+import { CaregiverDashboard } from "./caregiverDashboard";
+import { CaregiverNotificationProvider } from "./caregiverNotification";
+import { createPortal } from "react-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  Route,
+  Switch,
+  Router as WouterRouter,
+  useLocation,
+  useRoute,
+} from "wouter";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import {
+  Eye,
+  Volume2,
+  Smartphone,
+  ChevronRight,
+  HeartPulse,
+  Utensils,
+  Heart,
+  Sparkles,
+  Home as HomeIcon,
+  Users,
+  Droplets,
+  UtensilsCrossed,
+  BellOff,
+  Cross,
+  Footprints,
+  Stethoscope,
+  Lightbulb,
+  LightbulbOff,
+  Tv,
+  Smile,
+  Frown,
+  Annoyed,
+  HeartHandshake,
   BookOpen,
-  MessageCircle, Video,
-} from 'lucide-react';
+  MessageCircle,
+  Video,
+} from "lucide-react";
 
 // ── Custom icon: Toilet (front-view, stroke-based) ────────────────────────────
 function ToiletIcon({
   size = 24,
-  color = 'currentColor',
+  color = "currentColor",
   strokeWidth = 1.75,
 }: {
   size?: number;
@@ -30,7 +61,8 @@ function ToiletIcon({
 }) {
   return (
     <svg
-      width={size} height={size}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke={color}
@@ -53,7 +85,7 @@ function ToiletIcon({
 // ── Custom icon: Single Chair (front-view, stroke-based) ─────────────────────
 function ChairIcon({
   size = 24,
-  color = 'currentColor',
+  color = "currentColor",
   strokeWidth = 1.75,
 }: {
   size?: number;
@@ -62,7 +94,8 @@ function ChairIcon({
 }) {
   return (
     <svg
-      width={size} height={size}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke={color}
@@ -91,7 +124,7 @@ function ChairIcon({
 // ── Custom icon: Reposition Patient (lying figure + curved rotation arrow) ────
 function RepositionIcon({
   size = 24,
-  color = 'currentColor',
+  color = "currentColor",
   strokeWidth = 1.75,
 }: {
   size?: number;
@@ -100,7 +133,8 @@ function RepositionIcon({
 }) {
   return (
     <svg
-      width={size} height={size}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke={color}
@@ -127,17 +161,31 @@ function RepositionIcon({
 
 // ── Custom icon: Shower (pipe arm + nozzle head + falling streams) ────────────
 function ShowerIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Pipe: vertical then elbow to horizontal */}
       <path d="M4 2 L4 7 Q4 9.5 6.5 9.5 L20 9.5" />
       {/* Shower head nozzle (rounded rect) */}
       <rect x="6" y="9.5" width="14" height="3.5" rx="1.2" />
       {/* Water streams angled slightly */}
-      <line x1="8"  y1="13" x2="7.5"  y2="18" />
+      <line x1="8" y1="13" x2="7.5" y2="18" />
       <line x1="11" y1="13" x2="10.5" y2="18" />
       <line x1="14" y1="13" x2="13.5" y2="18" />
       <line x1="17" y1="13" x2="16.5" y2="18" />
@@ -148,11 +196,25 @@ function ShowerIcon({
 
 // ── Custom icon: Nausea (stomach pouch with wavy inner lines) ─────────────────
 function NauseaIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Stomach outline — rounded pouch shape */}
       <path d="M9 3 Q4 3 4 8 L4 15 Q4 21 12 21 Q20 21 20 15 L20 9 Q20 5 16.5 4 Q13 3 9 3 Z" />
       {/* Wave lines inside indicating discomfort */}
@@ -164,11 +226,25 @@ function NauseaIcon({
 
 // ── Custom icon: Help Stand (two figures — patient rising, helper supporting) ─
 function HelpStandIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* ── Patient (left) — leaning forward, mid-rise ── */}
       <circle cx="6" cy="4.5" r="2" />
       {/* Torso: angled forward as if rising */}
@@ -194,11 +270,25 @@ function HelpStandIcon({
 
 // ── Custom icon: Hospital Bed — raise (upward arrow on right) ────────────────
 function BedUpIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Bed frame / mattress */}
       <rect x="1" y="12" width="17" height="4" rx="1" />
       {/* Head post */}
@@ -206,7 +296,7 @@ function BedUpIcon({
       {/* Pillow */}
       <rect x="2" y="9" width="5" height="3" rx="0.8" />
       {/* Legs */}
-      <line x1="3"  y1="16" x2="3"  y2="20" />
+      <line x1="3" y1="16" x2="3" y2="20" />
       <line x1="16" y1="16" x2="16" y2="20" />
       {/* Up arrow */}
       <line x1="21" y1="19" x2="21" y2="8" />
@@ -217,16 +307,30 @@ function BedUpIcon({
 
 // ── Custom icon: Hospital Bed — lower (downward arrow on right) ───────────────
 function BedDownIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Same bed */}
       <rect x="1" y="12" width="17" height="4" rx="1" />
       <path d="M1 12 L1 9" />
       <rect x="2" y="9" width="5" height="3" rx="0.8" />
-      <line x1="3"  y1="16" x2="3"  y2="20" />
+      <line x1="3" y1="16" x2="3" y2="20" />
       <line x1="16" y1="16" x2="16" y2="20" />
       {/* Down arrow */}
       <line x1="21" y1="8" x2="21" y2="19" />
@@ -237,17 +341,31 @@ function BedDownIcon({
 
 // ── Custom icon: Television — off (screen with diagonal slash) ────────────────
 function TvOffIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* TV cabinet */}
       <rect x="2" y="4" width="20" height="14" rx="2" />
       {/* Stand base */}
       <line x1="10" y1="18" x2="10" y2="21" />
       <line x1="14" y1="18" x2="14" y2="21" />
-      <line x1="8"  y1="21" x2="16" y2="21" />
+      <line x1="8" y1="21" x2="16" y2="21" />
       {/* Power-off slash */}
       <line x1="6" y1="7" x2="18" y2="17" />
     </svg>
@@ -256,11 +374,25 @@ function TvOffIcon({
 
 // ── Custom icon: Worried face (raised inner brows + wavy mouth) ───────────────
 function WorriedFaceIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Face circle */}
       <circle cx="12" cy="12" r="10" />
       {/* Worried eyebrows — inner corners pulled up */}
@@ -277,11 +409,25 @@ function WorriedFaceIcon({
 
 // ── Custom icon: Tired face (heavy droopy lids + subdued frown) ───────────────
 function TiredFaceIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Face circle */}
       <circle cx="12" cy="12" r="10" />
       {/* Left eye: arched top lid + flat bottom (heavy-lidded) */}
@@ -298,14 +444,28 @@ function TiredFaceIcon({
 
 // ── Custom icon: Wudu — cupped hands with water streams ──────────────────────
 function WuduIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Water streams falling from above */}
-      <line x1="9"  y1="2" x2="8.5"  y2="7" />
-      <line x1="12" y1="1" x2="12"   y2="6" />
+      <line x1="9" y1="2" x2="8.5" y2="7" />
+      <line x1="12" y1="1" x2="12" y2="6" />
       <line x1="15" y1="2" x2="15.5" y2="7" />
       {/* Left cupped hand */}
       <path d="M5 17 Q5 14 7 13 L10 12 L10 17" />
@@ -319,11 +479,25 @@ function WuduIcon({
 
 // ── Custom icon: Praying Person — standing figure, palms raised (du'a) ────────
 function PrayingPersonIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Head */}
       <circle cx="12" cy="4" r="2.2" />
       {/* Torso */}
@@ -343,24 +517,41 @@ function PrayingPersonIcon({
 
 // ── Custom icon: Prayer Beads — loop with bead dots and tassel ────────────────
 function PrayerBeadsIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   // Bead positions on a circle of radius 8 centered at (12, 12)
   // Angles at 0°,51°,103°,154°,206°,257°,309° (7 beads, leaving gap at top-left for tassel)
   const r = 8;
-  const cx = 12, cy = 12;
-  const angles = [0, 51, 103, 154, 206, 257, 309].map(a => (a * Math.PI) / 180);
-  const beads = angles.map(a => ({
+  const cx = 12,
+    cy = 12;
+  const angles = [0, 51, 103, 154, 206, 257, 309].map(
+    (a) => (a * Math.PI) / 180,
+  );
+  const beads = angles.map((a) => ({
     x: +(cx + r * Math.sin(a)).toFixed(2),
     y: +(cy - r * Math.cos(a)).toFixed(2),
   }));
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* String loop (almost-full circle, gap at top) */}
       <path d="M12 4 Q20 4 20 12 Q20 20 12 20 Q4 20 4 12 Q4 5.5 9.5 4.2" />
       {/* Tassel / counter bead hanging from gap */}
-      <line x1="10" y1="4" x2="9"   y2="2" />
+      <line x1="10" y1="4" x2="9" y2="2" />
       <circle cx="9" cy="1.5" r="1" fill={color} stroke="none" />
       {/* Bead dots on the string */}
       {beads.map((b, i) => (
@@ -372,11 +563,25 @@ function PrayerBeadsIcon({
 
 // ── Custom icon: Help Pray — kneeling person + standing helper ────────────────
 function HelpPrayIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* ── Person being helped to pray (left) — kneeling, bowing forward ── */}
       <circle cx="6" cy="6" r="2" />
       {/* Body bowing forward */}
@@ -398,16 +603,30 @@ function HelpPrayIcon({
 
 // ── Custom icon: Prayer Rug — rectangle with mihrab arch inside ───────────────
 function PrayerRugIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Rug outer border */}
       <rect x="2" y="3" width="20" height="18" rx="1.5" />
       {/* Fringe at top */}
-      <line x1="5"  y1="3" x2="5"  y2="1" />
-      <line x1="9"  y1="3" x2="9"  y2="1" />
+      <line x1="5" y1="3" x2="5" y2="1" />
+      <line x1="9" y1="3" x2="9" y2="1" />
       <line x1="12" y1="3" x2="12" y2="1" />
       <line x1="15" y1="3" x2="15" y2="1" />
       <line x1="19" y1="3" x2="19" y2="1" />
@@ -421,11 +640,25 @@ function PrayerRugIcon({
 
 // ── Custom icon: Call Son — smartphone + male stick figure ────────────────────
 function SonCallIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Smartphone */}
       <rect x="1" y="5" width="8" height="14" rx="1.5" />
       <line x1="3" y1="17" x2="7" y2="17" />
@@ -443,11 +676,25 @@ function SonCallIcon({
 
 // ── Custom icon: Call Daughter — smartphone + female figure with dress ─────────
 function DaughterCallIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Smartphone */}
       <rect x="1" y="5" width="8" height="14" rx="1.5" />
       <line x1="3" y1="17" x2="7" y2="17" />
@@ -467,11 +714,25 @@ function DaughterCallIcon({
 
 // ── Custom icon: Call Friend — smartphone + figure with open welcoming arms ───
 function FriendCallIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Smartphone */}
       <rect x="1" y="5" width="8" height="14" rx="1.5" />
       <line x1="3" y1="17" x2="7" y2="17" />
@@ -490,11 +751,25 @@ function FriendCallIcon({
 
 // ── Custom icon: Companionship — two seated figures side by side ──────────────
 function CompanionshipIcon({
-  size = 24, color = 'currentColor', strokeWidth = 1.75,
-}: { size?: number; color?: string; strokeWidth?: number }) {
+  size = 24,
+  color = "currentColor",
+  strokeWidth = 1.75,
+}: {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {/* Person 1 (left) — seated */}
       <circle cx="7" cy="4" r="2" />
       {/* Torso */}
@@ -531,31 +806,40 @@ const queryClient = new QueryClient();
 // • onUpdate: call this on the motion.circle so completion triggers onComplete
 // • gazeId: when provided, eye tracking auto-triggers start/stop for this element
 function useDwell(onComplete: () => void, gazeId?: string) {
-  const controls  = useAnimation();
+  const controls = useAnimation();
   const activeRef = useRef(false);
-  const firedRef  = useRef(false); // latched per hover cycle; reset only by start()
-  const cbRef     = useRef(onComplete);
-  cbRef.current   = onComplete;
+  const firedRef = useRef(false); // latched per hover cycle; reset only by start()
+  const cbRef = useRef(onComplete);
+  cbRef.current = onComplete;
 
   const { gazeEnabled, gazeTargetId, calibrated } = useGazeContext();
   // True when camera is on, calibration complete, AND this element is being gazed at
-  const isGazeActive = gazeEnabled && calibrated && !!gazeId && gazeTargetId === gazeId;
+  const isGazeActive =
+    gazeEnabled && calibrated && !!gazeId && gazeTargetId === gazeId;
 
-  useEffect(() => () => { controls.stop(); }, [controls]);
+  useEffect(
+    () => () => {
+      controls.stop();
+    },
+    [controls],
+  );
 
-  const start = useCallback((fromGaze = false) => {
-    activeRef.current = true;
-    firedRef.current  = false; // new hover cycle — arm the trigger
-    controls.start({
-      pathLength: 1,
-      opacity: 1,
-      transition: {
-        // Gaze dwell = 2 s, mouse dwell = 1 s
-        pathLength: { duration: fromGaze ? 2 : 1, ease: 'linear' },
-        opacity:    { duration: 0.15 },
-      },
-    });
-  }, [controls]);
+  const start = useCallback(
+    (fromGaze = false) => {
+      activeRef.current = true;
+      firedRef.current = false; // new hover cycle — arm the trigger
+      controls.start({
+        pathLength: 1,
+        opacity: 1,
+        transition: {
+          // Gaze dwell = 2 s, mouse dwell = 1 s
+          pathLength: { duration: fromGaze ? 2 : 1, ease: "linear" },
+          opacity: { duration: 0.15 },
+        },
+      });
+    },
+    [controls],
+  );
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -563,8 +847,8 @@ function useDwell(onComplete: () => void, gazeId?: string) {
       pathLength: 0,
       opacity: 0,
       transition: {
-        pathLength: { duration: 0.4, ease: 'easeOut' },
-        opacity:    { duration: 0.2 },
+        pathLength: { duration: 0.4, ease: "easeOut" },
+        opacity: { duration: 0.2 },
       },
     });
   }, [controls]);
@@ -577,25 +861,29 @@ function useDwell(onComplete: () => void, gazeId?: string) {
     } else {
       stop();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gazeTargetId, gazeEnabled, calibrated, gazeId]);
 
   // onUpdate fires every animation frame; both guards must pass to complete once.
   // firedRef prevents a re-render from re-arming activeRef between frames.
   const onUpdate = useCallback((latest: Record<string, number>) => {
-    if (activeRef.current && !firedRef.current && (latest.pathLength ?? 0) >= 0.999) {
+    if (
+      activeRef.current &&
+      !firedRef.current &&
+      (latest.pathLength ?? 0) >= 0.999
+    ) {
       activeRef.current = false;
-      firedRef.current  = true; // latch — survives re-renders until next start()
+      firedRef.current = true; // latch — survives re-renders until next start()
       cbRef.current();
     }
   }, []);
 
   const handlers = {
     // When gaze is active and calibrated, mouse hover doesn't drive dwell (gaze takes over)
-    onMouseEnter: (gazeEnabled && calibrated) ? (() => {}) : (() => start(false)),
-    onMouseLeave: (gazeEnabled && calibrated) ? (() => {}) : stop,
-    onFocus:      () => start(false),
-    onBlur:       stop,
+    onMouseEnter: gazeEnabled && calibrated ? () => {} : () => start(false),
+    onMouseLeave: gazeEnabled && calibrated ? () => {} : stop,
+    onFocus: () => start(false),
+    onBlur: stop,
   };
 
   return { controls, handlers, onUpdate, isGazeActive };
@@ -622,29 +910,36 @@ function DwellRingCircle({
       viewBox="0 0 240 240"
       aria-hidden
       style={{
-        position: 'absolute', inset: 0, width: '100%', height: '100%',
-        transform: 'rotate(-90deg)',
-        overflow: 'visible',
-        pointerEvents: 'none',
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        transform: "rotate(-90deg)",
+        overflow: "visible",
+        pointerEvents: "none",
         zIndex: 10,
-        filter: active ? `drop-shadow(0 0 6px ${glowColor})` : 'none',
-        transition: 'filter 0.18s ease-out',
+        filter: active ? `drop-shadow(0 0 6px ${glowColor})` : "none",
+        transition: "filter 0.18s ease-out",
       }}
     >
       {/* Faint track — shows full circle path */}
       <circle
-        cx={120} cy={120} r={112}
+        cx={120}
+        cy={120}
+        r={112}
         fill="none"
         stroke={ringColor}
         strokeWidth={2.5}
         style={{
           opacity: active ? 0.18 : 0,
-          transition: 'opacity 0.18s ease-out',
+          transition: "opacity 0.18s ease-out",
         }}
       />
       {/* Animated fill arc */}
       <motion.circle
-        cx={120} cy={120} r={112}
+        cx={120}
+        cy={120}
+        r={112}
         fill="none"
         stroke={ringColor}
         strokeWidth={4}
@@ -660,11 +955,21 @@ function DwellRingCircle({
 // ── Animation variants ───────────────────────────────────────────────────────
 const containerVariants = {
   hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.1, delayChildren: 0.1 } },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
+  },
 };
 const itemVariants = {
   hidden: { y: 20, opacity: 0 },
-  visible: { y: 0, opacity: 1, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: {
+      duration: 0.6,
+      ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
+    },
+  },
 };
 
 // ── Data ─────────────────────────────────────────────────────────────────────
@@ -673,7 +978,11 @@ type CategoryItem = {
   label: string;
   emoji: string;
   /** Optional icon component — when present, renders instead of the emoji */
-  Icon?: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  Icon?: React.ComponentType<{
+    size?: number;
+    color?: string;
+    strokeWidth?: number;
+  }>;
   /** Optional photo — when present, renders instead of Icon/emoji */
   image?: string;
 };
@@ -689,139 +998,309 @@ type Category = {
   floatDuration: number;
   imgScale: number;
   imgPosition: string;
-  Icon: React.ComponentType<{ style?: React.CSSProperties; width?: number; height?: number; strokeWidth?: number }>;
+  Icon: React.ComponentType<{
+    style?: React.CSSProperties;
+    width?: number;
+    height?: number;
+    strokeWidth?: number;
+  }>;
   items: CategoryItem[];
 };
 
 const CATEGORIES: Category[] = [
   {
-    id: 'health',
-    label: 'الصحة',
-    emoji: '❤️',
-    path: '/communicate/health',
-    image: 'user-health.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,249,242,0.86) 60%, rgba(212,235,212,0.75) 100%)',
-    ringColor: '#5E7E35',
-    glowColor: 'rgba(94,126,53,0.40)',
+    id: "health",
+    label: "الصحة",
+    emoji: "❤️",
+    path: "/communicate/health",
+    image: "user-health.png",
+    bg: "linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,249,242,0.86) 60%, rgba(212,235,212,0.75) 100%)",
+    ringColor: "#5E7E35",
+    glowColor: "rgba(94,126,53,0.40)",
     floatDuration: 4.2,
-    imgScale: 1.60,
-    imgPosition: 'center 42%',
+    imgScale: 1.6,
+    imgPosition: "center 42%",
     Icon: HeartPulse,
     items: [
-      { id: 'pain',     label: 'متألم',               emoji: '🤒',  image: 'health-pain.jpg' },
-      { id: 'nausea',   label: 'غثيان',              emoji: '🤢',  image: 'health-nausea.jpg' },
-      { id: 'nurse',    label: 'نادِ الممرضة',        emoji: '👩‍⚕️', image: 'health-caregiver.png' },
-      { id: 'standup',  label: 'ساعدني على الوقوف',  emoji: '🪑',  image: 'health-standup.png' },
-      { id: 'walk',     label: 'أريد المشي قليلًا',  emoji: '🚶',  image: 'health-walk.jpg' },
-      { id: 'position', label: 'غيّر وضعيتي',        emoji: '🧍',  image: 'needs-reposition.jpg' },
+      { id: "pain", label: "متألم", emoji: "🤒", image: "health-pain.jpg" },
+      { id: "nausea", label: "غثيان", emoji: "🤢", image: "health-nausea.jpg" },
+      {
+        id: "nurse",
+        label: "نادِ الممرضة",
+        emoji: "👩‍⚕️",
+        image: "health-caregiver.png",
+      },
+      {
+        id: "standup",
+        label: "ساعدني على الوقوف",
+        emoji: "🪑",
+        image: "health-standup.png",
+      },
+      {
+        id: "walk",
+        label: "أريد المشي قليلًا",
+        emoji: "🚶",
+        image: "health-walk.jpg",
+      },
+      {
+        id: "position",
+        label: "غيّر وضعيتي",
+        emoji: "🧍",
+        image: "needs-reposition.jpg",
+      },
     ],
   },
   {
-    id: 'needs',
-    label: 'احتياجاتي',
-    emoji: '🍽️',
-    path: '/communicate/needs',
-    image: 'user-needs.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,252,240,0.86) 60%, rgba(255,243,205,0.75) 100%)',
-    ringColor: '#FF9F0A',
-    glowColor: 'rgba(255,159,10,0.40)',
+    id: "needs",
+    label: "احتياجاتي",
+    emoji: "🍽️",
+    path: "/communicate/needs",
+    image: "user-needs.png",
+    bg: "linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,252,240,0.86) 60%, rgba(255,243,205,0.75) 100%)",
+    ringColor: "#FF9F0A",
+    glowColor: "rgba(255,159,10,0.40)",
     floatDuration: 3.8,
     imgScale: 1.45,
-    imgPosition: 'center center',
+    imgPosition: "center center",
     Icon: Utensils,
     items: [
-      { id: 'water',    label: 'أريد ماء',         emoji: '💧', image: 'needs-water.png' },
-      { id: 'food',     label: 'أريد طعامًا',      emoji: '🍽️', image: 'needs-food.jpg' },
-      { id: 'bathroom', label: 'أريد الحمام',      emoji: '🚻', image: 'needs-toilet.jpg' },
-      { id: 'sit',      label: 'أريد الجلوس',      emoji: '🪑', image: 'needs-chair.jpg' },
-      { id: 'quiet',    label: 'أريد هدوءً',       emoji: '🤫', image: 'needs-quiet.png' },
-      { id: 'shower',   label: 'أريد الاستحمام',   emoji: '🛁', image: 'health-shower.jpg' },
+      { id: "water", label: "أريد ماء", emoji: "💧", image: "needs-water.png" },
+      {
+        id: "food",
+        label: "أريد طعامًا",
+        emoji: "🍽️",
+        image: "needs-food.jpg",
+      },
+      {
+        id: "bathroom",
+        label: "أريد الحمام",
+        emoji: "🚻",
+        image: "needs-toilet.jpg",
+      },
+      {
+        id: "sit",
+        label: "أريد الجلوس",
+        emoji: "🪑",
+        image: "needs-chair.jpg",
+      },
+      {
+        id: "quiet",
+        label: "أريد هدوءً",
+        emoji: "🤫",
+        image: "needs-quiet.png",
+      },
+      {
+        id: "shower",
+        label: "أريد الاستحمام",
+        emoji: "🛁",
+        image: "health-shower.jpg",
+      },
     ],
   },
   {
-    id: 'worship',
-    label: 'العبادة',
-    emoji: '🕌',
-    path: '/communicate/worship',
-    image: 'user-worship.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,255,247,0.86) 60%, rgba(212,243,224,0.75) 100%)',
-    ringColor: '#34C759',
-    glowColor: 'rgba(52,199,89,0.40)',
+    id: "worship",
+    label: "العبادة",
+    emoji: "🕌",
+    path: "/communicate/worship",
+    image: "user-worship.png",
+    bg: "linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(242,255,247,0.86) 60%, rgba(212,243,224,0.75) 100%)",
+    ringColor: "#34C759",
+    glowColor: "rgba(52,199,89,0.40)",
     floatDuration: 3.5,
-    imgScale: 1.40,
-    imgPosition: 'center 55%',
+    imgScale: 1.4,
+    imgPosition: "center 55%",
     Icon: Sparkles,
     items: [
-      { id: 'quran',    label: 'أريد قرآن',            emoji: '📖', Icon: BookOpen,         image: 'quran.png' },
-      { id: 'wudu',     label: 'أريد الوضوء',             emoji: '🚿', Icon: WuduIcon,          image: 'wudu.png' },
-      { id: 'pray',     label: 'أذهب للمسجد',             emoji: '🙏', Icon: PrayingPersonIcon, image: 'prayer.png' },
-      { id: 'beads',    label: 'أريد السبحة',             emoji: '📿', Icon: PrayerBeadsIcon,   image: 'tasbeeh.png' },
-      { id: 'helppray', label: 'ساعدني على الصلاة',       emoji: '🤲', Icon: HelpPrayIcon,      image: 'prayer-help.png' },
-      { id: 'rug',      label: 'أريد سجادة',  emoji: '🕌', Icon: PrayerRugIcon,     image: 'prayer-mat.png' },
+      {
+        id: "quran",
+        label: "أريد قرآن",
+        emoji: "📖",
+        Icon: BookOpen,
+        image: "quran.png",
+      },
+      {
+        id: "wudu",
+        label: "أريد الوضوء",
+        emoji: "🚿",
+        Icon: WuduIcon,
+        image: "wudu.png",
+      },
+      {
+        id: "pray",
+        label: "أذهب للمسجد",
+        emoji: "🙏",
+        Icon: PrayingPersonIcon,
+        image: "prayer.png",
+      },
+      {
+        id: "beads",
+        label: "أريد السبحة",
+        emoji: "📿",
+        Icon: PrayerBeadsIcon,
+        image: "tasbeeh.png",
+      },
+      {
+        id: "helppray",
+        label: "ساعدني على الصلاة",
+        emoji: "🤲",
+        Icon: HelpPrayIcon,
+        image: "prayer-help.png",
+      },
+      {
+        id: "rug",
+        label: "أريد سجادة",
+        emoji: "🕌",
+        Icon: PrayerRugIcon,
+        image: "prayer-mat.png",
+      },
     ],
   },
   {
-    id: 'room',
-    label: 'البيئة والغرفة',
-    emoji: '🛏️',
-    path: '/communicate/room',
-    image: 'environment-room.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(250,248,242,0.86) 60%, rgba(240,235,220,0.75) 100%)',
-    ringColor: '#C9A84C',
-    glowColor: 'rgba(201,168,76,0.40)',
+    id: "room",
+    label: "البيئة والغرفة",
+    emoji: "🛏️",
+    path: "/communicate/room",
+    image: "environment-room.png",
+    bg: "linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(250,248,242,0.86) 60%, rgba(240,235,220,0.75) 100%)",
+    ringColor: "#C9A84C",
+    glowColor: "rgba(201,168,76,0.40)",
     floatDuration: 4.5,
     imgScale: 1.0,
-    imgPosition: 'center center',
+    imgPosition: "center center",
     Icon: HomeIcon,
     items: [
-      { id: 'bed_up',    label: 'ارفع السرير',        emoji: '🛏️', image: 'room-bed-up.png' },
-      { id: 'bed_down',  label: 'أنزل السرير',        emoji: '🛏️', image: 'room-bed-down.png' },
-      { id: 'light_on',  label: 'شغّل النور',         emoji: '💡', image: 'room-light-on.png' },
-      { id: 'light_off', label: 'أطفئ النور',         emoji: '🌑', image: 'room-light-off.png' },
-      { id: 'tv_on',     label: 'شغّل التلفزيون',     emoji: '📺', image: 'room-tv-on.png' },
-      { id: 'tv_off',    label: 'أطفئ التلفزيون',     emoji: '📺', image: 'room-tv-off.png' },
+      {
+        id: "bed_up",
+        label: "ارفع السرير",
+        emoji: "🛏️",
+        image: "room-bed-up.png",
+      },
+      {
+        id: "bed_down",
+        label: "أنزل السرير",
+        emoji: "🛏️",
+        image: "room-bed-down.png",
+      },
+      {
+        id: "light_on",
+        label: "شغّل النور",
+        emoji: "💡",
+        image: "room-light-on.png",
+      },
+      {
+        id: "light_off",
+        label: "أطفئ النور",
+        emoji: "🌑",
+        image: "room-light-off.png",
+      },
+      {
+        id: "tv_on",
+        label: "شغّل التلفزيون",
+        emoji: "📺",
+        image: "room-tv-on.png",
+      },
+      {
+        id: "tv_off",
+        label: "أطفئ التلفزيون",
+        emoji: "📺",
+        image: "room-tv-off.png",
+      },
     ],
   },
   {
-    id: 'feelings',
-    label: 'مشاعري',
-    emoji: '😊',
-    path: '/communicate/feelings',
-    image: 'user-feelings.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,245,250,0.86) 60%, rgba(255,222,237,0.75) 100%)',
-    ringColor: '#FF375F',
-    glowColor: 'rgba(255,55,95,0.40)',
+    id: "feelings",
+    label: "مشاعري",
+    emoji: "😊",
+    path: "/communicate/feelings",
+    image: "user-feelings.png",
+    bg: "linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,245,250,0.86) 60%, rgba(255,222,237,0.75) 100%)",
+    ringColor: "#FF375F",
+    glowColor: "rgba(255,55,95,0.40)",
     floatDuration: 4.0,
-    imgScale: 1.10,
-    imgPosition: 'center 38%',
+    imgScale: 1.1,
+    imgPosition: "center 38%",
     Icon: Heart,
     items: [
-      { id: 'happy',   label: 'سعيد',    emoji: '😊', Icon: Smile,           image: 'happy.png' },
-      { id: 'sad',     label: 'حزين',    emoji: '😢', Icon: Frown,           image: 'sad.png' },
-      { id: 'miss',    label: 'أحبكم',   emoji: '❤️', Icon: HeartHandshake,  image: 'love-family.png' },
-      { id: 'tired',   label: 'نعسان',    emoji: '😴', Icon: TiredFaceIcon,   image: 'sleepy.png' },
+      {
+        id: "happy",
+        label: "سعيد",
+        emoji: "😊",
+        Icon: Smile,
+        image: "happy.png",
+      },
+      { id: "sad", label: "حزين", emoji: "😢", Icon: Frown, image: "sad.png" },
+      {
+        id: "miss",
+        label: "أحبكم",
+        emoji: "❤️",
+        Icon: HeartHandshake,
+        image: "love-family.png",
+      },
+      {
+        id: "tired",
+        label: "نعسان",
+        emoji: "😴",
+        Icon: TiredFaceIcon,
+        image: "sleepy.png",
+      },
     ],
   },
   {
-    id: 'social',
-    label: 'التواصل',
-    emoji: '👨‍👩‍👧‍👦',
-    path: '/communicate/social',
-    image: 'communication.png',
-    bg: 'linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,248,242,0.86) 60%, rgba(255,232,215,0.75) 100%)',
-    ringColor: '#FF6B35',
-    glowColor: 'rgba(255,107,53,0.40)',
+    id: "social",
+    label: "التواصل",
+    emoji: "👨‍👩‍👧‍👦",
+    path: "/communicate/social",
+    image: "communication.png",
+    bg: "linear-gradient(160deg, rgba(255,255,255,0.92) 0%, rgba(255,248,242,0.86) 60%, rgba(255,232,215,0.75) 100%)",
+    ringColor: "#FF6B35",
+    glowColor: "rgba(255,107,53,0.40)",
     floatDuration: 3.6,
     imgScale: 1.0,
-    imgPosition: 'center center',
+    imgPosition: "center center",
     Icon: Users,
     items: [
-      { id: 'call_son',      label: 'اتصل بابني',            emoji: '📞', Icon: SonCallIcon,        image: 'call-son.png' },
-      { id: 'call_daughter', label: 'اتصل بابنتي',           emoji: '📞', Icon: DaughterCallIcon,   image: 'call-daughter.png' },
-      { id: 'call_friend',   label: 'أريد أصحابي',           emoji: '📞', Icon: FriendCallIcon,     image: 'friends.png' },
-      { id: 'message',       label: 'أرسل رسالة لعيالي',     emoji: '💬', Icon: MessageCircle,      image: 'send-message.png' },
-      { id: 'video',         label: 'مكالمة فيديو',           emoji: '📹', Icon: Video,              image: 'video-call.png' },
-      { id: 'companion',     label: 'نادِ أحدًا يجلس معي',  emoji: '🤝', Icon: CompanionshipIcon,  image: 'sit-with-me.png' },
+      {
+        id: "call_son",
+        label: "اتصل بابني",
+        emoji: "📞",
+        Icon: SonCallIcon,
+        image: "call-son.png",
+      },
+      {
+        id: "call_daughter",
+        label: "اتصل بابنتي",
+        emoji: "📞",
+        Icon: DaughterCallIcon,
+        image: "call-daughter.png",
+      },
+      {
+        id: "call_friend",
+        label: "أريد أصحابي",
+        emoji: "📞",
+        Icon: FriendCallIcon,
+        image: "friends.png",
+      },
+      {
+        id: "message",
+        label: "أرسل رسالة لعيالي",
+        emoji: "💬",
+        Icon: MessageCircle,
+        image: "send-message.png",
+      },
+      {
+        id: "video",
+        label: "مكالمة فيديو",
+        emoji: "📹",
+        Icon: Video,
+        image: "video-call.png",
+      },
+      {
+        id: "companion",
+        label: "نادِ أحدًا يجلس معي",
+        emoji: "🤝",
+        Icon: CompanionshipIcon,
+        image: "sit-with-me.png",
+      },
     ],
   },
 ];
@@ -829,76 +1308,106 @@ const CATEGORIES: Category[] = [
 // ── Request store (localStorage-backed, shared between patient & dashboard) ───
 
 // ── Profile (onboarding, localStorage) ───────────────────────────────────────
-const PROFILE_KEY = 'sameyba_profile_v1';
+const PROFILE_KEY = "sameyba_profile_v1";
 
 interface ProfileData {
-  patientName:   string;
-  caregiverName:  string;
+  patientName: string;
+  caregiverName: string;
   caregiverPhone: string;
 }
 
 function loadProfile(): ProfileData | null {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as ProfileData | null; }
-  catch { return null; }
+  try {
+    return JSON.parse(
+      localStorage.getItem(PROFILE_KEY) ?? "null",
+    ) as ProfileData | null;
+  } catch {
+    return null;
+  }
 }
 
 function saveProfile(data: ProfileData): void {
-  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data)); } catch { /* quota */ }
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
 }
 
 const ProfileContext = createContext<ProfileData>({
-  patientName:   'المريض',
-  caregiverName:  'مقدم الرعاية',
-  caregiverPhone: '',
+  patientName: "المريض",
+  caregiverName: "مقدم الرعاية",
+  caregiverPhone: "",
 });
 
-const ProfileUpdateContext = createContext<(data: ProfileData) => void>(() => {});
+const ProfileUpdateContext = createContext<(data: ProfileData) => void>(
+  () => {},
+);
 
-export function useProfile() { return useContext(ProfileContext); }
-function useUpdateProfile() { return useContext(ProfileUpdateContext); }
+export function useProfile() {
+  return useContext(ProfileContext);
+}
+function useUpdateProfile() {
+  return useContext(ProfileUpdateContext);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-const STORE_KEY           = 'sameyba_requests_v1';
-const CAREGIVER_AUDIO_KEY = 'sameyba_caregiver_audio_v2';
-const URGENT_LABELS  = ['متألم', 'غثيان', 'أريد الحمام', 'نادِ الممرضة', 'طلب مساعدة عاجلة'];
+const STORE_KEY = "sameyba_requests_v1";
+const CAREGIVER_AUDIO_KEY = "sameyba_caregiver_audio_v2";
+const URGENT_LABELS = [
+  "متألم",
+  "غثيان",
+  "أريد الحمام",
+  "نادِ الممرضة",
+  "طلب مساعدة عاجلة",
+];
 
 function isUrgent(label: string): boolean {
-  return URGENT_LABELS.some(kw => label.includes(kw) || kw.includes(label));
+  return URGENT_LABELS.some((kw) => label.includes(kw) || kw.includes(label));
 }
 
 export interface PatientRequest {
-  id:            string;
-  patientName:   string;
-  requestText:   string;
-  requestEmoji:  string;
-  categoryId:    string;
+  id: string;
+  patientName: string;
+  requestText: string;
+  requestEmoji: string;
+  categoryId: string;
   categoryLabel: string;
-  createdAt:     string;   // ISO
-  priority:      'urgent' | 'normal';
-  status:        'pending' | 'done' | 'rejected';
-  completedAt?:  string;   // ISO
-  rejectedAt?:   string;   // ISO
+  createdAt: string; // ISO
+  priority: "urgent" | "normal";
+  status: "pending" | "done" | "rejected";
+  completedAt?: string; // ISO
+  rejectedAt?: string; // ISO
 }
 
 interface RequestStoreShape {
-  requests:        PatientRequest[];
+  requests: PatientRequest[];
   // Callers may pre-generate `id` so the store can reject duplicates idempotently.
-  addRequest:      (data: Omit<PatientRequest, 'createdAt' | 'status'>) => void;
+  addRequest: (data: Omit<PatientRequest, "createdAt" | "status">) => void;
   completeRequest: (id: string) => void;
-  rejectRequest:   (id: string) => void;
+  rejectRequest: (id: string) => void;
 }
 
 const RequestContext = createContext<RequestStoreShape | null>(null);
 
 function loadRequests(): PatientRequest[] {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) ?? '[]') as PatientRequest[]; }
-  catch { return []; }
+  try {
+    return JSON.parse(
+      localStorage.getItem(STORE_KEY) ?? "[]",
+    ) as PatientRequest[];
+  } catch {
+    return [];
+  }
 }
 function saveRequests(reqs: PatientRequest[]): void {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(reqs)); } catch { /* quota */ }
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(reqs));
+  } catch {
+    /* quota */
+  }
 }
 
-const BC_CHANNEL = 'sameyba_requests_sync';
+const BC_CHANNEL = "sameyba_requests_sync";
 
 function RequestStoreProvider({ children }: { children: React.ReactNode }) {
   const [requests, setRequests] = useState<PatientRequest[]>(loadRequests);
@@ -908,9 +1417,10 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
   // Merging them prevents the two-effect ordering hazard where the listener
   // effect reads channelRef.current before the channel-open effect has run.
   useEffect(() => {
-    const ch = typeof BroadcastChannel !== 'undefined'
-      ? new BroadcastChannel(BC_CHANNEL)
-      : null;
+    const ch =
+      typeof BroadcastChannel !== "undefined"
+        ? new BroadcastChannel(BC_CHANNEL)
+        : null;
     channelRef.current = ch;
 
     function syncFromStorage() {
@@ -921,7 +1431,7 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
 
     if (ch) {
       ch.onmessage = (e: MessageEvent) => {
-        if (e.data?.type === 'update') syncFromStorage();
+        if (e.data?.type === "update") syncFromStorage();
       };
     }
 
@@ -929,12 +1439,12 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
     function onStorage(e: StorageEvent) {
       if (e.key === STORE_KEY) syncFromStorage();
     }
-    window.addEventListener('storage', onStorage);
+    window.addEventListener("storage", onStorage);
 
     return () => {
       ch?.close();
       channelRef.current = null;
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
@@ -945,42 +1455,59 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
   //   4. setRequests (just schedules a re-render)
   // Nothing touches a state updater function beyond returning the next value.
 
-  const addRequest = useCallback((data: Omit<PatientRequest, 'createdAt' | 'status'>) => {
-    const current = loadRequests();
-    if (current.some(r => r.id === data.id)) return; // idempotent by UUID
-    const req: PatientRequest = {
-      ...data,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-    };
-    const next = [req, ...current];
-    saveRequests(next);
-    channelRef.current?.postMessage({ type: 'update' });
-    setRequests(next);
-  }, []);
+  const addRequest = useCallback(
+    (data: Omit<PatientRequest, "createdAt" | "status">) => {
+      const current = loadRequests();
+      if (current.some((r) => r.id === data.id)) return; // idempotent by UUID
+      const req: PatientRequest = {
+        ...data,
+        createdAt: new Date().toISOString(),
+        status: "pending",
+      };
+      const next = [req, ...current];
+      saveRequests(next);
+      channelRef.current?.postMessage({ type: "update" });
+      setRequests(next);
+    },
+    [],
+  );
 
   const completeRequest = useCallback((id: string) => {
     const current = loadRequests();
-    const next = current.map(r =>
-      r.id === id ? { ...r, status: 'done' as const, completedAt: new Date().toISOString() } : r,
+    const next = current.map((r) =>
+      r.id === id
+        ? {
+            ...r,
+            status: "done" as const,
+            completedAt: new Date().toISOString(),
+          }
+        : r,
     );
     saveRequests(next);
-    channelRef.current?.postMessage({ type: 'update' });
+    channelRef.current?.postMessage({ type: "update" });
     setRequests(next);
   }, []);
 
   const rejectRequest = useCallback((id: string) => {
     const current = loadRequests();
-    const next = current.map(r =>
-      r.id === id ? { ...r, status: 'rejected' as const, rejectedAt: new Date().toISOString() } : r,
+    const next = current.map((r) =>
+      r.id === id
+        ? {
+            ...r,
+            status: "rejected" as const,
+            rejectedAt: new Date().toISOString(),
+          }
+        : r,
     );
     saveRequests(next);
-    channelRef.current?.postMessage({ type: 'update' });
+    channelRef.current?.postMessage({ type: "update" });
     setRequests(next);
   }, []);
 
   return (
-    <RequestContext.Provider value={{ requests, addRequest, completeRequest, rejectRequest }}>
+    <RequestContext.Provider
+      value={{ requests, addRequest, completeRequest, rejectRequest }}
+    >
       {children}
     </RequestContext.Provider>
   );
@@ -988,58 +1515,106 @@ function RequestStoreProvider({ children }: { children: React.ReactNode }) {
 
 export function useRequestStore(): RequestStoreShape {
   const ctx = useContext(RequestContext);
-  if (!ctx) throw new Error('useRequestStore must be used inside RequestStoreProvider');
+  if (!ctx)
+    throw new Error("useRequestStore must be used inside RequestStoreProvider");
   return ctx;
 }
 
 // ── Shared: Ambient background blobs ─────────────────────────────────────────
 function AmbientBackground() {
   return (
-    <div aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-      <div style={{
-        position: 'absolute', top: '-18%', right: '-12%',
-        width: '55vw', height: '55vw', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(255,220,140,0.28) 0%, transparent 68%)',
-        filter: 'blur(56px)',
-      }} />
-      <div style={{
-        position: 'absolute', bottom: '-20%', left: '-10%',
-        width: '52vw', height: '52vw', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(190,200,255,0.20) 0%, transparent 68%)',
-        filter: 'blur(64px)',
-      }} />
-      <div style={{
-        position: 'absolute', top: '25%', left: '30%',
-        width: '40vw', height: '40vw', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(255,240,210,0.14) 0%, transparent 70%)',
-        filter: 'blur(70px)',
-      }} />
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: "-18%",
+          right: "-12%",
+          width: "55vw",
+          height: "55vw",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(255,220,140,0.28) 0%, transparent 68%)",
+          filter: "blur(56px)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          bottom: "-20%",
+          left: "-10%",
+          width: "52vw",
+          height: "52vw",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(190,200,255,0.20) 0%, transparent 68%)",
+          filter: "blur(64px)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: "25%",
+          left: "30%",
+          width: "40vw",
+          height: "40vw",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(255,240,210,0.14) 0%, transparent 70%)",
+          filter: "blur(70px)",
+        }}
+      />
     </div>
   );
 }
 
 // ── Emergency dialog — animated step-by-step simulation ──────────────────────
-function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function EmergencyDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const { caregiverName, caregiverPhone } = useProfile();
   const [step, setStep] = useState(0);
   // Stable portal container — created once after mount, removed on unmount.
   // Using useState initializer avoids the "document is not defined" SSR pitfall
   // and gives createPortal a real DOM node rather than document.body directly.
   const [portalEl] = useState<HTMLDivElement>(() => {
-    const el = document.createElement('div');
-    el.setAttribute('data-emergency-portal', '1');
+    const el = document.createElement("div");
+    el.setAttribute("data-emergency-portal", "1");
     document.body.appendChild(el);
     return el;
   });
-  useEffect(() => () => { document.body.removeChild(portalEl); }, [portalEl]);
+  useEffect(
+    () => () => {
+      document.body.removeChild(portalEl);
+    },
+    [portalEl],
+  );
 
   useEffect(() => {
-    if (!open) { setStep(0); return; }
+    if (!open) {
+      setStep(0);
+      return;
+    }
     setStep(1);
     const t1 = setTimeout(() => setStep(2), 1000);
     const t2 = setTimeout(() => setStep(3), 2000);
-    const t3 = setTimeout(() => onClose(),  5000); // 2000 ms sequence + 3000 ms hold
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    const t3 = setTimeout(() => onClose(), 5000); // 2000 ms sequence + 3000 ms hold
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [open]);
 
   return createPortal(
@@ -1050,71 +1625,107 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.28, ease: 'easeInOut' }}
+          transition={{ duration: 0.28, ease: "easeInOut" }}
           style={{
-            position: 'fixed', inset: 0, zIndex: 10000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(0,0,0,0.55)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
           }}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.82 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.90 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
             dir="rtl"
             style={{
-              background: 'rgba(24,24,26,0.97)',
-              backdropFilter: 'blur(36px)',
-              WebkitBackdropFilter: 'blur(36px)',
-              borderRadius: '28px',
-              padding: '44px 48px 40px',
-              textAlign: 'center',
+              background: "rgba(24,24,26,0.97)",
+              backdropFilter: "blur(36px)",
+              WebkitBackdropFilter: "blur(36px)",
+              borderRadius: "28px",
+              padding: "44px 48px 40px",
+              textAlign: "center",
               boxShadow: [
-                '0 48px 120px rgba(0,0,0,0.50)',
-                '0 0 0 1px rgba(255,255,255,0.07)',
-                '0 0 0 4px rgba(255,48,36,0.18)',
-              ].join(', '),
-              maxWidth: '390px',
-              width: '88vw',
+                "0 48px 120px rgba(0,0,0,0.50)",
+                "0 0 0 1px rgba(255,255,255,0.07)",
+                "0 0 0 4px rgba(255,48,36,0.18)",
+              ].join(", "),
+              maxWidth: "390px",
+              width: "88vw",
               fontFamily: "'IBM Plex Sans Arabic', sans-serif",
             }}
           >
             {/* Pulsing red beacon */}
-            <div style={{ position: 'relative', width: '64px', height: '64px', margin: '0 auto 28px' }}>
+            <div
+              style={{
+                position: "relative",
+                width: "64px",
+                height: "64px",
+                margin: "0 auto 28px",
+              }}
+            >
               <motion.div
                 animate={{ scale: [1, 1.55, 1], opacity: [0.55, 0, 0.55] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                transition={{
+                  duration: 1.8,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
                 style={{
-                  position: 'absolute', inset: 0,
-                  borderRadius: '50%',
-                  background: 'rgba(255,48,36,0.35)',
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  background: "rgba(255,48,36,0.35)",
                 }}
               />
-              <div style={{
-                position: 'absolute', inset: '10px',
-                borderRadius: '50%',
-                background: 'linear-gradient(145deg, #FF3B30, #FF1A0F)',
-                boxShadow: '0 6px 24px rgba(255,48,36,0.60)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '1.45rem',
-              }}>
+              <div
+                style={{
+                  position: "absolute",
+                  inset: "10px",
+                  borderRadius: "50%",
+                  background: "linear-gradient(145deg, #FF3B30, #FF1A0F)",
+                  boxShadow: "0 6px 24px rgba(255,48,36,0.60)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.45rem",
+                }}
+              >
                 🚨
               </div>
             </div>
 
             {/* Step 1 — sending alert */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: '10px', padding: '11px 20px', borderRadius: '14px',
-                background: 'rgba(255,48,36,0.14)',
-                border: '1px solid rgba(255,48,36,0.28)',
-              }}>
-                <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>🚨</span>
-                <span style={{ color: '#FF6B63', fontWeight: 700, fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)', lineHeight: 1.4 }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "13px" }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "10px",
+                  padding: "11px 20px",
+                  borderRadius: "14px",
+                  background: "rgba(255,48,36,0.14)",
+                  border: "1px solid rgba(255,48,36,0.28)",
+                }}
+              >
+                <span style={{ fontSize: "1.15rem", flexShrink: 0 }}>🚨</span>
+                <span
+                  style={{
+                    color: "#FF6B63",
+                    fontWeight: 700,
+                    fontSize: "clamp(0.84rem, 1.05vw, 0.96rem)",
+                    lineHeight: 1.4,
+                  }}
+                >
                   جاري إرسال تنبيه الطوارئ...
                 </span>
               </div>
@@ -1127,37 +1738,85 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                    style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
                   >
                     {/* Notified row */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      gap: '10px', padding: '11px 20px', borderRadius: '14px',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                    }}>
-                      <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>✅</span>
-                      <span style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 600, fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)', lineHeight: 1.4 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "10px",
+                        padding: "11px 20px",
+                        borderRadius: "14px",
+                        background: "rgba(255,255,255,0.06)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <span style={{ fontSize: "1.15rem", flexShrink: 0 }}>
+                        ✅
+                      </span>
+                      <span
+                        style={{
+                          color: "rgba(255,255,255,0.88)",
+                          fontWeight: 600,
+                          fontSize: "clamp(0.84rem, 1.05vw, 0.96rem)",
+                          lineHeight: 1.4,
+                        }}
+                      >
                         تم إشعار مقدم الرعاية
                       </span>
                     </div>
                     {/* Caregiver info card */}
-                    <div style={{
-                      borderRadius: '12px',
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.10)',
-                      padding: '12px 18px',
-                      display: 'flex', flexDirection: 'column', gap: '6px',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '1rem' }}>👤</span>
-                        <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.80rem, 1vw, 0.90rem)', fontWeight: 500 }}>
+                    <div
+                      style={{
+                        borderRadius: "12px",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        padding: "12px 18px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span style={{ fontSize: "1rem" }}>👤</span>
+                        <span
+                          style={{
+                            color: "rgba(255,255,255,0.75)",
+                            fontSize: "clamp(0.80rem, 1vw, 0.90rem)",
+                            fontWeight: 500,
+                          }}
+                        >
                           {caregiverName}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '1rem' }}>📞</span>
-                        <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 'clamp(0.80rem, 1vw, 0.90rem)', fontWeight: 500, direction: 'ltr' }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span style={{ fontSize: "1rem" }}>📞</span>
+                        <span
+                          style={{
+                            color: "rgba(255,255,255,0.75)",
+                            fontSize: "clamp(0.80rem, 1vw, 0.90rem)",
+                            fontWeight: 500,
+                            direction: "ltr",
+                          }}
+                        >
                           {caregiverPhone}
                         </span>
                       </div>
@@ -1174,32 +1833,63 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "14px",
+                    }}
                   >
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      gap: '10px', padding: '11px 20px', borderRadius: '14px',
-                      width: '100%',
-                      background: 'rgba(48,209,88,0.12)',
-                      border: '1px solid rgba(48,209,88,0.28)',
-                    }}>
-                      <span style={{ fontSize: '1.15rem', flexShrink: 0 }}>✅</span>
-                      <span style={{ color: '#4CD964', fontWeight: 700, fontSize: 'clamp(0.84rem, 1.05vw, 0.96rem)', lineHeight: 1.4 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "10px",
+                        padding: "11px 20px",
+                        borderRadius: "14px",
+                        width: "100%",
+                        background: "rgba(48,209,88,0.12)",
+                        border: "1px solid rgba(48,209,88,0.28)",
+                      }}
+                    >
+                      <span style={{ fontSize: "1.15rem", flexShrink: 0 }}>
+                        ✅
+                      </span>
+                      <span
+                        style={{
+                          color: "#4CD964",
+                          fontWeight: 700,
+                          fontSize: "clamp(0.84rem, 1.05vw, 0.96rem)",
+                          lineHeight: 1.4,
+                        }}
+                      >
                         تم إرسال التنبيه بنجاح
                       </span>
                     </div>
                     <motion.div
                       initial={{ opacity: 0, scale: 0.5 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+                      transition={{
+                        duration: 0.46,
+                        ease: [0.22, 1, 0.36, 1],
+                        delay: 0.1,
+                      }}
                     >
-                      <div style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: '52px', height: '52px', borderRadius: '50%',
-                        background: 'linear-gradient(145deg, #30D158, #25A244)',
-                        boxShadow: '0 8px 28px rgba(48,209,88,0.45)',
-                        fontSize: '1.55rem',
-                      }}>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: "52px",
+                          height: "52px",
+                          borderRadius: "50%",
+                          background:
+                            "linear-gradient(145deg, #30D158, #25A244)",
+                          boxShadow: "0 8px 28px rgba(48,209,88,0.45)",
+                          fontSize: "1.55rem",
+                        }}
+                      >
                         ✓
                       </div>
                     </motion.div>
@@ -1211,7 +1901,7 @@ function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void
         </motion.div>
       )}
     </AnimatePresence>,
-    document.body
+    document.body,
   );
 }
 
@@ -1226,24 +1916,36 @@ function EmergencyButton() {
     // Create the emergency request in the shared store so it broadcasts to
     // the Caregiver Dashboard via BroadcastChannel + storage-event sync.
     addRequest({
-      id:            `emergency-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `emergency-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       patientName,
-      requestText:   'طوارئ',
-      requestEmoji:  '🚨',
-      categoryId:    'emergency',
-      categoryLabel: 'طوارئ',
-      priority:      'urgent',
+      requestText: "طوارئ",
+      requestEmoji: "🚨",
+      categoryId: "emergency",
+      categoryLabel: "طوارئ",
+      priority: "urgent",
     });
     setOpen(true);
-  }, 'emergency');
+  }, "emergency");
 
   const active = isGazeActive || mouseActive;
 
   const augmented = {
-    onMouseEnter: () => { setMouseActive(true);  handlers.onMouseEnter(); },
-    onMouseLeave: () => { setMouseActive(false); handlers.onMouseLeave(); },
-    onFocus:      () => { setMouseActive(true);  handlers.onFocus(); },
-    onBlur:       () => { setMouseActive(false); handlers.onBlur(); },
+    onMouseEnter: () => {
+      setMouseActive(true);
+      handlers.onMouseEnter();
+    },
+    onMouseLeave: () => {
+      setMouseActive(false);
+      handlers.onMouseLeave();
+    },
+    onFocus: () => {
+      setMouseActive(true);
+      handlers.onFocus();
+    },
+    onBlur: () => {
+      setMouseActive(false);
+      handlers.onBlur();
+    },
   };
 
   return (
@@ -1254,35 +1956,38 @@ function EmergencyButton() {
         whileTap={{ scale: 0.94 }}
         animate={{
           boxShadow: [
-            '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
-            '0 10px 36px rgba(255,59,48,0.70), 0 3px 10px rgba(255,59,48,0.38)',
-            '0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)',
+            "0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)",
+            "0 10px 36px rgba(255,59,48,0.70), 0 3px 10px rgba(255,59,48,0.38)",
+            "0 6px 24px rgba(255,59,48,0.48), 0 2px 8px rgba(255,59,48,0.24)",
           ],
         }}
-        transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
         className="absolute text-white font-semibold rounded-full flex items-center gap-[7px]"
         style={{
-          insetInlineStart: '24px',
-          background: 'rgba(255,48,36,0.92)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid rgba(255,110,100,0.30)',
-          padding: '11px 20px',
-          fontSize: '0.92rem',
-          cursor: 'pointer',
+          insetInlineStart: "24px",
+          background: "rgba(255,48,36,0.92)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255,110,100,0.30)",
+          padding: "11px 20px",
+          fontSize: "0.92rem",
+          cursor: "pointer",
           zIndex: 20,
         }}
         aria-label="طوارئ"
       >
         {/* Dwell ring — centered on the button */}
-        <div style={{
-          position: 'absolute',
-          top: '50%', left: '50%',
-          width: 'clamp(72px, 11vh, 96px)',
-          height: 'clamp(72px, 11vh, 96px)',
-          transform: 'translate(-50%, -50%)',
-          pointerEvents: 'none',
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            width: "clamp(72px, 11vh, 96px)",
+            height: "clamp(72px, 11vh, 96px)",
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+          }}
+        >
           <DwellRingCircle
             ringColor="#5E7E35"
             glowColor="rgba(94,126,53,0.40)"
@@ -1292,7 +1997,9 @@ function EmergencyButton() {
           />
         </div>
 
-        <span role="img" aria-hidden>🚨</span>
+        <span role="img" aria-hidden>
+          🚨
+        </span>
         <span>طوارئ</span>
       </motion.button>
       <EmergencyDialog open={open} onClose={() => setOpen(false)} />
@@ -1307,78 +2014,111 @@ function BackButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       whileHover={{ scale: 1.04 }}
       whileTap={{ scale: 0.93 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+      transition={{ type: "spring", stiffness: 260, damping: 28 }}
       className="absolute flex items-center"
       style={{
-        insetInlineEnd: '20px',
-        top: '16px',
-        gap: '8px',
-        height: '52px',
-        padding: '0 24px',
-        borderRadius: '999px',
-        background: 'linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)',
-        boxShadow: '0 4px 20px rgba(94,126,53,0.38), 0 1px 4px rgba(0,0,0,0.12)',
-        border: 'none',
-        fontSize: '1.05rem',
+        insetInlineEnd: "20px",
+        top: "16px",
+        gap: "8px",
+        height: "52px",
+        padding: "0 24px",
+        borderRadius: "999px",
+        background: "linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)",
+        boxShadow:
+          "0 4px 20px rgba(94,126,53,0.38), 0 1px 4px rgba(0,0,0,0.12)",
+        border: "none",
+        fontSize: "1.05rem",
         fontWeight: 700,
-        color: '#fff',
-        cursor: 'pointer',
+        color: "#fff",
+        cursor: "pointer",
         zIndex: 20,
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        letterSpacing: '-0.01em',
+        letterSpacing: "-0.01em",
       }}
       aria-label="رجوع"
     >
-      <ChevronRight className="w-5 h-5" style={{ color: '#fff' }} strokeWidth={2.5} />
+      <ChevronRight
+        className="w-5 h-5"
+        style={{ color: "#fff" }}
+        strokeWidth={2.5}
+      />
       <span>رجوع</span>
     </motion.button>
   );
 }
 
 // ── GazeCard ─────────────────────────────────────────────────────────────────
-function GazeCard({ card, onClick }: {
+function GazeCard({
+  card,
+  onClick,
+}: {
   card: Category;
   index: number;
   onClick: () => void;
 }) {
   const [mouseActive, setMouseActive] = useState(false);
-  const { controls, handlers, onUpdate, isGazeActive } = useDwell(onClick, card.id);
+  const { controls, handlers, onUpdate, isGazeActive } = useDwell(
+    onClick,
+    card.id,
+  );
   const active = isGazeActive || mouseActive;
 
   const augmented = {
-    onMouseEnter: () => { setMouseActive(true);  handlers.onMouseEnter(); },
-    onMouseLeave: () => { setMouseActive(false); handlers.onMouseLeave(); },
-    onFocus:      () => { setMouseActive(true);  handlers.onFocus(); },
-    onBlur:       () => { setMouseActive(false); handlers.onBlur(); },
+    onMouseEnter: () => {
+      setMouseActive(true);
+      handlers.onMouseEnter();
+    },
+    onMouseLeave: () => {
+      setMouseActive(false);
+      handlers.onMouseLeave();
+    },
+    onFocus: () => {
+      setMouseActive(true);
+      handlers.onFocus();
+    },
+    onBlur: () => {
+      setMouseActive(false);
+      handlers.onBlur();
+    },
   };
 
   const restShadow = [
-    '0 0 0 0px rgba(0,0,0,0)',
-    '0 6px 20px rgba(0,0,0,0.08)',
-    '0 16px 48px rgba(0,0,0,0.09)',
-    'inset 0 2px 0 rgba(255,255,255,1)',
-    'inset 0 0 48px rgba(255,255,255,0.65)',
-  ].join(', ');
+    "0 0 0 0px rgba(0,0,0,0)",
+    "0 6px 20px rgba(0,0,0,0.08)",
+    "0 16px 48px rgba(0,0,0,0.09)",
+    "inset 0 2px 0 rgba(255,255,255,1)",
+    "inset 0 0 48px rgba(255,255,255,0.65)",
+  ].join(", ");
 
   const focusShadow = [
-    `0 0 0 2.5px ${card.glowColor.replace('0.40', '0.50')}`,
-    `0 0 22px ${card.glowColor.replace('0.40', '0.30')}`,
-    `0 0 48px ${card.glowColor.replace('0.40', '0.14')}`,
+    `0 0 0 2.5px ${card.glowColor.replace("0.40", "0.50")}`,
+    `0 0 22px ${card.glowColor.replace("0.40", "0.30")}`,
+    `0 0 48px ${card.glowColor.replace("0.40", "0.14")}`,
     `0 14px 44px rgba(20,30,60,0.13)`,
-    'inset 0 2px 0 rgba(255,255,255,1)',
-    'inset 0 0 48px rgba(255,255,255,0.65)',
-  ].join(', ');
+    "inset 0 2px 0 rgba(255,255,255,1)",
+    "inset 0 0 48px rgba(255,255,255,0.65)",
+  ].join(", ");
 
   return (
-    <div className="flex flex-col items-center" style={{ gap: 'clamp(10px, 1.5vh, 18px)' }}>
-
+    <div
+      className="flex flex-col items-center"
+      style={{ gap: "clamp(10px, 1.5vh, 18px)" }}
+    >
       {/* Ring + bubble */}
       <div
         className="relative flex items-center justify-center"
-        style={{ width: 'min(160px, 17.5vh)', aspectRatio: '1' }}
+        style={{ width: "min(160px, 17.5vh)", aspectRatio: "1" }}
       >
         {/* Dwell ring — sits just outside the bubble (110%) */}
-        <div style={{ position: 'absolute', inset: '-5%', width: '110%', height: '110%', pointerEvents: 'none' }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: "-5%",
+            width: "110%",
+            height: "110%",
+            pointerEvents: "none",
+          }}
+        >
           <DwellRingCircle
             ringColor={card.ringColor}
             glowColor={card.glowColor}
@@ -1392,20 +2132,21 @@ function GazeCard({ card, onClick }: {
         <motion.div
           className="relative overflow-hidden flex items-center justify-center"
           style={{
-            width: '100%', height: '100%',
-            borderRadius: '50%',
+            width: "100%",
+            height: "100%",
+            borderRadius: "50%",
             background: card.bg,
-            backdropFilter: 'blur(48px) saturate(210%)',
-            WebkitBackdropFilter: 'blur(48px) saturate(210%)',
-            border: '1px solid rgba(255,255,255,0.96)',
-            cursor: 'pointer',
+            backdropFilter: "blur(48px) saturate(210%)",
+            WebkitBackdropFilter: "blur(48px) saturate(210%)",
+            border: "1px solid rgba(255,255,255,0.96)",
+            cursor: "pointer",
             zIndex: 1,
           }}
           animate={{
-            scale:     active ? 1.03 : 1,
+            scale: active ? 1.03 : 1,
             boxShadow: active ? focusShadow : restShadow,
           }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
           {...augmented}
           data-gaze-target="true"
           data-gaze-id={card.id}
@@ -1416,34 +2157,49 @@ function GazeCard({ card, onClick }: {
           aria-label={card.label}
         >
           {/* Specular highlight */}
-          <div aria-hidden style={{
-            position: 'absolute', top: 0, left: 0, right: 0,
-            height: '42%',
-            borderRadius: '50% 50% 0 0 / 100% 100% 0 0',
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.68) 0%, transparent 100%)',
-            pointerEvents: 'none', zIndex: 3,
-          }} />
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: "42%",
+              borderRadius: "50% 50% 0 0 / 100% 100% 0 0",
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.68) 0%, transparent 100%)",
+              pointerEvents: "none",
+              zIndex: 3,
+            }}
+          />
 
           {card.image ? (
             <img
               src={import.meta.env.BASE_URL + card.image}
               alt={card.label}
               style={{
-                position: 'absolute', inset: 0,
-                width: '100%', height: '100%',
-                objectFit: 'cover',
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
                 objectPosition: card.imgPosition,
                 transform: `scale(${card.imgScale})`,
-                transformOrigin: 'center center',
+                transformOrigin: "center center",
                 zIndex: 1,
               }}
               draggable={false}
             />
           ) : (
-            <span style={{
-              fontSize: 'clamp(2.2rem, 4.5vh, 3.2rem)',
-              zIndex: 2, lineHeight: 1, userSelect: 'none',
-            }} aria-hidden>
+            <span
+              style={{
+                fontSize: "clamp(2.2rem, 4.5vh, 3.2rem)",
+                zIndex: 2,
+                lineHeight: 1,
+                userSelect: "none",
+              }}
+              aria-hidden
+            >
               {card.emoji}
             </span>
           )}
@@ -1453,34 +2209,53 @@ function GazeCard({ card, onClick }: {
       {/* Label pill */}
       <div
         style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '7px', height: '44px', padding: '0 15px',
-          borderRadius: '999px',
-          background: 'rgba(255,255,255,0.85)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid rgba(255,255,255,0.95)',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "7px",
+          height: "44px",
+          padding: "0 15px",
+          borderRadius: "999px",
+          background: "rgba(255,255,255,0.85)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255,255,255,0.95)",
           boxShadow: active
             ? `0 6px 22px ${card.glowColor}, 0 2px 6px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)`
-            : '0 4px 18px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)',
-          transition: 'box-shadow 0.18s ease-out',
+            : "0 4px 18px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,1)",
+          transition: "box-shadow 0.18s ease-out",
         }}
       >
-        <span className="font-bold text-[#1C1C1E]" style={{
-          fontSize: 'clamp(0.82rem, 1.05vw, 1.05rem)',
-          letterSpacing: '0.01em', lineHeight: 1,
-          whiteSpace: 'nowrap',
-        }}>
+        <span
+          className="font-bold text-[#1C1C1E]"
+          style={{
+            fontSize: "clamp(0.82rem, 1.05vw, 1.05rem)",
+            letterSpacing: "0.01em",
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+          }}
+        >
           {card.label}
         </span>
-        <card.Icon style={{ color: card.ringColor, flexShrink: 0 }} width={15} height={15} strokeWidth={1.75} />
+        <card.Icon
+          style={{ color: card.ringColor, flexShrink: 0 }}
+          width={15}
+          height={15}
+          strokeWidth={1.75}
+        />
       </div>
     </div>
   );
 }
 
 // ── ItemCard — static at rest; identical dwell ring + glow on focus ───────────
-function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
+function ItemCard({
+  item,
+  ringColor,
+  glowColor,
+  onSelect,
+  selected,
+}: {
   item: CategoryItem;
   ringColor: string;
   glowColor: string;
@@ -1489,34 +2264,49 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
   index: number;
 }) {
   const [mouseActive, setMouseActive] = useState(false);
-  const { controls, handlers, onUpdate, isGazeActive } = useDwell(() => onSelect(item.id), `item-${item.id}`);
+  const { controls, handlers, onUpdate, isGazeActive } = useDwell(
+    () => onSelect(item.id),
+    `item-${item.id}`,
+  );
   const active = isGazeActive || mouseActive;
 
   const augmented = {
-    onMouseEnter: () => { setMouseActive(true);  handlers.onMouseEnter(); },
-    onMouseLeave: () => { setMouseActive(false); handlers.onMouseLeave(); },
-    onFocus:      () => { setMouseActive(true);  handlers.onFocus(); },
-    onBlur:       () => { setMouseActive(false); handlers.onBlur(); },
+    onMouseEnter: () => {
+      setMouseActive(true);
+      handlers.onMouseEnter();
+    },
+    onMouseLeave: () => {
+      setMouseActive(false);
+      handlers.onMouseLeave();
+    },
+    onFocus: () => {
+      setMouseActive(true);
+      handlers.onFocus();
+    },
+    onBlur: () => {
+      setMouseActive(false);
+      handlers.onBlur();
+    },
   };
 
   const restShadow = selected
     ? [
-        `0 0 0 3px ${glowColor.replace('0.40', '0.12')}`,
-        `0 8px 32px ${glowColor.replace('0.40', '0.18')}`,
-        'inset 0 1.5px 0 rgba(255,255,255,1)',
-      ].join(', ')
+        `0 0 0 3px ${glowColor.replace("0.40", "0.12")}`,
+        `0 8px 32px ${glowColor.replace("0.40", "0.18")}`,
+        "inset 0 1.5px 0 rgba(255,255,255,1)",
+      ].join(", ")
     : [
-        '0 4px 18px rgba(0,0,0,0.08)',
-        '0 1px 4px rgba(0,0,0,0.04)',
-        'inset 0 1.5px 0 rgba(255,255,255,1)',
-      ].join(', ');
+        "0 4px 18px rgba(0,0,0,0.08)",
+        "0 1px 4px rgba(0,0,0,0.04)",
+        "inset 0 1.5px 0 rgba(255,255,255,1)",
+      ].join(", ");
 
   const focusShadow = [
-    '0 0 0 3px rgba(94,126,53,0.45)',
-    '0 0 24px rgba(94,126,53,0.28)',
-    '0 8px 32px rgba(94,126,53,0.14)',
-    'inset 0 1.5px 0 rgba(255,255,255,1)',
-  ].join(', ');
+    "0 0 0 3px rgba(94,126,53,0.45)",
+    "0 0 24px rgba(94,126,53,0.28)",
+    "0 8px 32px rgba(94,126,53,0.14)",
+    "inset 0 1.5px 0 rgba(255,255,255,1)",
+  ].join(", ");
 
   return (
     <button
@@ -1524,25 +2314,28 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
       data-gaze-id={`item-${item.id}`}
       {...augmented}
       style={{
-        position: 'relative',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        gap: '10px',
-        padding: 'clamp(14px, 2.2vh, 22px) 10px',
-        borderRadius: '20px',
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+        padding: "clamp(14px, 2.2vh, 22px) 10px",
+        borderRadius: "20px",
         background: selected
-          ? `linear-gradient(160deg, rgba(255,255,255,0.96) 0%, ${glowColor.replace('0.40', '0.10')} 100%)`
-          : 'rgba(255,255,255,0.82)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          ? `linear-gradient(160deg, rgba(255,255,255,0.96) 0%, ${glowColor.replace("0.40", "0.10")} 100%)`
+          : "rgba(255,255,255,0.82)",
+        backdropFilter: "blur(20px) saturate(180%)",
+        WebkitBackdropFilter: "blur(20px) saturate(180%)",
         border: selected
-          ? `1.5px solid ${glowColor.replace('0.40', '0.45')}`
-          : '1px solid rgba(255,255,255,0.95)',
-        boxShadow: (active && !selected) ? focusShadow : restShadow,
-        cursor: 'pointer',
-        minHeight: 'clamp(88px, 12vh, 124px)',
-        width: '100%',
-        transition: 'background 0.18s ease-out, border 0.18s ease-out, box-shadow 0.18s ease-out',
+          ? `1.5px solid ${glowColor.replace("0.40", "0.45")}`
+          : "1px solid rgba(255,255,255,0.95)",
+        boxShadow: active && !selected ? focusShadow : restShadow,
+        cursor: "pointer",
+        minHeight: "clamp(88px, 12vh, 124px)",
+        width: "100%",
+        transition:
+          "background 0.18s ease-out, border 0.18s ease-out, box-shadow 0.18s ease-out",
       }}
       aria-label={item.label}
       aria-pressed={selected}
@@ -1551,14 +2344,17 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
         Dwell ring — same circular ring as GazeCard, centered on the card.
         Sized to match the card's min-height so it reads as a focus reticle.
       */}
-      <div style={{
-        position: 'absolute',
-        top: '50%', left: '50%',
-        width: 'clamp(72px, 11vh, 96px)',
-        height: 'clamp(72px, 11vh, 96px)',
-        transform: 'translate(-50%, -50%)',
-        pointerEvents: 'none',
-      }}>
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: "clamp(72px, 11vh, 96px)",
+          height: "clamp(72px, 11vh, 96px)",
+          transform: "translate(-50%, -50%)",
+          pointerEvents: "none",
+        }}
+      >
         <DwellRingCircle
           ringColor="#5E7E35"
           glowColor="rgba(94,126,53,0.40)"
@@ -1573,35 +2369,39 @@ function ItemCard({ item, ringColor, glowColor, onSelect, selected }: {
           src={import.meta.env.BASE_URL + item.image}
           alt={item.label}
           style={{
-            width: 'calc(100% - 4px)',
-            height: 'clamp(80px, 11vh, 102px)',
-            objectFit: 'cover',
-            objectPosition: 'center center',
-            borderRadius: '12px',
-            display: 'block',
+            width: "calc(100% - 4px)",
+            height: "clamp(80px, 11vh, 102px)",
+            objectFit: "cover",
+            objectPosition: "center center",
+            borderRadius: "12px",
+            display: "block",
             flexShrink: 0,
-            imageRendering: 'auto',
+            imageRendering: "auto",
           }}
         />
       ) : item.Icon ? (
         <item.Icon
           size={44}
-          color={selected ? ringColor : '#3C3C43'}
+          color={selected ? ringColor : "#3C3C43"}
           strokeWidth={1.5}
         />
       ) : (
-        <span style={{ fontSize: 'clamp(1.9rem, 3.2vh, 2.6rem)', lineHeight: 1 }}>
+        <span
+          style={{ fontSize: "clamp(1.9rem, 3.2vh, 2.6rem)", lineHeight: 1 }}
+        >
           {item.emoji}
         </span>
       )}
-      <span style={{
-        fontSize: 'clamp(0.82rem, 1.1vw, 1rem)',
-        fontWeight: 700,
-        color: selected ? ringColor : '#1C1C1E',
-        textAlign: 'center',
-        lineHeight: 1.3,
-        transition: 'color 0.18s ease-out',
-      }}>
+      <span
+        style={{
+          fontSize: "clamp(0.82rem, 1.1vw, 1rem)",
+          fontWeight: 700,
+          color: selected ? ringColor : "#1C1C1E",
+          textAlign: "center",
+          lineHeight: 1.3,
+          transition: "color 0.18s ease-out",
+        }}
+      >
         {item.label}
       </span>
     </button>
@@ -1618,13 +2418,17 @@ function SuccessDialog({ visible }: { visible: boolean }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.25, ease: 'easeInOut' }}
+          transition={{ duration: 0.25, ease: "easeInOut" }}
           style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(0,0,0,0.28)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.28)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
           }}
         >
           <motion.div
@@ -1634,45 +2438,58 @@ function SuccessDialog({ visible }: { visible: boolean }) {
             transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             dir="rtl"
             style={{
-              background: 'rgba(255,255,255,0.96)',
-              backdropFilter: 'blur(28px)',
-              WebkitBackdropFilter: 'blur(28px)',
-              borderRadius: '24px',
-              padding: '40px 48px',
-              textAlign: 'center',
+              background: "rgba(255,255,255,0.96)",
+              backdropFilter: "blur(28px)",
+              WebkitBackdropFilter: "blur(28px)",
+              borderRadius: "24px",
+              padding: "40px 48px",
+              textAlign: "center",
               boxShadow: [
-                '0 32px 80px rgba(0,0,0,0.18)',
-                '0 8px 24px rgba(0,0,0,0.10)',
-                '0 0 0 1px rgba(255,255,255,0.8)',
-              ].join(', '),
-              maxWidth: '360px',
-              width: '88vw',
+                "0 32px 80px rgba(0,0,0,0.18)",
+                "0 8px 24px rgba(0,0,0,0.10)",
+                "0 0 0 1px rgba(255,255,255,0.8)",
+              ].join(", "),
+              maxWidth: "360px",
+              width: "88vw",
               fontFamily: "'IBM Plex Sans Arabic', sans-serif",
             }}
           >
-            <div style={{ fontSize: '3rem', lineHeight: 1, marginBottom: '16px' }}>👁️</div>
-            <p style={{
-              fontSize: 'clamp(1.05rem, 1.4vw, 1.25rem)',
-              fontWeight: 700,
-              color: '#0A0A0A',
-              marginBottom: '12px',
-              lineHeight: 1.4,
-            }}>
+            <div
+              style={{ fontSize: "3rem", lineHeight: 1, marginBottom: "16px" }}
+            >
+              👁️
+            </div>
+            <p
+              style={{
+                fontSize: "clamp(1.05rem, 1.4vw, 1.25rem)",
+                fontWeight: 700,
+                color: "#0A0A0A",
+                marginBottom: "12px",
+                lineHeight: 1.4,
+              }}
+            >
               تم التعرف على النظرة
             </p>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '8px',
-              background: 'linear-gradient(135deg, rgba(52,199,89,0.10) 0%, rgba(52,199,89,0.05) 100%)',
-              border: '1.5px solid rgba(52,199,89,0.35)',
-              borderRadius: '999px',
-              padding: '9px 20px',
-            }}>
-              <span style={{ fontSize: '1.1rem' }}>✅</span>
-              <span style={{
-                fontSize: 'clamp(0.84rem, 1.05vw, 0.98rem)',
-                fontWeight: 600,
-                color: '#1C7A3A',
-              }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                background:
+                  "linear-gradient(135deg, rgba(52,199,89,0.10) 0%, rgba(52,199,89,0.05) 100%)",
+                border: "1.5px solid rgba(52,199,89,0.35)",
+                borderRadius: "999px",
+                padding: "9px 20px",
+              }}
+            >
+              <span style={{ fontSize: "1.1rem" }}>✅</span>
+              <span
+                style={{
+                  fontSize: "clamp(0.84rem, 1.05vw, 0.98rem)",
+                  fontWeight: 600,
+                  color: "#1C7A3A",
+                }}
+              >
                 تم إرسال الطلب إلى مقدم الرعاية
               </span>
             </div>
@@ -1698,16 +2515,19 @@ function Home() {
     disabled?: boolean;
   }[] = [
     {
-      icon: '👨‍⚕️',
-      label: 'لوحة المشرف',
-      action: () => { setMenuOpen(false); navigate('/dashboard'); },
-    },
-    {
-      icon: '🎯',
-      label: 'إعادة التهيئة',
+      icon: "👨‍⚕️",
+      label: "لوحة المشرف",
       action: () => {
         setMenuOpen(false);
-        if (permissionState === 'granted') {
+        navigate("/dashboard");
+      },
+    },
+    {
+      icon: "🎯",
+      label: "إعادة التهيئة",
+      action: () => {
+        setMenuOpen(false);
+        if (permissionState === "granted") {
           recalibrate();
         } else {
           requestCamera();
@@ -1715,20 +2535,23 @@ function Home() {
       },
     },
     {
-      icon: '🔊',
-      label: 'اختبار الصوت',
+      icon: "🔊",
+      label: "اختبار الصوت",
       disabled: true,
     },
     {
-      icon: '🌐',
-      label: 'اللغة',
-      sublabel: 'العربية ✓  ·  English (Coming Soon)',
+      icon: "🌐",
+      label: "اللغة",
+      sublabel: "العربية ✓  ·  English (Coming Soon)",
       disabled: true,
     },
     {
-      icon: '✏️',
-      label: 'تعديل بيانات المريض',
-      action: () => { setMenuOpen(false); navigate('/settings'); },
+      icon: "✏️",
+      label: "تعديل بيانات المريض",
+      action: () => {
+        setMenuOpen(false);
+        navigate("/settings");
+      },
     },
   ];
 
@@ -1747,7 +2570,7 @@ function Home() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 29 }}
+            style={{ position: "fixed", inset: 0, zIndex: 29 }}
             onClick={() => setMenuOpen(false)}
           />
         )}
@@ -1755,42 +2578,45 @@ function Home() {
 
       {/* ── Settings button — upper corner (RTL: visual left) ── */}
       <motion.button
-        onClick={() => setMenuOpen(v => !v)}
+        onClick={() => setMenuOpen((v) => !v)}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.93 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22 }}
         aria-label="الإعدادات"
         aria-expanded={menuOpen}
         style={{
-          position: 'absolute',
-          top: '20px',
-          insetInlineEnd: '20px',
+          position: "absolute",
+          top: "20px",
+          insetInlineEnd: "20px",
           zIndex: 31,
-          display: 'flex', alignItems: 'center', gap: '6px',
-          height: '40px',
-          padding: '0 16px',
-          borderRadius: '999px',
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          height: "40px",
+          padding: "0 16px",
+          borderRadius: "999px",
           background: menuOpen
-            ? 'rgba(94,126,53,0.10)'
-            : 'rgba(255,255,255,0.78)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            ? "rgba(94,126,53,0.10)"
+            : "rgba(255,255,255,0.78)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
           border: menuOpen
-            ? '1px solid rgba(94,126,53,0.40)'
-            : '1px solid rgba(94,126,53,0.28)',
-          boxShadow: '0 2px 12px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,0.9)',
-          cursor: 'pointer',
-          fontSize: '0.82rem',
+            ? "1px solid rgba(94,126,53,0.40)"
+            : "1px solid rgba(94,126,53,0.28)",
+          boxShadow:
+            "0 2px 12px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,0.9)",
+          cursor: "pointer",
+          fontSize: "0.82rem",
           fontWeight: 600,
-          color: '#4F6C2D',
+          color: "#4F6C2D",
           fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-          transition: 'background 0.18s, border-color 0.18s',
+          transition: "background 0.18s, border-color 0.18s",
         }}
       >
         <motion.span
           animate={{ rotate: menuOpen ? 60 : 0 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-          style={{ fontSize: '0.92rem', display: 'inline-block' }}
+          transition={{ type: "spring", stiffness: 300, damping: 22 }}
+          style={{ fontSize: "0.92rem", display: "inline-block" }}
         >
           ⚙️
         </motion.span>
@@ -1802,102 +2628,125 @@ function Home() {
         {menuOpen && (
           <motion.div
             key="settings-menu"
-            initial={{ opacity: 0, scale: 0.90, y: -10 }}
+            initial={{ opacity: 0, scale: 0.9, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.90, y: -10 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+            exit={{ opacity: 0, scale: 0.9, y: -10 }}
+            transition={{ type: "spring", stiffness: 420, damping: 32 }}
             style={{
-              position: 'absolute',
-              top: '68px',
-              insetInlineEnd: '20px',
+              position: "absolute",
+              top: "68px",
+              insetInlineEnd: "20px",
               zIndex: 31,
-              width: '230px',
-              background: 'rgba(255,255,255,0.94)',
-              backdropFilter: 'blur(40px) saturate(200%)',
-              WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-              borderRadius: '20px',
-              border: '1.5px solid rgba(94,126,53,0.18)',
+              width: "230px",
+              background: "rgba(255,255,255,0.94)",
+              backdropFilter: "blur(40px) saturate(200%)",
+              WebkitBackdropFilter: "blur(40px) saturate(200%)",
+              borderRadius: "20px",
+              border: "1.5px solid rgba(94,126,53,0.18)",
               boxShadow:
-                '0 20px 56px rgba(0,0,0,0.11), 0 4px 16px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,1)',
-              overflow: 'hidden',
+                "0 20px 56px rgba(0,0,0,0.11), 0 4px 16px rgba(94,126,53,0.10), inset 0 1px 0 rgba(255,255,255,1)",
+              overflow: "hidden",
               fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-              direction: 'rtl',
+              direction: "rtl",
             }}
           >
             {/* Thin olive top-accent */}
-            <div style={{
-              height: '3px',
-              background: 'linear-gradient(90deg, #5E7E35, #7BA043, #C9A84C)',
-            }} />
+            <div
+              style={{
+                height: "3px",
+                background: "linear-gradient(90deg, #5E7E35, #7BA043, #C9A84C)",
+              }}
+            />
 
             {menuItems.map((item, i) => (
               <motion.button
                 key={item.label}
                 onClick={item.disabled ? undefined : item.action}
                 disabled={item.disabled}
-                whileHover={item.disabled ? {} : {
-                  background: 'rgba(94,126,53,0.08)',
-                }}
+                whileHover={
+                  item.disabled
+                    ? {}
+                    : {
+                        background: "rgba(94,126,53,0.08)",
+                      }
+                }
                 whileTap={item.disabled ? {} : { scale: 0.98 }}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  width: '100%',
-                  padding: '13px 18px',
-                  background: 'transparent',
-                  border: 'none',
-                  borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.05)',
-                  cursor: item.disabled ? 'default' : 'pointer',
-                  textAlign: 'right',
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  width: "100%",
+                  padding: "13px 18px",
+                  background: "transparent",
+                  border: "none",
+                  borderTop: i === 0 ? "none" : "1px solid rgba(0,0,0,0.05)",
+                  cursor: item.disabled ? "default" : "pointer",
+                  textAlign: "right",
                   opacity: item.disabled ? 0.42 : 1,
                   fontFamily: "'IBM Plex Sans Arabic', sans-serif",
                 }}
               >
-                <span style={{ fontSize: '1.15rem', flexShrink: 0, lineHeight: 1 }}>
+                <span
+                  style={{ fontSize: "1.15rem", flexShrink: 0, lineHeight: 1 }}
+                >
                   {item.icon}
                 </span>
-                <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{
-                    fontSize: '0.9rem',
-                    fontWeight: 600,
-                    color: '#1C1C1E',
-                    letterSpacing: '-0.01em',
-                  }}>
+                <span
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.9rem",
+                      fontWeight: 600,
+                      color: "#1C1C1E",
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
                     {item.label}
                   </span>
                   {item.sublabel && (
-                    <span style={{
-                      fontSize: '0.72rem',
-                      fontWeight: 500,
-                      color: '#AEAEB2',
-                      letterSpacing: '0.01em',
-                    }}>
+                    <span
+                      style={{
+                        fontSize: "0.72rem",
+                        fontWeight: 500,
+                        color: "#AEAEB2",
+                        letterSpacing: "0.01em",
+                      }}
+                    >
                       {item.sublabel}
                     </span>
                   )}
                 </span>
                 {item.badge && (
-                  <span style={{
-                    fontSize: '0.62rem',
-                    fontWeight: 700,
-                    color: '#5E7E35',
-                    background: 'rgba(94,126,53,0.10)',
-                    padding: '2px 8px',
-                    borderRadius: '999px',
-                    border: '1px solid rgba(94,126,53,0.20)',
-                    letterSpacing: '0.03em',
-                    flexShrink: 0,
-                  }}>
+                  <span
+                    style={{
+                      fontSize: "0.62rem",
+                      fontWeight: 700,
+                      color: "#5E7E35",
+                      background: "rgba(94,126,53,0.10)",
+                      padding: "2px 8px",
+                      borderRadius: "999px",
+                      border: "1px solid rgba(94,126,53,0.20)",
+                      letterSpacing: "0.03em",
+                      flexShrink: 0,
+                    }}
+                  >
                     {item.badge}
                   </span>
                 )}
                 {!item.disabled && !item.badge && (
-                  <span style={{
-                    fontSize: '0.8rem',
-                    color: '#AEAEB2',
-                    flexShrink: 0,
-                  }}>
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "#AEAEB2",
+                      flexShrink: 0,
+                    }}
+                  >
                     ←
                   </span>
                 )}
@@ -1911,11 +2760,11 @@ function Home() {
         className="w-full md:w-[55%] relative h-[55vw] md:h-[100dvh] p-4 md:p-0 md:py-6 md:pl-6 shrink-0"
         initial={{ opacity: 0, scale: 1.02 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.8, ease: 'easeOut' }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
       >
         <div className="relative w-full h-full rounded-2xl md:rounded-none md:rounded-l-[24px] overflow-hidden shadow-sm">
           <img
-            src={import.meta.env.BASE_URL + 'hero.png'}
+            src={import.meta.env.BASE_URL + "hero.png"}
             alt="سَم يبه - التواصل بالنظر"
             className="w-full h-full object-cover"
           />
@@ -1932,7 +2781,6 @@ function Home() {
       >
         <div className="flex flex-col h-full max-w-lg w-full mx-auto md:mx-0">
           <div className="flex-1 flex flex-col justify-center space-y-12">
-
             <motion.div variants={itemVariants} className="space-y-4">
               <h1 className="text-[3.2rem] md:text-[3.8rem] lg:text-[4rem] font-bold text-[#0A0A0A] tracking-tight leading-[1.1]">
                 سَم يبه
@@ -1947,40 +2795,71 @@ function Home() {
 
             <motion.div variants={itemVariants} className="space-y-5">
               <div className="flex items-center gap-4">
-                <Eye className="w-5 h-5 text-[#5E7E35] shrink-0" strokeWidth={2.5} />
-                <span className="text-[0.95rem] font-medium text-[#1C1C1E]">يتواصل بالنظر فقط</span>
+                <Eye
+                  className="w-5 h-5 text-[#5E7E35] shrink-0"
+                  strokeWidth={2.5}
+                />
+                <span className="text-[0.95rem] font-medium text-[#1C1C1E]">
+                  يتواصل بالنظر فقط
+                </span>
               </div>
               <div className="flex items-center gap-4">
-                <Volume2 className="w-5 h-5 text-[#5E7E35] shrink-0" strokeWidth={2.5} />
-                <span className="text-[0.95rem] font-medium text-[#1C1C1E]">يحوّل النظر إلى كلام</span>
+                <Volume2
+                  className="w-5 h-5 text-[#5E7E35] shrink-0"
+                  strokeWidth={2.5}
+                />
+                <span className="text-[0.95rem] font-medium text-[#1C1C1E]">
+                  يحوّل النظر إلى كلام
+                </span>
               </div>
               <div className="flex items-center gap-4">
-                <Smartphone className="w-5 h-5 text-[#5E7E35] shrink-0" strokeWidth={2.5} />
-                <span className="text-[0.95rem] font-medium text-[#1C1C1E]">يرسل الطلب لمقدم الرعاية</span>
+                <Smartphone
+                  className="w-5 h-5 text-[#5E7E35] shrink-0"
+                  strokeWidth={2.5}
+                />
+                <span className="text-[0.95rem] font-medium text-[#1C1C1E]">
+                  يرسل الطلب لمقدم الرعاية
+                </span>
               </div>
             </motion.div>
 
-            <motion.div variants={itemVariants} className="pt-4 flex flex-col gap-3">
+            <motion.div
+              variants={itemVariants}
+              className="pt-4 flex flex-col gap-3"
+            >
               <motion.button
-                onClick={() => navigate('/communicate')}
-                whileHover={{ scale: 1.05, boxShadow: '0 8px 36px rgba(94,126,53,0.45)' }}
+                onClick={() => navigate("/communicate")}
+                whileHover={{
+                  scale: 1.05,
+                  boxShadow: "0 8px 36px rgba(94,126,53,0.45)",
+                }}
                 whileTap={{ scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                initial={{ boxShadow: '0 4px 24px rgba(94,126,53,0.30)' }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                initial={{ boxShadow: "0 4px 24px rgba(94,126,53,0.30)" }}
                 className="text-white text-[1.1rem] font-semibold rounded-full min-w-[200px] w-fit flex items-center justify-center"
-                style={{ padding: '18px 52px', border: 'none', outline: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)' }}
+                style={{
+                  padding: "18px 52px",
+                  border: "none",
+                  outline: "none",
+                  cursor: "pointer",
+                  background:
+                    "linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)",
+                }}
               >
                 ابدأ التواصل
               </motion.button>
             </motion.div>
             {/* Floating AI assistant — position: fixed, renders above page content */}
             <AIAssistantButton />
-
           </div>
 
-          <motion.div variants={itemVariants} className="mt-12 md:mt-0 md:pt-12 pb-4 border-t border-transparent">
+          <motion.div
+            variants={itemVariants}
+            className="mt-12 md:mt-0 md:pt-12 pb-4 border-t border-transparent"
+          >
             <p className="text-[#AEAEB2] text-[0.82rem] font-normal leading-relaxed text-right max-w-sm">
-              مصمم لمساعدة مرضى الجلطات وفاقدي القدرة على الكلام للتواصل بسهولة وكرامة.
+              مصمم لمساعدة مرضى الجلطات وفاقدي القدرة على الكلام للتواصل بسهولة
+              وكرامة.
             </p>
           </motion.div>
         </div>
@@ -1999,7 +2878,8 @@ function CommunicationScreen() {
       dir="rtl"
       style={{
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)',
+        background:
+          "linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)",
       }}
     >
       <AmbientBackground />
@@ -2015,15 +2895,20 @@ function CommunicationScreen() {
         <div className="flex flex-col items-center text-center gap-[8px] pointer-events-none">
           <h1
             className="font-bold text-[#0A0A0A] leading-tight tracking-tight"
-            style={{ fontSize: 'clamp(1.7rem, 2.6vw, 2.4rem)' }}
+            style={{ fontSize: "clamp(1.7rem, 2.6vw, 2.4rem)" }}
           >
             بماذا أستطيع مساعدتك؟
           </h1>
-          <p style={{ fontSize: 'clamp(0.78rem, 1vw, 0.88rem)', color: '#6E6E73' }}>
+          <p
+            style={{
+              fontSize: "clamp(0.78rem, 1vw, 0.88rem)",
+              color: "#6E6E73",
+            }}
+          >
             اختر فئة
           </p>
         </div>
-        <BackButton onClick={() => navigate('/')} />
+        <BackButton onClick={() => navigate("/")} />
       </motion.div>
 
       {/* 2 × 3 category grid */}
@@ -2031,8 +2916,8 @@ function CommunicationScreen() {
         <div
           className="grid grid-cols-2"
           style={{
-            columnGap: 'clamp(28px, 6vw, 80px)',
-            rowGap: 'clamp(8px, 1.6vh, 20px)',
+            columnGap: "clamp(28px, 6vw, 80px)",
+            rowGap: "clamp(8px, 1.6vh, 20px)",
           }}
         >
           {CATEGORIES.map((cat, i) => (
@@ -2052,7 +2937,9 @@ function CommunicationScreen() {
 // ── CategoryPage — shared layout for all 6 category pages ────────────────────
 function CategoryPage() {
   const { patientName } = useProfile();
-  const [, params] = useRoute<{ categoryId: string }>('/communicate/:categoryId');
+  const [, params] = useRoute<{ categoryId: string }>(
+    "/communicate/:categoryId",
+  );
   const [, navigate] = useLocation();
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
@@ -2063,16 +2950,20 @@ function CategoryPage() {
   // Using a ref avoids stale-closure issues — the check always reads live.
   const selectionLockedUntilRef = useRef(0);
 
-  const category = CATEGORIES.find(c => c.id === params?.categoryId);
+  const category = CATEGORIES.find((c) => c.id === params?.categoryId);
 
   if (!category) {
     return (
       <div
         className="min-h-[100dvh] flex items-center justify-center"
         dir="rtl"
-        style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif", background: 'linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)' }}
+        style={{
+          fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          background:
+            "linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)",
+        }}
       >
-        <p style={{ color: '#6E6E73' }}>الصفحة غير موجودة</p>
+        <p style={{ color: "#6E6E73" }}>الصفحة غير موجودة</p>
       </div>
     );
   }
@@ -2084,21 +2975,24 @@ function CategoryPage() {
     if (Date.now() < selectionLockedUntilRef.current) return;
 
     // Toggling an already-selected card off → no new request
-    if (selectedItem === id) { setSelectedItem(null); return; }
+    if (selectedItem === id) {
+      setSelectedItem(null);
+      return;
+    }
 
-    const item = category.items.find(i => i.id === id);
+    const item = category.items.find((i) => i.id === id);
     if (item) {
       selectionLockedUntilRef.current = Date.now() + 1000;
       // Generate the ID here, once, so the store can deduplicate on replay
       const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       addRequest({
-        id:            reqId,
-        patientName:   patientName,
-        requestText:   item.label,
-        requestEmoji:  item.emoji,
-        categoryId:    category.id,
+        id: reqId,
+        patientName: patientName,
+        requestText: item.label,
+        requestEmoji: item.emoji,
+        categoryId: category.id,
         categoryLabel: category.label,
-        priority:      isUrgent(item.label) ? 'urgent' : 'normal',
+        priority: isUrgent(item.label) ? "urgent" : "normal",
       });
       // Show success dialog, auto-close after 2 s
       if (dialogTimerRef.current) clearTimeout(dialogTimerRef.current);
@@ -2114,21 +3008,28 @@ function CategoryPage() {
       dir="rtl"
       style={{
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)',
+        background:
+          "linear-gradient(170deg, #FEFEFE 0%, #F8F8FD 40%, #F2F2F9 100%)",
       }}
     >
       <AmbientBackground />
 
       {/* Category-tinted ambient blob at top */}
-      <div aria-hidden style={{
-        position: 'absolute',
-        top: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '70vw', height: '45vh',
-        borderRadius: '50%',
-        background: `radial-gradient(circle, ${category.glowColor.replace('0.40', '0.10')} 0%, transparent 70%)`,
-        filter: 'blur(52px)',
-        pointerEvents: 'none',
-      }} />
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "70vw",
+          height: "45vh",
+          borderRadius: "50%",
+          background: `radial-gradient(circle, ${category.glowColor.replace("0.40", "0.10")} 0%, transparent 70%)`,
+          filter: "blur(52px)",
+          pointerEvents: "none",
+        }}
+      />
 
       {/* Header */}
       <motion.div
@@ -2140,27 +3041,30 @@ function CategoryPage() {
         <EmergencyButton />
 
         <div className="flex flex-col items-center text-center gap-[5px] pointer-events-none">
-          <span style={{ fontSize: 'clamp(1.5rem, 2.4vw, 2rem)', lineHeight: 1 }} aria-hidden>
+          <span
+            style={{ fontSize: "clamp(1.5rem, 2.4vw, 2rem)", lineHeight: 1 }}
+            aria-hidden
+          >
             {category.emoji}
           </span>
           <h1
             className="font-bold text-[#0A0A0A] leading-tight tracking-tight"
-            style={{ fontSize: 'clamp(1.45rem, 2.1vw, 1.9rem)' }}
+            style={{ fontSize: "clamp(1.45rem, 2.1vw, 1.9rem)" }}
           >
             {category.label}
           </h1>
         </div>
 
-        <BackButton onClick={() => navigate('/communicate')} />
+        <BackButton onClick={() => navigate("/communicate")} />
       </motion.div>
 
       {/* Items grid — 2 cols for ≤4 items, 3 cols otherwise */}
       <div className="relative z-10 flex-1 flex items-center justify-center px-8 pb-4">
         <div
-          className={`grid ${category.items.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'}`}
+          className={`grid ${category.items.length <= 4 ? "grid-cols-2" : "grid-cols-3"}`}
           style={{
-            gap: 'clamp(10px, 1.8vw, 18px)',
-            maxWidth: category.items.length <= 4 ? '580px' : '860px',
+            gap: "clamp(10px, 1.8vw, 18px)",
+            maxWidth: category.items.length <= 4 ? "580px" : "860px",
           }}
         >
           {category.items.map((item, i) => (
@@ -2179,37 +3083,56 @@ function CategoryPage() {
 
       {/* Selection confirmation bar — slides up when an item is picked */}
       <AnimatePresence>
-        {selectedItem && (() => {
-          const picked = category.items.find(i => i.id === selectedItem);
-          return picked ? (
-            <motion.div
-              key="confirm"
-              initial={{ opacity: 0, y: 36 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 36 }}
-              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="flex-none relative z-10 flex items-center justify-center pb-5 px-6"
-            >
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                padding: '13px 26px', borderRadius: '999px',
-                background: `linear-gradient(135deg, ${category.glowColor.replace('0.40', '0.12')} 0%, rgba(255,255,255,0.7) 100%)`,
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: `1.5px solid ${category.glowColor.replace('0.40', '0.35')}`,
-                boxShadow: `0 8px 32px ${category.glowColor.replace('0.40', '0.18')}`,
-              }}>
-                <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{picked.emoji}</span>
-                <span style={{ fontWeight: 700, color: category.ringColor, fontSize: 'clamp(0.88rem, 1.1vw, 1rem)' }}>
-                  {picked.label}
-                </span>
-                <span style={{ color: '#6E6E73', fontSize: 'clamp(0.76rem, 0.9vw, 0.86rem)' }}>
-                  — تم إرسال الطلب
-                </span>
-              </div>
-            </motion.div>
-          ) : null;
-        })()}
+        {selectedItem &&
+          (() => {
+            const picked = category.items.find((i) => i.id === selectedItem);
+            return picked ? (
+              <motion.div
+                key="confirm"
+                initial={{ opacity: 0, y: 36 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 36 }}
+                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                className="flex-none relative z-10 flex items-center justify-center pb-5 px-6"
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "13px 26px",
+                    borderRadius: "999px",
+                    background: `linear-gradient(135deg, ${category.glowColor.replace("0.40", "0.12")} 0%, rgba(255,255,255,0.7) 100%)`,
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    border: `1.5px solid ${category.glowColor.replace("0.40", "0.35")}`,
+                    boxShadow: `0 8px 32px ${category.glowColor.replace("0.40", "0.18")}`,
+                  }}
+                >
+                  <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>
+                    {picked.emoji}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: category.ringColor,
+                      fontSize: "clamp(0.88rem, 1.1vw, 1rem)",
+                    }}
+                  >
+                    {picked.label}
+                  </span>
+                  <span
+                    style={{
+                      color: "#6E6E73",
+                      fontSize: "clamp(0.76rem, 0.9vw, 0.86rem)",
+                    }}
+                  >
+                    — تم إرسال الطلب
+                  </span>
+                </div>
+              </motion.div>
+            ) : null;
+          })()}
       </AnimatePresence>
 
       <SuccessDialog visible={showDialog} />
@@ -2221,94 +3144,140 @@ function CategoryPage() {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function SettingsPage() {
-  const profile      = useProfile();
+  const profile = useProfile();
   const updateProfile = useUpdateProfile();
   const [, navigate] = useLocation();
 
-  const [patientName,    setPatientName]    = useState(profile.patientName);
-  const [caregiverName,  setCaregiverName]  = useState(profile.caregiverName);
+  const [patientName, setPatientName] = useState(profile.patientName);
+  const [caregiverName, setCaregiverName] = useState(profile.caregiverName);
   const [caregiverPhone, setCaregiverPhone] = useState(profile.caregiverPhone);
-  const [errors,  setErrors]  = useState<Record<string, string>>({});
-  const [saved,   setSaved]   = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المستخدم';
-    if (!caregiverName.trim())  e.caregiverName  = 'يرجى إدخال اسم مقدم الرعاية';
-    if (!caregiverPhone.trim()) e.caregiverPhone = 'يرجى إدخال رقم الجوال';
+    if (!patientName.trim()) e.patientName = "يرجى إدخال اسم المستخدم";
+    if (!caregiverName.trim()) e.caregiverName = "يرجى إدخال اسم مقدم الرعاية";
+    if (!caregiverPhone.trim()) e.caregiverPhone = "يرجى إدخال رقم الجوال";
     return e;
   };
 
   const handleSave = () => {
     const e = validate();
-    if (Object.keys(e).length) { setErrors(e); return; }
+    if (Object.keys(e).length) {
+      setErrors(e);
+      return;
+    }
     setSaved(true);
     updateProfile({
-      patientName:   patientName.trim(),
+      patientName: patientName.trim(),
       caregiverName: caregiverName.trim(),
       caregiverPhone: caregiverPhone.trim(),
     });
-    setTimeout(() => navigate('/'), 1100);
+    setTimeout(() => navigate("/"), 1100);
   };
 
   const clearError = (key: string) =>
-    setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setErrors((prev) => {
+      const n = { ...prev };
+      delete n[key];
+      return n;
+    });
 
-  const fieldBox: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '7px' };
+  const fieldBox: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+  };
   const labelStyle: React.CSSProperties = {
-    fontSize: '0.93rem', fontWeight: 600, color: '#3A3A3C',
-    display: 'flex', alignItems: 'center', gap: '6px',
+    fontSize: "0.93rem",
+    fontWeight: 600,
+    color: "#3A3A3C",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
   };
   const inputStyle = (hasError: boolean): React.CSSProperties => ({
-    width: '100%', boxSizing: 'border-box',
-    background: hasError ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.72)',
-    border: `1.5px solid ${hasError ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'}`,
-    borderRadius: '14px',
-    padding: '15px 18px',
-    fontSize: '1.08rem',
+    width: "100%",
+    boxSizing: "border-box",
+    background: hasError ? "rgba(255,59,48,0.05)" : "rgba(255,255,255,0.72)",
+    border: `1.5px solid ${hasError ? "rgba(255,59,48,0.45)" : "rgba(0,0,0,0.09)"}`,
+    borderRadius: "14px",
+    padding: "15px 18px",
+    fontSize: "1.08rem",
     fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-    color: '#1C1C1E',
-    outline: 'none',
-    transition: 'border-color 0.2s, box-shadow 0.2s',
-    WebkitAppearance: 'none',
-    direction: 'rtl',
+    color: "#1C1C1E",
+    outline: "none",
+    transition: "border-color 0.2s, box-shadow 0.2s",
+    WebkitAppearance: "none",
+    direction: "rtl",
   });
   const errorStyle: React.CSSProperties = {
-    fontSize: '0.80rem', color: '#FF3B30', fontWeight: 500,
-    display: 'flex', alignItems: 'center', gap: '4px', margin: 0,
+    fontSize: "0.80rem",
+    color: "#FF3B30",
+    fontWeight: 500,
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    margin: 0,
   };
 
   return (
     <div
       dir="rtl"
       style={{
-        minHeight: '100dvh', width: '100%',
+        minHeight: "100dvh",
+        width: "100%",
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '24px 16px',
-        position: 'relative', overflow: 'hidden',
+        background:
+          "linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       {/* Ambient blobs */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{
-          position: 'absolute', top: '-12%', right: '-8%',
-          width: 'clamp(260px,40vw,520px)', height: 'clamp(260px,40vw,520px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)',
-          filter: 'blur(48px)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-10%', left: '-6%',
-          width: 'clamp(200px,32vw,420px)', height: 'clamp(200px,32vw,420px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)',
-          filter: 'blur(48px)',
-        }} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: "-12%",
+            right: "-8%",
+            width: "clamp(260px,40vw,520px)",
+            height: "clamp(260px,40vw,520px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "-10%",
+            left: "-6%",
+            width: "clamp(200px,32vw,420px)",
+            height: "clamp(200px,32vw,420px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
       </div>
 
-      <BackButton onClick={() => navigate('/')} />
+      <BackButton onClick={() => navigate("/")} />
 
       {/* Glass card */}
       <motion.div
@@ -2316,64 +3285,96 @@ function SettingsPage() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
         style={{
-          position: 'relative', zIndex: 1,
-          width: '100%', maxWidth: '520px',
-          background: 'rgba(255,255,255,0.82)',
-          backdropFilter: 'blur(40px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-          borderRadius: '28px',
-          border: '1.5px solid rgba(255,255,255,0.95)',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)',
-          padding: 'clamp(28px,5vw,48px)',
-          overflow: 'hidden',
+          position: "relative",
+          zIndex: 1,
+          width: "100%",
+          maxWidth: "520px",
+          background: "rgba(255,255,255,0.82)",
+          backdropFilter: "blur(40px) saturate(200%)",
+          WebkitBackdropFilter: "blur(40px) saturate(200%)",
+          borderRadius: "28px",
+          border: "1.5px solid rgba(255,255,255,0.95)",
+          boxShadow:
+            "0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)",
+          padding: "clamp(28px,5vw,48px)",
+          overflow: "hidden",
         }}
       >
         {/* Title */}
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <h1 style={{
-            fontSize: 'clamp(1.25rem,3vw,1.55rem)',
-            fontWeight: 800, color: '#1C1C1E', margin: 0,
-            letterSpacing: '-0.02em', lineHeight: 1.2,
-          }}>
+        <div style={{ textAlign: "center", marginBottom: "28px" }}>
+          <h1
+            style={{
+              fontSize: "clamp(1.25rem,3vw,1.55rem)",
+              fontWeight: 800,
+              color: "#1C1C1E",
+              margin: 0,
+              letterSpacing: "-0.02em",
+              lineHeight: 1.2,
+            }}
+          >
             ⚙️ الإعدادات
           </h1>
-          <p style={{
-            fontSize: '0.83rem', color: '#6E6E73', fontWeight: 500,
-            margin: '4px 0 0', lineHeight: 1.4,
-          }}>
+          <p
+            style={{
+              fontSize: "0.83rem",
+              color: "#6E6E73",
+              fontWeight: 500,
+              margin: "4px 0 0",
+              lineHeight: 1.4,
+            }}
+          >
             تعديل بيانات المريض ومقدم الرعاية
           </p>
         </div>
 
         {/* Divider */}
-        <div style={{
-          height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent)',
-          marginBottom: '28px',
-        }} />
+        <div
+          style={{
+            height: "1px",
+            background:
+              "linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent)",
+            marginBottom: "28px",
+          }}
+        />
 
         {/* Form */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-
+        <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
           {/* Patient name */}
           <div style={fieldBox}>
             <label style={labelStyle}>
-              <span>👤</span><span>اسم المستخدم</span>
+              <span>👤</span>
+              <span>اسم المستخدم</span>
             </label>
             <input
               type="text"
               placeholder="مثال: محمد"
               value={patientName}
-              onChange={e => { setPatientName(e.target.value); clearError('patientName'); }}
+              onChange={(e) => {
+                setPatientName(e.target.value);
+                clearError("patientName");
+              }}
               style={inputStyle(!!errors.patientName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = errors.patientName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#5E7E35";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px rgba(94,126,53,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.patientName
+                  ? "rgba(255,59,48,0.45)"
+                  : "rgba(0,0,0,0.09)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             />
             <AnimatePresence>
               {errors.patientName && (
-                <motion.p key="e-pn"
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }} style={errorStyle}
+                <motion.p
+                  key="e-pn"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  style={errorStyle}
                 >
                   <span>⚠️</span> {errors.patientName}
                 </motion.p>
@@ -2384,22 +3385,39 @@ function SettingsPage() {
           {/* Caregiver name */}
           <div style={fieldBox}>
             <label style={labelStyle}>
-              <span>👤</span><span>اسم مقدم الرعاية</span>
+              <span>👤</span>
+              <span>اسم مقدم الرعاية</span>
             </label>
             <input
               type="text"
               placeholder="مثال: سارة الأحمد"
               value={caregiverName}
-              onChange={e => { setCaregiverName(e.target.value); clearError('caregiverName'); }}
+              onChange={(e) => {
+                setCaregiverName(e.target.value);
+                clearError("caregiverName");
+              }}
               style={inputStyle(!!errors.caregiverName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#5E7E35";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px rgba(94,126,53,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.caregiverName
+                  ? "rgba(255,59,48,0.45)"
+                  : "rgba(0,0,0,0.09)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             />
             <AnimatePresence>
               {errors.caregiverName && (
-                <motion.p key="e-cn"
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }} style={errorStyle}
+                <motion.p
+                  key="e-cn"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  style={errorStyle}
                 >
                   <span>⚠️</span> {errors.caregiverName}
                 </motion.p>
@@ -2410,22 +3428,43 @@ function SettingsPage() {
           {/* Caregiver phone */}
           <div style={fieldBox}>
             <label style={labelStyle}>
-              <span>📞</span><span>رقم جوال مقدم الرعاية</span>
+              <span>📞</span>
+              <span>رقم جوال مقدم الرعاية</span>
             </label>
             <input
               type="tel"
               placeholder="05XXXXXXXX"
               value={caregiverPhone}
-              onChange={e => { setCaregiverPhone(e.target.value); clearError('caregiverPhone'); }}
-              style={{ ...inputStyle(!!errors.caregiverPhone), direction: 'ltr', textAlign: 'right' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverPhone ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onChange={(e) => {
+                setCaregiverPhone(e.target.value);
+                clearError("caregiverPhone");
+              }}
+              style={{
+                ...inputStyle(!!errors.caregiverPhone),
+                direction: "ltr",
+                textAlign: "right",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#5E7E35";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px rgba(94,126,53,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.caregiverPhone
+                  ? "rgba(255,59,48,0.45)"
+                  : "rgba(0,0,0,0.09)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             />
             <AnimatePresence>
               {errors.caregiverPhone && (
-                <motion.p key="e-cp"
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }} style={errorStyle}
+                <motion.p
+                  key="e-cp"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  style={errorStyle}
                 >
                   <span>⚠️</span> {errors.caregiverPhone}
                 </motion.p>
@@ -2439,21 +3478,21 @@ function SettingsPage() {
           onClick={handleSave}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+          transition={{ type: "spring", stiffness: 300, damping: 22 }}
           style={{
-            marginTop: '32px',
-            width: '100%',
-            background: 'linear-gradient(145deg, #5E7E35, #4F6C2D)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '16px',
-            padding: '17px',
-            fontSize: '1.08rem',
+            marginTop: "32px",
+            width: "100%",
+            background: "linear-gradient(145deg, #5E7E35, #4F6C2D)",
+            color: "#fff",
+            border: "none",
+            borderRadius: "16px",
+            padding: "17px",
+            fontSize: "1.08rem",
             fontWeight: 700,
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-            cursor: 'pointer',
-            boxShadow: '0 8px 28px rgba(94,126,53,0.38)',
-            letterSpacing: '0.01em',
+            cursor: "pointer",
+            boxShadow: "0 8px 28px rgba(94,126,53,0.38)",
+            letterSpacing: "0.01em",
           }}
         >
           حفظ التغييرات
@@ -2469,26 +3508,38 @@ function SettingsPage() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.28 }}
               style={{
-                position: 'absolute', inset: 0,
-                background: 'rgba(255,255,255,0.92)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                borderRadius: '28px',
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                gap: '16px',
+                position: "absolute",
+                inset: 0,
+                background: "rgba(255,255,255,0.92)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+                borderRadius: "28px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "16px",
               }}
             >
               <motion.div
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.42, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+                transition={{
+                  duration: 0.42,
+                  delay: 0.08,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
                 style={{
-                  width: '64px', height: '64px', borderRadius: '50%',
-                  background: 'linear-gradient(145deg, #30D158, #25A244)',
-                  boxShadow: '0 10px 32px rgba(48,209,88,0.40)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '1.7rem', color: '#fff',
+                  width: "64px",
+                  height: "64px",
+                  borderRadius: "50%",
+                  background: "linear-gradient(145deg, #30D158, #25A244)",
+                  boxShadow: "0 10px 32px rgba(48,209,88,0.40)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.7rem",
+                  color: "#fff",
                 }}
               >
                 ✓
@@ -2498,7 +3549,10 @@ function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: 0.2 }}
                 style={{
-                  margin: 0, fontSize: '1.08rem', fontWeight: 700, color: '#1C1C1E',
+                  margin: 0,
+                  fontSize: "1.08rem",
+                  fontWeight: 700,
+                  color: "#1C1C1E",
                   fontFamily: "'IBM Plex Sans Arabic', sans-serif",
                 }}
               >
@@ -2523,9 +3577,9 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
   };
 
   const features: { icon: string; label: string }[] = [
-    { icon: '👁️', label: 'تتبع العين' },
-    { icon: '🔒', label: 'خصوصية تامة' },
-    { icon: '❤️', label: 'تواصل بسهولة' },
+    { icon: "👁️", label: "تتبع العين" },
+    { icon: "🔒", label: "خصوصية تامة" },
+    { icon: "❤️", label: "تواصل بسهولة" },
   ];
 
   return (
@@ -2537,46 +3591,83 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
       exit={{ opacity: 0, scale: 0.97 }}
       transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
       style={{
-        minHeight: '100dvh', width: '100%',
+        minHeight: "100dvh",
+        width: "100%",
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '24px 16px',
-        position: 'relative', overflow: 'hidden',
+        background:
+          "linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       {/* Ambient blobs — identical to OnboardingPage */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{
-          position: 'absolute', top: '-12%', right: '-8%',
-          width: 'clamp(260px, 40vw, 520px)', height: 'clamp(260px, 40vw, 520px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)',
-          filter: 'blur(48px)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-10%', left: '-6%',
-          width: 'clamp(200px, 32vw, 420px)', height: 'clamp(200px, 32vw, 420px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)',
-          filter: 'blur(48px)',
-        }} />
-        <div style={{
-          position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)',
-          width: 'clamp(300px, 50vw, 600px)', height: 'clamp(300px, 50vw, 600px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.10) 0%, transparent 70%)',
-          filter: 'blur(60px)',
-        }} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: "-12%",
+            right: "-8%",
+            width: "clamp(260px, 40vw, 520px)",
+            height: "clamp(260px, 40vw, 520px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "-10%",
+            left: "-6%",
+            width: "clamp(200px, 32vw, 420px)",
+            height: "clamp(200px, 32vw, 420px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "40%",
+            left: "50%",
+            transform: "translate(-50%,-50%)",
+            width: "clamp(300px, 50vw, 600px)",
+            height: "clamp(300px, 50vw, 600px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.10) 0%, transparent 70%)",
+            filter: "blur(60px)",
+          }}
+        />
         {/* Extra warm blob top-left for depth */}
-        <div style={{
-          position: 'absolute', top: '10%', left: '-5%',
-          width: 'clamp(180px, 28vw, 360px)', height: 'clamp(180px, 28vw, 360px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(255,190,100,0.07) 0%, transparent 70%)',
-          filter: 'blur(40px)',
-        }} />
+        <div
+          style={{
+            position: "absolute",
+            top: "10%",
+            left: "-5%",
+            width: "clamp(180px, 28vw, 360px)",
+            height: "clamp(180px, 28vw, 360px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(255,190,100,0.07) 0%, transparent 70%)",
+            filter: "blur(40px)",
+          }}
+        />
       </div>
 
       {/* Glass card */}
@@ -2585,37 +3676,52 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         style={{
-          position: 'relative', zIndex: 1,
-          width: '100%', maxWidth: '480px',
-          background: 'rgba(255,255,255,0.84)',
-          backdropFilter: 'blur(40px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-          borderRadius: '32px',
-          border: '1.5px solid rgba(255,255,255,0.95)',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)',
-          padding: 'clamp(32px, 6vw, 52px) clamp(24px, 5vw, 44px)',
-          overflow: 'hidden',
-          textAlign: 'center',
+          position: "relative",
+          zIndex: 1,
+          width: "100%",
+          maxWidth: "480px",
+          background: "rgba(255,255,255,0.84)",
+          backdropFilter: "blur(40px) saturate(200%)",
+          WebkitBackdropFilter: "blur(40px) saturate(200%)",
+          borderRadius: "32px",
+          border: "1.5px solid rgba(255,255,255,0.95)",
+          boxShadow:
+            "0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)",
+          padding: "clamp(32px, 6vw, 52px) clamp(24px, 5vw, 44px)",
+          overflow: "hidden",
+          textAlign: "center",
         }}
       >
         {/* Top accent bar */}
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
-          background: 'linear-gradient(90deg, #5E7E35, #7BA043, #A8C070, #7BA043, #5E7E35)',
-          backgroundSize: '200% 100%',
-        }} />
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "4px",
+            background:
+              "linear-gradient(90deg, #5E7E35, #7BA043, #A8C070, #7BA043, #5E7E35)",
+            backgroundSize: "200% 100%",
+          }}
+        />
 
         {/* Logo */}
         <motion.div
           initial={{ scale: 0.72, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-          style={{ marginBottom: '32px' }}
+          style={{ marginBottom: "32px" }}
         >
           <img
-            src={import.meta.env.BASE_URL + 'sameyba-logo.png'}
+            src={import.meta.env.BASE_URL + "sameyba-logo.png"}
             alt="سَم يبه"
-            style={{ height: '112px', width: 'auto', display: 'block', margin: '0 auto' }}
+            style={{
+              height: "112px",
+              width: "auto",
+              display: "block",
+              margin: "0 auto",
+            }}
           />
         </motion.div>
 
@@ -2625,9 +3731,12 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            fontSize: 'clamp(1.65rem, 4.2vw, 2.1rem)',
-            fontWeight: 800, color: '#1C1C1E',
-            margin: '0 0 22px', lineHeight: 1.2, letterSpacing: '-0.02em',
+            fontSize: "clamp(1.65rem, 4.2vw, 2.1rem)",
+            fontWeight: 800,
+            color: "#1C1C1E",
+            margin: "0 0 22px",
+            lineHeight: 1.2,
+            letterSpacing: "-0.02em",
           }}
         >
           مرحبًا بك في تطبيق سم يبه
@@ -2639,9 +3748,11 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           animate={{ scaleX: 1, opacity: 1 }}
           transition={{ duration: 0.45, delay: 0.28 }}
           style={{
-            height: '2px', width: '48px', margin: '0 auto 24px',
-            background: 'linear-gradient(90deg, #5E7E35, #A8C070)',
-            borderRadius: '999px',
+            height: "2px",
+            width: "48px",
+            margin: "0 auto 24px",
+            background: "linear-gradient(90deg, #5E7E35, #A8C070)",
+            borderRadius: "999px",
           }}
         />
 
@@ -2651,28 +3762,46 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            background: 'rgba(94,126,53,0.06)',
-            borderRadius: '16px',
-            padding: '18px 20px',
-            marginBottom: '28px',
-            border: '1px solid rgba(94,126,53,0.12)',
+            background: "rgba(94,126,53,0.06)",
+            borderRadius: "16px",
+            padding: "18px 20px",
+            marginBottom: "28px",
+            border: "1px solid rgba(94,126,53,0.12)",
           }}
         >
-          <p style={{
-            fontSize: 'clamp(0.88rem, 2.2vw, 0.97rem)',
-            color: '#3A3A3C', fontWeight: 500,
-            margin: '0 0 12px', lineHeight: 1.7,
-          }}>
-            يساعدك تطبيق سم يبه على التعبير عن احتياجاتك والتواصل بسهولة مع عائلتك أو مقدم الرعاية باستخدام حركة العين، إذا كنت غير قادر على الكلام.
+          <p
+            style={{
+              fontSize: "clamp(0.88rem, 2.2vw, 0.97rem)",
+              color: "#3A3A3C",
+              fontWeight: 500,
+              margin: "0 0 12px",
+              lineHeight: 1.7,
+            }}
+          >
+            يساعدك تطبيق سم يبه على التعبير عن احتياجاتك والتواصل بسهولة مع
+            عائلتك أو مقدم الرعاية باستخدام حركة العين، إذا كنت غير قادر على
+            الكلام.
           </p>
-          <p style={{
-            fontSize: 'clamp(0.82rem, 2vw, 0.90rem)',
-            color: '#6E6E73', fontWeight: 400,
-            margin: 0, lineHeight: 1.65,
-            display: 'flex', alignItems: 'flex-start', gap: '7px',
-          }}>
-            <span style={{ flexShrink: 0, marginTop: '1px' }}>🔒</span>
-            <span><strong style={{ color: '#3A3A3C', fontWeight: 600 }}>خصوصيتك محفوظة —</strong> تُستخدم الكاميرا فقط لتتبع حركة العين أثناء استخدام التطبيق، ولا يتم حفظ أو تسجيل أي صور أو مقاطع فيديو.</span>
+          <p
+            style={{
+              fontSize: "clamp(0.82rem, 2vw, 0.90rem)",
+              color: "#6E6E73",
+              fontWeight: 400,
+              margin: 0,
+              lineHeight: 1.65,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "7px",
+            }}
+          >
+            <span style={{ flexShrink: 0, marginTop: "1px" }}>🔒</span>
+            <span>
+              <strong style={{ color: "#3A3A3C", fontWeight: 600 }}>
+                خصوصيتك محفوظة —
+              </strong>{" "}
+              تُستخدم الكاميرا فقط لتتبع حركة العين أثناء استخدام التطبيق، ولا
+              يتم حفظ أو تسجيل أي صور أو مقاطع فيديو.
+            </span>
           </p>
         </motion.div>
 
@@ -2680,11 +3809,13 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, delay: 0.40, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.45, delay: 0.4, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            display: 'flex', justifyContent: 'center',
-            gap: '10px', flexWrap: 'wrap',
-            marginBottom: '36px',
+            display: "flex",
+            justifyContent: "center",
+            gap: "10px",
+            flexWrap: "wrap",
+            marginBottom: "36px",
           }}
         >
           {features.map((f, i) => (
@@ -2692,21 +3823,33 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
               key={f.label}
               initial={{ opacity: 0, scale: 0.85 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.38, delay: 0.46 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+              transition={{
+                duration: 0.38,
+                delay: 0.46 + i * 0.07,
+                ease: [0.22, 1, 0.36, 1],
+              }}
               style={{
-                display: 'flex', alignItems: 'center', gap: '7px',
-                padding: '10px 18px',
-                borderRadius: '999px',
-                background: 'rgba(255,255,255,0.90)',
-                border: '1.5px solid rgba(94,126,53,0.20)',
-                boxShadow: '0 2px 12px rgba(94,126,53,0.10)',
+                display: "flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "10px 18px",
+                borderRadius: "999px",
+                background: "rgba(255,255,255,0.90)",
+                border: "1.5px solid rgba(94,126,53,0.20)",
+                boxShadow: "0 2px 12px rgba(94,126,53,0.10)",
               }}
             >
-              <span style={{ fontSize: '1.15rem', lineHeight: 1 }}>{f.icon}</span>
-              <span style={{
-                fontSize: '0.88rem', fontWeight: 600,
-                color: '#2D4A1E', letterSpacing: '-0.01em',
-              }}>
+              <span style={{ fontSize: "1.15rem", lineHeight: 1 }}>
+                {f.icon}
+              </span>
+              <span
+                style={{
+                  fontSize: "0.88rem",
+                  fontWeight: 600,
+                  color: "#2D4A1E",
+                  letterSpacing: "-0.01em",
+                }}
+              >
                 {f.label}
               </span>
             </motion.div>
@@ -2722,32 +3865,35 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           onClick={handleStart}
           disabled={pressed}
           style={{
-            width: '100%',
-            padding: '18px 24px',
-            borderRadius: '18px',
-            border: 'none',
+            width: "100%",
+            padding: "18px 24px",
+            borderRadius: "18px",
+            border: "none",
             background: pressed
-              ? 'rgba(94,126,53,0.55)'
-              : 'linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)',
-            color: '#FFFFFF',
-            fontSize: 'clamp(1.05rem, 2.5vw, 1.18rem)',
+              ? "rgba(94,126,53,0.55)"
+              : "linear-gradient(135deg, #5E7E35 0%, #4A6828 100%)",
+            color: "#FFFFFF",
+            fontSize: "clamp(1.05rem, 2.5vw, 1.18rem)",
             fontWeight: 700,
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-            cursor: pressed ? 'default' : 'pointer',
-            letterSpacing: '-0.01em',
+            cursor: pressed ? "default" : "pointer",
+            letterSpacing: "-0.01em",
             boxShadow: pressed
-              ? 'none'
-              : '0 8px 28px rgba(94,126,53,0.38), 0 2px 8px rgba(94,126,53,0.22)',
-            transition: 'background 0.25s, box-shadow 0.25s',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+              ? "none"
+              : "0 8px 28px rgba(94,126,53,0.38), 0 2px 8px rgba(94,126,53,0.22)",
+            transition: "background 0.25s, box-shadow 0.25s",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "10px",
           }}
         >
           {pressed ? (
             <>
               <motion.span
                 animate={{ rotate: 360 }}
-                transition={{ duration: 0.7, ease: 'linear', repeat: Infinity }}
-                style={{ display: 'inline-block', fontSize: '1.1rem' }}
+                transition={{ duration: 0.7, ease: "linear", repeat: Infinity }}
+                style={{ display: "inline-block", fontSize: "1.1rem" }}
               >
                 ⏳
               </motion.span>
@@ -2756,7 +3902,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           ) : (
             <>
               <span>ابدأ</span>
-              <span style={{ fontSize: '1.1rem' }}>←</span>
+              <span style={{ fontSize: "1.1rem" }}>←</span>
             </>
           )}
         </motion.button>
@@ -2767,8 +3913,10 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.72 }}
           style={{
-            fontSize: '0.78rem', color: '#AEAEB2',
-            margin: '18px 0 0', fontWeight: 400,
+            fontSize: "0.78rem",
+            color: "#AEAEB2",
+            margin: "18px 0 0",
+            fontWeight: 400,
           }}
         >
           مصمم لخدمة المرضى وأسرهم · يعمل دون الحاجة إلى اتصال دائم بالإنترنت
@@ -2778,28 +3926,35 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
   );
 }
 
-function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => void }) {
-  const [patientName,   setPatientName]   = useState('');
-  const [caregiverName, setCaregiverName] = useState('');
-  const [caregiverPhone, setCaregiverPhone] = useState('');
+function OnboardingPage({
+  onComplete,
+}: {
+  onComplete: (data: ProfileData) => void;
+}) {
+  const [patientName, setPatientName] = useState("");
+  const [caregiverName, setCaregiverName] = useState("");
+  const [caregiverPhone, setCaregiverPhone] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saved,  setSaved]  = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!patientName.trim())    e.patientName    = 'يرجى إدخال اسم المستخدم';
-    if (!caregiverName.trim())  e.caregiverName  = 'يرجى إدخال اسم مقدم الرعاية';
-    if (!caregiverPhone.trim()) e.caregiverPhone = 'يرجى إدخال رقم الجوال';
+    if (!patientName.trim()) e.patientName = "يرجى إدخال اسم المستخدم";
+    if (!caregiverName.trim()) e.caregiverName = "يرجى إدخال اسم مقدم الرعاية";
+    if (!caregiverPhone.trim()) e.caregiverPhone = "يرجى إدخال رقم الجوال";
     return e;
   };
 
   const handleSave = () => {
     const e = validate();
-    if (Object.keys(e).length) { setErrors(e); return; }
+    if (Object.keys(e).length) {
+      setErrors(e);
+      return;
+    }
     setSaved(true);
     setTimeout(() => {
       onComplete({
-        patientName:   patientName.trim(),
+        patientName: patientName.trim(),
         caregiverName: caregiverName.trim(),
         caregiverPhone: caregiverPhone.trim(),
       });
@@ -2807,72 +3962,117 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
   };
 
   const clearError = (key: string) =>
-    setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setErrors((prev) => {
+      const n = { ...prev };
+      delete n[key];
+      return n;
+    });
 
   // Shared field style
   const fieldBox: React.CSSProperties = {
-    display: 'flex', flexDirection: 'column', gap: '7px',
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
   };
   const labelStyle: React.CSSProperties = {
-    fontSize: '0.93rem', fontWeight: 600, color: '#3A3A3C',
-    display: 'flex', alignItems: 'center', gap: '6px',
+    fontSize: "0.93rem",
+    fontWeight: 600,
+    color: "#3A3A3C",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
   };
   const inputStyle = (hasError: boolean): React.CSSProperties => ({
-    width: '100%', boxSizing: 'border-box',
-    background: hasError ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.72)',
-    border: `1.5px solid ${hasError ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'}`,
-    borderRadius: '14px',
-    padding: '15px 18px',
-    fontSize: '1.08rem',
+    width: "100%",
+    boxSizing: "border-box",
+    background: hasError ? "rgba(255,59,48,0.05)" : "rgba(255,255,255,0.72)",
+    border: `1.5px solid ${hasError ? "rgba(255,59,48,0.45)" : "rgba(0,0,0,0.09)"}`,
+    borderRadius: "14px",
+    padding: "15px 18px",
+    fontSize: "1.08rem",
     fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-    color: '#1C1C1E',
-    outline: 'none',
-    transition: 'border-color 0.2s, box-shadow 0.2s',
-    WebkitAppearance: 'none',
-    direction: 'rtl',
+    color: "#1C1C1E",
+    outline: "none",
+    transition: "border-color 0.2s, box-shadow 0.2s",
+    WebkitAppearance: "none",
+    direction: "rtl",
   });
   const errorStyle: React.CSSProperties = {
-    fontSize: '0.80rem', color: '#FF3B30', fontWeight: 500,
-    display: 'flex', alignItems: 'center', gap: '4px',
+    fontSize: "0.80rem",
+    color: "#FF3B30",
+    fontWeight: 500,
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
   };
 
   return (
     <div
       dir="rtl"
       style={{
-        minHeight: '100dvh', width: '100%',
+        minHeight: "100dvh",
+        width: "100%",
         fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-        background: 'linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '24px 16px',
-        position: 'relative', overflow: 'hidden',
+        background:
+          "linear-gradient(145deg, #FAFAF5 0%, #F5F7EE 35%, #EEF3E4 65%, #F2F6EC 100%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       {/* Ambient blobs */}
-      <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: '-12%', right: '-8%',
-          width: 'clamp(260px, 40vw, 520px)', height: 'clamp(260px, 40vw, 520px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)',
-          filter: 'blur(48px)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-10%', left: '-6%',
-          width: 'clamp(200px, 32vw, 420px)', height: 'clamp(200px, 32vw, 420px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)',
-          filter: 'blur(48px)',
-        }} />
-        <div style={{
-          position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)',
-          width: 'clamp(300px, 50vw, 600px)', height: 'clamp(300px, 50vw, 600px)',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(94,126,53,0.10) 0%, transparent 70%)',
-          filter: 'blur(60px)',
-        }} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: "-12%",
+            right: "-8%",
+            width: "clamp(260px, 40vw, 520px)",
+            height: "clamp(260px, 40vw, 520px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.13) 0%, transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "-10%",
+            left: "-6%",
+            width: "clamp(200px, 32vw, 420px)",
+            height: "clamp(200px, 32vw, 420px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.08) 0%, transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "40%",
+            left: "50%",
+            transform: "translate(-50%,-50%)",
+            width: "clamp(300px, 50vw, 600px)",
+            height: "clamp(300px, 50vw, 600px)",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle, rgba(94,126,53,0.10) 0%, transparent 70%)",
+            filter: "blur(60px)",
+          }}
+        />
       </div>
 
       {/* Glass card */}
@@ -2881,59 +4081,83 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         style={{
-          position: 'relative', zIndex: 1,
-          width: '100%', maxWidth: '520px',
-          background: 'rgba(255,255,255,0.82)',
-          backdropFilter: 'blur(40px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-          borderRadius: '28px',
-          border: '1.5px solid rgba(255,255,255,0.95)',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)',
-          padding: 'clamp(28px, 5vw, 48px)',
-          overflow: 'hidden',
+          position: "relative",
+          zIndex: 1,
+          width: "100%",
+          maxWidth: "520px",
+          background: "rgba(255,255,255,0.82)",
+          backdropFilter: "blur(40px) saturate(200%)",
+          WebkitBackdropFilter: "blur(40px) saturate(200%)",
+          borderRadius: "28px",
+          border: "1.5px solid rgba(255,255,255,0.95)",
+          boxShadow:
+            "0 32px 80px rgba(0,0,0,0.11), 0 8px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,1)",
+          padding: "clamp(28px, 5vw, 48px)",
+          overflow: "hidden",
         }}
       >
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+        <div style={{ textAlign: "center", marginBottom: "36px" }}>
           {/* Icon badge */}
           <motion.div
             initial={{ scale: 0.7, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.45, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            style={{ marginBottom: '20px' }}
+            transition={{
+              duration: 0.45,
+              delay: 0.15,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            style={{ marginBottom: "20px" }}
           >
             <img
-              src={import.meta.env.BASE_URL + 'sameyba-logo.png'}
+              src={import.meta.env.BASE_URL + "sameyba-logo.png"}
               alt="سَم يبه"
-              style={{ height: '104px', width: 'auto', display: 'block', margin: '0 auto' }}
+              style={{
+                height: "104px",
+                width: "auto",
+                display: "block",
+                margin: "0 auto",
+              }}
             />
           </motion.div>
 
-          <h1 style={{
-            fontSize: 'clamp(1.45rem, 3.5vw, 1.85rem)',
-            fontWeight: 800, color: '#1C1C1E', margin: '0 0 10px',
-            letterSpacing: '-0.02em', lineHeight: 1.2,
-          }}>
+          <h1
+            style={{
+              fontSize: "clamp(1.45rem, 3.5vw, 1.85rem)",
+              fontWeight: 800,
+              color: "#1C1C1E",
+              margin: "0 0 10px",
+              letterSpacing: "-0.02em",
+              lineHeight: 1.2,
+            }}
+          >
             تسجيل بيانات المريض
           </h1>
-          <p style={{
-            fontSize: 'clamp(0.88rem, 2vw, 0.98rem)',
-            color: '#6E6E73', fontWeight: 500, margin: 0, lineHeight: 1.5,
-          }}>
+          <p
+            style={{
+              fontSize: "clamp(0.88rem, 2vw, 0.98rem)",
+              color: "#6E6E73",
+              fontWeight: 500,
+              margin: 0,
+              lineHeight: 1.5,
+            }}
+          >
             أدخل البيانات مرة واحدة لتفعيل التطبيق.
           </p>
         </div>
 
         {/* Divider */}
-        <div style={{
-          height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent)',
-          marginBottom: '32px',
-        }} />
+        <div
+          style={{
+            height: "1px",
+            background:
+              "linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent)",
+            marginBottom: "32px",
+          }}
+        />
 
         {/* Form fields */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-
+        <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
           {/* Patient name */}
           <div style={fieldBox}>
             <label style={labelStyle}>
@@ -2944,16 +4168,32 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
               type="text"
               placeholder="مثال: محمد"
               value={patientName}
-              onChange={e => { setPatientName(e.target.value); clearError('patientName'); }}
+              onChange={(e) => {
+                setPatientName(e.target.value);
+                clearError("patientName");
+              }}
               style={inputStyle(!!errors.patientName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = errors.patientName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#5E7E35";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px rgba(94,126,53,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.patientName
+                  ? "rgba(255,59,48,0.45)"
+                  : "rgba(0,0,0,0.09)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             />
             <AnimatePresence>
               {errors.patientName && (
-                <motion.p key="err-pn"
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }} style={{ ...errorStyle, margin: 0 }}
+                <motion.p
+                  key="err-pn"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ ...errorStyle, margin: 0 }}
                 >
                   <span>⚠️</span> {errors.patientName}
                 </motion.p>
@@ -2971,16 +4211,32 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
               type="text"
               placeholder="مثال: سارة الأحمد"
               value={caregiverName}
-              onChange={e => { setCaregiverName(e.target.value); clearError('caregiverName'); }}
+              onChange={(e) => {
+                setCaregiverName(e.target.value);
+                clearError("caregiverName");
+              }}
               style={inputStyle(!!errors.caregiverName)}
-              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverName ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#5E7E35";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px rgba(94,126,53,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.caregiverName
+                  ? "rgba(255,59,48,0.45)"
+                  : "rgba(0,0,0,0.09)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             />
             <AnimatePresence>
               {errors.caregiverName && (
-                <motion.p key="err-cn"
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }} style={{ ...errorStyle, margin: 0 }}
+                <motion.p
+                  key="err-cn"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ ...errorStyle, margin: 0 }}
                 >
                   <span>⚠️</span> {errors.caregiverName}
                 </motion.p>
@@ -2998,16 +4254,36 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
               type="tel"
               placeholder="05XXXXXXXX"
               value={caregiverPhone}
-              onChange={e => { setCaregiverPhone(e.target.value); clearError('caregiverPhone'); }}
-              style={{ ...inputStyle(!!errors.caregiverPhone), direction: 'ltr', textAlign: 'right' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#5E7E35'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(94,126,53,0.15)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = errors.caregiverPhone ? 'rgba(255,59,48,0.45)' : 'rgba(0,0,0,0.09)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onChange={(e) => {
+                setCaregiverPhone(e.target.value);
+                clearError("caregiverPhone");
+              }}
+              style={{
+                ...inputStyle(!!errors.caregiverPhone),
+                direction: "ltr",
+                textAlign: "right",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#5E7E35";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px rgba(94,126,53,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.caregiverPhone
+                  ? "rgba(255,59,48,0.45)"
+                  : "rgba(0,0,0,0.09)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             />
             <AnimatePresence>
               {errors.caregiverPhone && (
-                <motion.p key="err-cp"
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }} style={{ ...errorStyle, margin: 0 }}
+                <motion.p
+                  key="err-cp"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ ...errorStyle, margin: 0 }}
                 >
                   <span>⚠️</span> {errors.caregiverPhone}
                 </motion.p>
@@ -3021,21 +4297,21 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
           onClick={handleSave}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+          transition={{ type: "spring", stiffness: 300, damping: 22 }}
           style={{
-            marginTop: '32px',
-            width: '100%',
-            background: 'linear-gradient(145deg, #5E7E35, #4F6C2D)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '16px',
-            padding: '17px',
-            fontSize: '1.08rem',
+            marginTop: "32px",
+            width: "100%",
+            background: "linear-gradient(145deg, #5E7E35, #4F6C2D)",
+            color: "#fff",
+            border: "none",
+            borderRadius: "16px",
+            padding: "17px",
+            fontSize: "1.08rem",
             fontWeight: 700,
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
-            cursor: 'pointer',
-            boxShadow: '0 8px 28px rgba(94,126,53,0.38)',
-            letterSpacing: '0.01em',
+            cursor: "pointer",
+            boxShadow: "0 8px 28px rgba(94,126,53,0.38)",
+            letterSpacing: "0.01em",
           }}
         >
           حفظ وبدء الاستخدام
@@ -3051,26 +4327,37 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
               style={{
-                position: 'absolute', inset: 0,
-                background: 'rgba(255,255,255,0.92)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                borderRadius: '28px',
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                gap: '18px',
+                position: "absolute",
+                inset: 0,
+                background: "rgba(255,255,255,0.92)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+                borderRadius: "28px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "18px",
               }}
             >
               <motion.div
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.45, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+                transition={{
+                  duration: 0.45,
+                  delay: 0.1,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
                 style={{
-                  width: '72px', height: '72px', borderRadius: '50%',
-                  background: 'linear-gradient(145deg, #30D158, #25A244)',
-                  boxShadow: '0 12px 36px rgba(48,209,88,0.42)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '2rem',
+                  width: "72px",
+                  height: "72px",
+                  borderRadius: "50%",
+                  background: "linear-gradient(145deg, #30D158, #25A244)",
+                  boxShadow: "0 12px 36px rgba(48,209,88,0.42)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "2rem",
                 }}
               >
                 ✓
@@ -3080,7 +4367,10 @@ function OnboardingPage({ onComplete }: { onComplete: (data: ProfileData) => voi
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.38, delay: 0.25 }}
                 style={{
-                  margin: 0, fontSize: '1.12rem', fontWeight: 700, color: '#1C1C1E',
+                  margin: 0,
+                  fontSize: "1.12rem",
+                  fontWeight: 700,
+                  color: "#1C1C1E",
                   fontFamily: "'IBM Plex Sans Arabic', sans-serif",
                 }}
               >
@@ -3133,7 +4423,7 @@ function ProfileProvider({ children }: { children: React.ReactNode }) {
 }
 
 // ── Patient-side completion notification ──────────────────────────────────────
-const PATIENT_NOTIFY_CHANNEL = 'sameyba_patient_notify';
+const PATIENT_NOTIFY_CHANNEL = "sameyba_patient_notify";
 
 function PatientConfirmationOverlay() {
   const [visible, setVisible] = useState(false);
@@ -3144,14 +4434,18 @@ function PatientConfirmationOverlay() {
     try {
       bc = new BroadcastChannel(PATIENT_NOTIFY_CHANNEL);
       bc.onmessage = (e: MessageEvent) => {
-        if (e.data?.type === 'caregiver_completed') {
+        if (e.data?.type === "caregiver_completed") {
           setVisible(true);
           if (timer.current) clearTimeout(timer.current);
           timer.current = setTimeout(() => setVisible(false), 4500);
         }
       };
-    } catch { /* BroadcastChannel not supported */ }
-    return () => { bc?.close(); };
+    } catch {
+      /* BroadcastChannel not supported */
+    }
+    return () => {
+      bc?.close();
+    };
   }, []);
 
   return createPortal(
@@ -3164,17 +4458,25 @@ function PatientConfirmationOverlay() {
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
+            position: "fixed",
+            top: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
             zIndex: 99999,
-            display: 'flex', alignItems: 'center', gap: '10px',
-            padding: '14px 28px', borderRadius: '999px',
-            background: 'linear-gradient(135deg, rgba(52,199,89,0.15) 0%, rgba(255,255,255,0.96) 100%)',
-            backdropFilter: 'blur(28px)',
-            WebkitBackdropFilter: 'blur(28px)',
-            border: '1.5px solid rgba(52,199,89,0.42)',
-            boxShadow: '0 8px 36px rgba(52,199,89,0.22), 0 2px 12px rgba(0,0,0,0.08)',
-            whiteSpace: 'nowrap' as const,
-            direction: 'rtl',
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "14px 28px",
+            borderRadius: "999px",
+            background:
+              "linear-gradient(135deg, rgba(52,199,89,0.15) 0%, rgba(255,255,255,0.96) 100%)",
+            backdropFilter: "blur(28px)",
+            WebkitBackdropFilter: "blur(28px)",
+            border: "1.5px solid rgba(52,199,89,0.42)",
+            boxShadow:
+              "0 8px 36px rgba(52,199,89,0.22), 0 2px 12px rgba(0,0,0,0.08)",
+            whiteSpace: "nowrap" as const,
+            direction: "rtl",
             fontFamily: "'IBM Plex Sans Arabic', sans-serif",
           }}
         >
@@ -3182,11 +4484,13 @@ function PatientConfirmationOverlay() {
             initial={{ scale: 0.5 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            style={{ fontSize: '1.2rem' }}
+            style={{ fontSize: "1.2rem" }}
           >
             ✅
           </motion.span>
-          <span style={{ fontWeight: 700, fontSize: '0.96rem', color: '#1A6E34' }}>
+          <span
+            style={{ fontWeight: 700, fontSize: "0.96rem", color: "#1A6E34" }}
+          >
             تم استلام طلبك وسيتم تنفيذه
           </span>
         </motion.div>
@@ -3200,34 +4504,41 @@ function PatientConfirmationOverlay() {
 function App() {
   return (
     <GazeProvider>
-    <QueryClientProvider client={queryClient}>
-      <ProfileProvider>
-        <RequestStoreProvider>
-          <CaregiverNotificationProvider>
-          {/* Patient-side confirmation overlay — listens for caregiver completions */}
-          <PatientConfirmationOverlay />
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <Switch>
-              <Route path="/" component={Home} />
-              <Route path="/settings" component={SettingsPage} />
-              <Route path="/communicate" component={CommunicationScreen} />
-              <Route path="/communicate/:categoryId" component={CategoryPage} />
-              <Route path="/dashboard" component={CaregiverDashboard} />
-              <Route component={() => (
-                <div
-                  className="min-h-[100dvh] flex items-center justify-center text-center p-8 bg-[#FAFAFA] text-[#0A0A0A]"
-                  dir="rtl"
-                  style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
-                >
-                  الصفحة غير موجودة
-                </div>
-              )} />
-            </Switch>
-          </WouterRouter>
-          </CaregiverNotificationProvider>
-        </RequestStoreProvider>
-      </ProfileProvider>
-    </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <ProfileProvider>
+          <RequestStoreProvider>
+            <CaregiverNotificationProvider>
+              {/* Patient-side confirmation overlay — listens for caregiver completions */}
+              <PatientConfirmationOverlay />
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Switch>
+                  <Route path="/" component={Home} />
+                  <Route path="/settings" component={SettingsPage} />
+                  <Route path="/communicate" component={CommunicationScreen} />
+                  <Route
+                    path="/communicate/:categoryId"
+                    component={CategoryPage}
+                  />
+                  <Route path="/dashboard" component={CaregiverDashboard} />
+                  <Route
+                    component={() => (
+                      <div
+                        className="min-h-[100dvh] flex items-center justify-center text-center p-8 bg-[#FAFAFA] text-[#0A0A0A]"
+                        dir="rtl"
+                        style={{
+                          fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+                        }}
+                      >
+                        الصفحة غير موجودة
+                      </div>
+                    )}
+                  />
+                </Switch>
+              </WouterRouter>
+            </CaregiverNotificationProvider>
+          </RequestStoreProvider>
+        </ProfileProvider>
+      </QueryClientProvider>
     </GazeProvider>
   );
 }

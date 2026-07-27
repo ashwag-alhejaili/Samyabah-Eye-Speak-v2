@@ -221,48 +221,47 @@ const OUTLIER_MAX_JUMP_PX = 200;
 /** Outlier check only applies within this time window (ms) since the last
  *  accepted sample — prevents rejecting legitimate slow drift over time. */
 const OUTLIER_MAX_DT_MS = 150;
-// ── Unified absolute stability lock tuning (v1.6) ─────────────────────────────
-// Replaces the v1.2/v1.3 dead-zone + position-hysteresis pair and the v1.5
-// visual-only lock with a single lock stage that drives the visible cursor,
-// hit-testing, hover, and dwell voting. All values tunable after testing.
-/** Radius (px), relative to the still-window's anchor sample, that the
- *  corrected gaze must stay within to keep accumulating still time.
- *  Exceeding this discards the current window and restarts collection.
- *  v1.6.1: raised from 6px — pixel-tracked evidence from real recordings
- *  showed the corrected signal routinely moves 35-160px between samples
- *  even during nominal fixation, so 6px never allowed a window to survive
- *  long enough to reach STILL_WINDOW_MS. Re-tune after further testing. */
-const STILL_WINDOW_RADIUS_PX = 14;
-/** How long (ms) the gaze must remain within STILL_WINDOW_RADIUS_PX before
- *  the window qualifies and the cursor freezes to its per-axis median. */
-const STILL_WINDOW_MS = 300;
-/** Distance (px) from the frozen locked position that counts as a deviation
- *  candidate. A single frame past this radius does NOT release the lock.
- *  v1.6.1: raised from 12px to preserve the same ~2x hysteresis margin
- *  over STILL_WINDOW_RADIUS_PX (matches the original 6/12 ratio). */
-const LOCK_RELEASE_RADIUS_PX = 28;
-/** How long (ms) a deviation past LOCK_RELEASE_RADIUS_PX must be sustained,
- *  continuously, before the lock actually releases. */
-const LOCK_RELEASE_SUSTAIN_MS = 150;
-// ── Pre-lock median filter tuning (v1.6.2) ───────────────────────────────────
-// Sits strictly between the One Euro + bias-corrected output and the unified
-// stability lock's input. Does NOT touch STILL_WINDOW_RADIUS_PX, STILL_WINDOW_MS,
-// LOCK_RELEASE_RADIUS_PX, LOCK_RELEASE_SUSTAIN_MS, or the One Euro constants above.
-// Added because pixel-tracked evidence from recorded sessions showed the
-// One-Euro-filtered, bias-corrected signal has a tight core (median frame-to-
-// frame movement ~10px) but a heavy tail — roughly 30% of individual frames
-// spike past STILL_WINDOW_RADIUS_PX even during nominal fixation, which was
-// enough to break the still-window's anchor on nearly every collection
-// attempt and prevent the lock from ever engaging. A retune of One Euro was
-// deliberately NOT used to address this: One Euro's cutoff is velocity-
-// adaptive, so a sample that jumps far is read as fast intentional movement
-// and gets LESS smoothing, not more — the opposite of what a noise spike
-// needs. A short rolling median rejects a minority of outlier samples
-// regardless of how "fast" they look, which matches this failure mode.
-/** Rolling time window (ms) of pre-lock samples the median is taken over.
- *  Short enough to resolve a genuine step (saccade landing) well within
- *  STILL_WINDOW_MS, so intentional gaze shifts are not made sluggish. */
-const MEDIAN_PRELOCK_WINDOW_MS = 90;
+// ── Card-Intent Engine tuning (V2 — replaces the v1.6-v1.8 stability lock,
+// pre-lock median, padded hit-region, and rolling-vote pipeline) ─────────────
+// Rebuilt from scratch around card-level intent rather than pixel-perfect
+// cursor accuracy. Every [data-gaze-id] element carries its own continuous
+// confidence score in [0,1]. Each frame, the card nearest the filtered gaze
+// point (see CARD_NEAR_CUTOFF_PX) has its score pulled toward 1 with time
+// constant CARD_SCORE_RISE_MS; every other card's score decays toward 0 with
+// time constant CARD_SCORE_FALL_MS. gazeTargetId is derived from these scores
+// with hysteresis (see CARD_ENTER_THRESHOLD / CARD_EXIT_THRESHOLD /
+// CARD_CONFIDENCE_MARGIN below) — there is no frozen cursor position and no
+// fixed-size sample window to fill before a decision can be made.
+/** Maximum distance (px) from a card's actual bounding rect that the gaze
+ *  point may sit and still count as "on" that card. This is intentionally
+ *  small and uniform (not gap-aware / per-neighbor) — because assignment is
+ *  by *nearest* rect rather than containment inside an enlarged rect, two
+ *  adjacent cards can never contest the same point: whichever card is
+ *  closer wins, even when the real gap between cards is only ~10px. */
+const CARD_NEAR_CUTOFF_PX = 36;
+/** Time constant (ms) for a card's confidence score rising toward 1 while it
+ *  is continuously the nearest card to the gaze point. Reaching the entry
+ *  threshold from zero takes roughly 200-350ms of steady fixation. */
+const CARD_SCORE_RISE_MS = 220;
+/** Time constant (ms) for a card's confidence score decaying toward 0 while
+ *  it is NOT the nearest card (including frames where no card is near the
+ *  point at all, e.g. a blink or a saccade in flight). Slightly slower than
+ *  the rise constant so a couple of noisy frames glancing off the current
+ *  card don't erase its accumulated confidence, while a genuine, sustained
+ *  look elsewhere still decays it out of contention promptly. */
+const CARD_SCORE_FALL_MS = 260;
+/** A card must reach this confidence score to become the new gazeTargetId. */
+const CARD_ENTER_THRESHOLD = 0.62;
+/** The current gazeTargetId keeps its status as long as its own score stays
+ *  at or above this (lower) threshold, even while another card's score is
+ *  rising. This hysteresis gap is what keeps gazeTargetId stable frame-to-
+ *  frame despite ordinary micro-saccade jitter flipping the *instantaneous*
+ *  nearest card constantly during real fixation. */
+const CARD_EXIT_THRESHOLD = 0.35;
+/** Minimum lead a challenger must hold over the current target's score
+ *  before it is allowed to take over — prevents a near-tie between two
+ *  adjacent cards from flipping the selection on ordinary sample noise. */
+const CARD_CONFIDENCE_MARGIN = 0.12;
 // ── Adaptive vertical bias correction tuning (v1.4) ──────────────────────────
 /** localStorage key used to persist the learned vertical bias across sessions. */
 const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
@@ -294,44 +293,6 @@ const CAL_POINTS: [number, number][] = [
   [0.9, 0.88],
 ];
 const CLICKS_PER_POINT = 2;
-
-// ── Filter / smoothing constants ──────────────────────────────────────────────
-/** 0.30 weight on raw → responsive but still smooth */
-const EMA_ALPHA = 0.3;
-/** Rolling window for dwell-vote sampling */
-const DWELL_WINDOW_MS = 2000;
-/** Fraction of window samples that must be on the same card */
-const DWELL_THRESHOLD = 0.7;
-/** Gaps shorter than this (ms) are forgiven — counts as still on card */
-const DEPARTURE_TOLERANCE_MS = 200;
-/** Minimum window age (ms) before a vote can fire — avoids false positives */
-const DWELL_MIN_WINDOW_MS = 600;
-// ── Hit-test region padding (Phase 2) ─────────────────────────────────────────
-// Enlarged-rect containment test against every [data-gaze-id] card. Phase 2
-// feeds this test with preLockX/preLockY (the responsive, pre-lock median
-// signal) instead of the frozen stability-lock output, so selection tracks
-// the eye directly rather than inheriting whatever position the lock froze
-// on. Value unchanged from Phase 1 — the fix is what feeds the test, not
-// this padding.
-// v1.8 — HIT_REGION_PADDING_PX is now a *cap*, not a flat outward padding.
-// Diagnostic captures showed same-row cards can sit as close as ~11px apart,
-// while this constant was being applied in full (28px) on every side — so
-// two same-row neighbors' padded regions overlapped across nearly the whole
-// seam between them, and an ordinary noisy sample near that seam was decided
-// solely by the nearest-center tie-break below. Vertical padding still uses
-// this value directly (top/bottom padding is unchanged). Horizontal padding
-// is now computed per-card from the real gap to same-row neighbors and
-// capped at this value — see computeHorizontalPadding() at the hit-test site.
-/** Outward padding (px). Used as-is for the top/bottom sides of every
- *  [data-gaze-id] element's bounding rect. Used as an upper bound (cap) for
- *  the left/right sides — see computeHorizontalPadding(). */
-const HIT_REGION_PADDING_PX = 28;
-// ── Card-level vote confidence margin (Phase 2) ───────────────────────────────
-/** Minimum lead (as a fraction of window samples) the top card must hold
- *  over the runner-up card, in addition to clearing DWELL_THRESHOLD, before
- *  a selection is committed. Prevents a near-tie between two adjacent cards
- *  from flipping the selection on ordinary sample-to-sample noise. */
-const VOTE_CONFIDENCE_MARGIN = 0.15;
 
 // ── GazeProvider ──────────────────────────────────────────────────────────────
 export function GazeProvider({ children }: { children: React.ReactNode }) {
@@ -368,36 +329,21 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     ts: number;
   } | null>(null);
 
-  /** v1.6 — unified absolute stability lock. Replaces lastDisplayedPosRef /
-   * stabilityLockedRef (v1.3) and visualLockAnchorRef / visualLockedRef /
-   * visualLockedPosRef (v1.5). Now drives the visible cursor, hit-testing,
-   * hover state, and dwell voting — not just the rendered cursor.
-   * v1.6.3 — rolling time-windowed buffer of {x,y,ts} samples, replacing the
-   * v1.6/v1.6.2 "every sample must stay within radius of the first sample"
-   * anchor test. See the fixation test at the unified lock site below for
-   * why the anchor test was too fragile. */
-  const stillWindowRef = useRef<{
-    samples: { x: number; y: number; ts: number }[];
-  }>({ samples: [] });
+  /** Card-Intent Engine (V2) — per-card confidence score in [0,1], keyed by
+   * data-gaze-id. Rebuilt from scratch each frame's nearest-card lookup;
+   * never frozen, never reads a locked cursor position. See the tuning
+   * constants above and the scoring loop at the RAF site below. */
+  const cardScoresRef = useRef<Map<string, number>>(new Map());
 
-  /** v1.6 — whether the unified lock is currently frozen. */
-  const lockedRef = useRef(false);
+  /** Timestamp (ms) of the previous processed frame, used to compute a real
+   * elapsed-time delta for the exponential rise/decay — makes the engine's
+   * behavior independent of the browser's actual sampling rate. */
+  const lastScoreTsRef = useRef<number | null>(null);
 
-  /** v1.6 — the frozen position while locked (per-axis median of the
-   * qualifying still window's samples). */
-  const lockedPosRef = useRef<{ x: number; y: number } | null>(null);
-
-  /** v1.6 — start time of a sustained deviation candidate while locked;
-   * null when no deviation is currently being tracked. A single noisy
-   * frame past LOCK_RELEASE_RADIUS_PX does not release the lock by itself. */
-  const releaseCandidateRef = useRef<{ since: number } | null>(null);
-
-  /** v1.6.2 — rolling buffer of recent One-Euro + bias-corrected samples,
-   * used to compute a short robust median before the sample reaches the
-   * unified stability lock. See MEDIAN_PRELOCK_WINDOW_MS above. */
-  const medianPreLockBufRef = useRef<{ x: number; y: number; ts: number }[]>(
-    [],
-  );
+  /** Lightweight EMA purely for the visible cursor dot's on-screen motion.
+   * Deliberately separate from anything selection reads — the cursor is an
+   * approximate indicator only and must never gate a decision. */
+  const cursorSmoothRef = useRef<{ x: number; y: number } | null>(null);
 
   const filterXRef = useRef(
     new OneEuroFilter(
@@ -421,27 +367,20 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     filterYRef.current.reset();
 
     lastAcceptedRawRef.current = null;
-    // v1.6 — reset the unified stability lock state.
-    stillWindowRef.current = { samples: [] };
-    lockedRef.current = false;
-    lockedPosRef.current = null;
-    releaseCandidateRef.current = null;
-    // v1.6.2 — reset the pre-lock median buffer too, so stale samples from
-    // before a recalibration/reset can't bleed into the next session.
-    medianPreLockBufRef.current = [];
-    // v1.7 (Phase 2) — reset sustained-departure tracking too.
-    awayStreakRef.current = null;
+    // Card-Intent Engine (V2) — clear all accumulated card confidence and
+    // the frame-delta clock, so stale evidence from before a recalibration
+    // or reset can't bleed into the next session. Refs AND their mirrored
+    // React state are cleared together so nothing (e.g. a stale dwell ring
+    // in App.tsx) can render against a leftover non-null id for even one
+    // frame before the RAF loop resumes.
+    cardScoresRef.current.clear();
+    lastScoreTsRef.current = null;
+    cursorSmoothRef.current = null;
+    gazeTargetRef.current = null;
+    gazeHoverRef.current = null;
+    setGazeTargetId(null);
+    setGazeHoverId(null);
   }, []);
-  // Sample buffer for dwell voting
-  type GazeSample = { id: string | null; ts: number };
-  const sampleBufRef = useRef<GazeSample[]>([]);
-  /** v1.7 (Phase 2) — tracks how long the instant (unlocked) hit has
-   *  continuously been a different, non-null card than the one currently
-   *  leading the vote. Used to distinguish a brief noisy departure (ignored)
-   *  from a genuine, sustained move to another card (flushes the old card's
-   *  stale samples out of the buffer instead of letting them linger for up
-   *  to the full DWELL_WINDOW_MS). */
-  const awayStreakRef = useRef<{ id: string; since: number } | null>(null);
   // ── Adaptive vertical bias correction (v1.4) ──────────────────────────────
   /** Index (0-4) of the VERIFY_TARGETS entry currently highlighted / being
    * looked at, or null when no verification sweep is in progress. */
@@ -645,402 +584,178 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // 2c. Pre-lock median filter (v1.6.2) — sits strictly between the
-          // One Euro + bias-corrected output above and the unified stability
-          // lock below. Rejects short noise spikes (a lone outlier sample)
-          // without changing how the lock itself behaves and without
-          // retuning One Euro. See MEDIAN_PRELOCK_WINDOW_MS for rationale.
-          const medianBuf = medianPreLockBufRef.current;
+          // 2c. Card-Intent Engine (V2) — everything from here down replaces
+          // the old pre-lock median filter, unified stability lock, padded
+          // hit-region containment test, and rolling-window vote. There is
+          // no frozen cursor position anywhere in this pipeline: the point
+          // used for card scoring is the One-Euro-filtered, bias-corrected
+          // sample computed above (gazeX/gazeY), fresh every frame.
+          const gazeX = oneEuroX;
+          const gazeY = biasCorrectedY;
 
-          medianBuf.push({ x: oneEuroX, y: biasCorrectedY, ts: now_ms });
+          // 3. Visible cursor — a small, separate EMA purely so the dot on
+          // screen doesn't look jittery. This smoothed value is NEVER read
+          // by the card-scoring logic below; the cursor stays an
+          // approximate indicator only and does not control selection.
+          const CURSOR_VISUAL_ALPHA = 0.35;
+          const prevCursor = cursorSmoothRef.current;
+          const cursorX = prevCursor
+            ? prevCursor.x + (gazeX - prevCursor.x) * CURSOR_VISUAL_ALPHA
+            : gazeX;
+          const cursorY = prevCursor
+            ? prevCursor.y + (gazeY - prevCursor.y) * CURSOR_VISUAL_ALPHA
+            : gazeY;
+          cursorSmoothRef.current = { x: cursorX, y: cursorY };
 
-          const medianCutoffTs = now_ms - MEDIAN_PRELOCK_WINDOW_MS;
-          while (medianBuf.length > 0 && medianBuf[0].ts < medianCutoffTs) {
-            medianBuf.shift();
-          }
-
-          const medianOfPreLock = (values: number[]): number => {
-            const sorted = [...values].sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            return sorted.length % 2 !== 0
-              ? sorted[mid]
-              : (sorted[mid - 1] + sorted[mid]) / 2;
-          };
-
-          const preLockX = medianOfPreLock(medianBuf.map((s) => s.x));
-          const preLockY = medianOfPreLock(medianBuf.map((s) => s.y));
-
-          // 2d. Unified absolute stability lock (v1.6) — replaces the v1.3
-          // dead-zone/position-hysteresis pair and the v1.5 visual-only lock.
-          // Collects a still window of corrected samples; once the window
-          // qualifies, freezes to the per-axis median of that window (not
-          // the latest sample). Releases only after a *sustained* deviation,
-          // never a single noisy frame, and always starts a brand-new window
-          // on release rather than inheriting the old anchor/lock state.
-          // v1.6.2 — now fed by the pre-lock median (preLockX/preLockY)
-          // instead of the raw One Euro output, since that's the noise this
-          // stage was added to catch before it reaches here. STILL_WINDOW_
-          // RADIUS_PX, STILL_WINDOW_MS, LOCK_RELEASE_RADIUS_PX, and
-          // LOCK_RELEASE_SUSTAIN_MS are all unchanged.
-          //
-          // v1.6.3 — acquisition test rewritten. The old test anchored the
-          // window to its *first* sample and discarded the whole window the
-          // instant any later sample drifted past STILL_WINDOW_RADIUS_PX of
-          // that one anchor. Diagnostic captures showed this was too
-          // fragile: the corrected signal's own frame-to-frame noise
-          // regularly exceeded the radius relative to a single fixed point,
-          // so windows were discarded after only 1-4 samples almost every
-          // time and the lock rarely reached STILL_WINDOW_MS of accumulated
-          // time. The fixation test below instead keeps a rolling buffer of
-          // samples from the last STILL_WINDOW_MS and checks dispersion
-          // around the *window's own median* (which moves with the data)
-          // rather than a fixed first sample. A single sample that is far
-          // from the current cluster no longer wipes out the whole window —
-          // it, and only the stale samples that no longer belong with the
-          // current cluster, are trimmed, so genuine noise spikes don't
-          // reset accumulated still time. A real saccade still clears the
-          // window quickly, because every sample in it becomes stale
-          // relative to the new gaze position.
-          const stillWindow = stillWindowRef.current;
-
-          if (!lockedRef.current) {
-            const buf = stillWindow.samples;
-            buf.push({ x: preLockX, y: preLockY, ts: now_ms });
-
-            // Rolling time window — drop anything older than STILL_WINDOW_MS.
-            const windowCutoffTs = now_ms - STILL_WINDOW_MS;
-            while (buf.length > 0 && buf[0].ts < windowCutoffTs) {
-              buf.shift();
-            }
-
-            const medianOf = (arr: number[]): number => {
-              const sorted = [...arr].sort((a, b) => a - b);
-              const mid = Math.floor(sorted.length / 2);
-              return sorted.length % 2 !== 0
-                ? sorted[mid]
-                : (sorted[mid - 1] + sorted[mid]) / 2;
-            };
-
-            let medX = medianOf(buf.map((s) => s.x));
-            let medY = medianOf(buf.map((s) => s.y));
-            let dispersionPx = Math.max(
-              ...buf.map((s) => Math.hypot(s.x - medX, s.y - medY)),
-            );
-
-            if (dispersionPx > STILL_WINDOW_RADIUS_PX) {
-              // The window as a whole is too spread out to be a fixation.
-              // Rather than discarding it entirely (which is what threw
-              // away 1-4 sample windows constantly), drop only the samples
-              // that are stale relative to *where the eye is now* — this
-              // is the "intentional movement" case, and it clears in one
-              // pass since a real saccade leaves every older sample far
-              // from the new position.
-              while (
-                buf.length > 1 &&
-                Math.hypot(buf[0].x - preLockX, buf[0].y - preLockY) >
-                  STILL_WINDOW_RADIUS_PX
-              ) {
-                buf.shift();
-              }
-              medX = medianOf(buf.map((s) => s.x));
-              medY = medianOf(buf.map((s) => s.y));
-              dispersionPx =
-                buf.length > 0
-                  ? Math.max(
-                      ...buf.map((s) => Math.hypot(s.x - medX, s.y - medY)),
-                    )
-                  : 0;
-            }
-
-            const windowSpanMs = buf.length > 0 ? now_ms - buf[0].ts : 0;
-
-            if (
-              buf.length > 0 &&
-              dispersionPx <= STILL_WINDOW_RADIUS_PX &&
-              windowSpanMs >= STILL_WINDOW_MS
-            ) {
-              // Window qualifies — freeze to the per-axis median.
-              lockedPosRef.current = { x: medX, y: medY };
-              lockedRef.current = true;
-              releaseCandidateRef.current = null;
-
-              // Clear the window — a fresh one only begins after release.
-              stillWindow.samples = [];
-
-              console.log("STABILITY LOCK");
-            }
-          } else if (lockedPosRef.current) {
-            // Locked — require a sustained deviation before releasing.
-            const deviationPx = Math.hypot(
-              preLockX - lockedPosRef.current.x,
-              preLockY - lockedPosRef.current.y,
-            );
-
-            if (deviationPx > LOCK_RELEASE_RADIUS_PX) {
-              if (releaseCandidateRef.current === null) {
-                releaseCandidateRef.current = { since: now_ms };
-              } else if (
-                now_ms - releaseCandidateRef.current.since >=
-                LOCK_RELEASE_SUSTAIN_MS
-              ) {
-                // Deviation sustained long enough — release, and start a
-                // completely new still window seeded with the current sample.
-                lockedRef.current = false;
-                lockedPosRef.current = null;
-                releaseCandidateRef.current = null;
-
-                stillWindowRef.current = {
-                  samples: [{ x: preLockX, y: preLockY, ts: now_ms }],
-                };
-
-                console.log("STABILITY UNLOCK");
-              }
-            } else {
-              // Back within radius — cancel any pending release candidate.
-              releaseCandidateRef.current = null;
-            }
-          }
-
-          // Unified lock output — drives the visible cursor, hit-testing,
-          // hover state, and dwell voting. v1.6.2 — the unlocked fallback is
-          // now the pre-lock median (preLockX/preLockY) rather than the raw
-          // One Euro output, for the same noise-rejection reason as above.
-          const lockOutputX =
-            lockedRef.current && lockedPosRef.current
-              ? lockedPosRef.current.x
-              : preLockX;
-          const lockOutputY =
-            lockedRef.current && lockedPosRef.current
-              ? lockedPosRef.current.y
-              : preLockY;
-
-          // 3. Move visible cursor — unified lock output (v1.6)
           const cursorEl = document.getElementById("sameyba-gaze-cursor");
-
           if (cursorEl) {
-            cursorEl.style.transform = `translate3d(${lockOutputX - 14}px, ${lockOutputY - 14}px, 0)`;
+            cursorEl.style.transform = `translate3d(${cursorX - 14}px, ${cursorY - 14}px, 0)`;
             cursorEl.style.opacity = "1";
           }
 
-          // Mirror the unified lock output for React-rendered cursors
+          // Mirror the visual cursor position for React-rendered cursors
           // (e.g. CalibrationVerification).
-          setVisualCursorPos({ x: lockOutputX, y: lockOutputY });
+          setVisualCursorPos({ x: cursorX, y: cursorY });
 
-          // Diagnostic / calibration / bias-estimation coordinate — direct
-          // corrected value, intentionally NOT passed through the stability
-          // lock. No longer used for hit-testing or dwell (v1.6).
-          setGazePos({ x: oneEuroX, y: biasCorrectedY });
+          // Diagnostic / calibration / bias-estimation coordinate — the
+          // direct filtered value, not the cursor's extra visual smoothing.
+          setGazePos({ x: gazeX, y: gazeY });
 
-          // 4. Hit-test every frame against enlarged card regions (v1.7 /
-          // Phase 2). Fed by preLockX/preLockY — the responsive, noise-
-          // filtered-but-UNFROZEN signal — instead of lockOutputX/Y. Phase 1
-          // kept using lockOutputX/Y and only widened the containment test;
-          // that didn't help because a bad still window can freeze the lock
-          // onto the wrong spot, and every downstream consumer (hover,
-          // selection) inherited that frozen error until a sustained
-          // deviation released it. Testing against preLockX/Y removes the
-          // lock from that path entirely — hit-testing now tracks the eye
-          // directly, every frame. lockOutputX/Y is UNCHANGED and continues
-          // to drive only the visible cursor above (a responsive approximate
-          // indicator; it no longer feeds selection). Cards are re-queried
-          // every frame (no caching yet — correctness first).
-          //
-          // v1.8 — gap-aware horizontal padding. Diagnostic captures showed
-          // two same-row cards can be as close as ~11px apart while
-          // HIT_REGION_PADDING_PX (28px) was applied in full on every side —
-          // so the padded regions of same-row neighbors overlapped across
-          // nearly the entire seam between them, and the nearest-center
-          // tie-break below (originally meant as a rare fallback) was in
-          // practice deciding every seam crossing on ordinary sample noise.
-          // Fix: rects are gathered first, then each card's LEFT/RIGHT
-          // padding is capped at half the real gap to its nearest same-row
-          // neighbor on that side (computeHorizontalPadding), so two
-          // same-row neighbors' padded regions can never overlap. TOP/BOTTOM
-          // padding is untouched (still HIT_REGION_PADDING_PX flat), and the
-          // vote/dwell logic below is untouched — only the geometry feeding
-          // instantHitId changes.
+          // 4. Nearest-card lookup — replaces the padded/gap-aware hit-
+          // region containment test. For every [data-gaze-id] element,
+          // compute the distance from the gaze point to that element's
+          // actual bounding rect (0 when the point is already inside it),
+          // and assign the point to whichever card is closest, as long as
+          // it's within CARD_NEAR_CUTOFF_PX. Because assignment is always
+          // by a single nearest rect rather than containment inside
+          // separately-enlarged rects, two adjacent cards can never both
+          // claim the same point — the boundary between them is always the
+          // true midpoint of the gap, however small that gap is.
           const gazeCardEls =
             document.querySelectorAll<HTMLElement>("[data-gaze-id]");
 
-          type GazeCardRect = { id: string; rect: DOMRect };
-          const gazeCardRects: GazeCardRect[] = [];
+          let instantHitId: string | null = null;
+          let bestDist = Infinity;
+
           gazeCardEls.forEach((el) => {
             const id = el.dataset.gazeId;
             if (!id) return;
-            gazeCardRects.push({ id, rect: el.getBoundingClientRect() });
-          });
 
-          // Two rects are "same-row" for padding purposes if their vertical
-          // extents overlap at all — this deliberately excludes cards in a
-          // different row (which have their own, unrelated horizontal gaps)
-          // from constraining each other's horizontal padding.
-          const verticallyOverlaps = (a: DOMRect, b: DOMRect): boolean =>
-            a.top < b.bottom && a.bottom > b.top;
+            const rect = el.getBoundingClientRect();
+            const dx = Math.max(rect.left - gazeX, 0, gazeX - rect.right);
+            const dy = Math.max(rect.top - gazeY, 0, gazeY - rect.bottom);
+            const dist = Math.hypot(dx, dy);
 
-          // For a given card, find the nearest same-row neighbor's edge on
-          // each side and cap outward padding at half that gap — so, in the
-          // worst case, two neighbors each claim exactly half the gap and
-          // their padded regions meet but never overlap.
-          const computeHorizontalPadding = (
-            id: string,
-            target: DOMRect,
-            all: GazeCardRect[],
-          ): { left: number; right: number } => {
-            let leftGap = Infinity;
-            let rightGap = Infinity;
-
-            for (const other of all) {
-              if (other.id === id) continue;
-              if (!verticallyOverlaps(target, other.rect)) continue;
-
-              if (other.rect.right <= target.left) {
-                leftGap = Math.min(leftGap, target.left - other.rect.right);
-              } else if (other.rect.left >= target.right) {
-                rightGap = Math.min(rightGap, other.rect.left - target.right);
-              }
-            }
-
-            const left =
-              leftGap === Infinity
-                ? HIT_REGION_PADDING_PX
-                : Math.max(0, Math.min(HIT_REGION_PADDING_PX, leftGap / 2));
-            const right =
-              rightGap === Infinity
-                ? HIT_REGION_PADDING_PX
-                : Math.max(0, Math.min(HIT_REGION_PADDING_PX, rightGap / 2));
-
-            return { left, right };
-          };
-
-          let instantHitId: string | null = null;
-          let bestCenterDist = Infinity;
-
-          gazeCardRects.forEach(({ id, rect }) => {
-            const { left: padLeft, right: padRight } = computeHorizontalPadding(
-              id,
-              rect,
-              gazeCardRects,
-            );
-
-            const paddedLeft = rect.left - padLeft;
-            const paddedRight = rect.right + padRight;
-            const paddedTop = rect.top - HIT_REGION_PADDING_PX;
-            const paddedBottom = rect.bottom + HIT_REGION_PADDING_PX;
-
-            const inside =
-              preLockX >= paddedLeft &&
-              preLockX <= paddedRight &&
-              preLockY >= paddedTop &&
-              preLockY <= paddedBottom;
-
-            if (!inside) return;
-
-            // Nearest-center tie-break: now a genuine fallback rather than
-            // the normal seam behavior. With horizontal padding capped
-            // above, same-row neighbors' padded regions no longer overlap,
-            // so this only fires for remaining edge cases (e.g. vertical
-            // padding overlap between rows, or corner overlap) — prefer
-            // whichever card's *unpadded* center is closest to the point.
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const centerDist = Math.hypot(
-              preLockX - centerX,
-              preLockY - centerY,
-            );
-
-            if (centerDist < bestCenterDist) {
-              bestCenterDist = centerDist;
+            if (dist < bestDist) {
+              bestDist = dist;
               instantHitId = id;
             }
           });
+
+          if (bestDist > CARD_NEAR_CUTOFF_PX) {
+            instantHitId = null;
+          }
 
           if (instantHitId !== gazeHoverRef.current) {
             gazeHoverRef.current = instantHitId;
             setGazeHoverId(instantHitId);
           }
 
-          // 5. Card-level rolling vote (v1.7 / Phase 2)
-          //    Rolling 2s window of instant (unlocked) hits; a card is only
-          //    selected once it holds >= DWELL_THRESHOLD of the window AND
-          //    leads the runner-up by >= VOTE_CONFIDENCE_MARGIN, so a near-
-          //    tie between adjacent cards can't flip the selection on
-          //    ordinary noise. Gaps < DEPARTURE_TOLERANCE_MS are forgiven —
-          //    a null sample inherits the last non-null id.
-          //
-          //    Sustained-departure flush: a brief noisy glance off the
-          //    leading card is tolerated as above, but once the instant hit
-          //    has continuously been a *different*, non-null card for a
-          //    full DEPARTURE_TOLERANCE_MS — a genuine move, not noise —
-          //    every buffered sample belonging to the old card is dropped.
-          //    Without this, stale votes for the previous card would keep
-          //    outvoting the new one for up to the full DWELL_WINDOW_MS
-          //    (2s) after the eye has clearly moved on.
-          const buf = sampleBufRef.current;
-          const priorTarget = gazeTargetRef.current;
-          const awayStreak = awayStreakRef.current;
+          // 5. Per-card confidence accumulator — replaces the fixed-size
+          // rolling-window vote. Every card's score moves toward 1 (if it's
+          // instantHitId this frame) or toward 0 (otherwise) using the real
+          // elapsed time since the previous frame, so behavior is the same
+          // whether the webcam delivers 15 or 60 samples per second.
+          const prevScoreTs = lastScoreTsRef.current;
+          const dtMs =
+            prevScoreTs !== null ? Math.max(now_ms - prevScoreTs, 0) : 16;
+          lastScoreTsRef.current = now_ms;
 
-          if (instantHitId !== null && instantHitId !== priorTarget) {
-            if (awayStreak && awayStreak.id === instantHitId) {
-              if (now_ms - awayStreak.since >= DEPARTURE_TOLERANCE_MS) {
-                const currentId = instantHitId;
-                for (let i = buf.length - 1; i >= 0; i--) {
-                  if (buf[i].id !== null && buf[i].id !== currentId) {
-                    buf.splice(i, 1);
-                  }
-                }
-                awayStreakRef.current = null;
-              }
+          const scores = cardScoresRef.current;
+
+          // Age every card currently tracked, plus any card visible this
+          // frame that isn't in the map yet (starts implicitly at 0).
+          const idsToUpdate = new Set<string>(scores.keys());
+          gazeCardEls.forEach((el) => {
+            const id = el.dataset.gazeId;
+            if (id) idsToUpdate.add(id);
+          });
+
+          idsToUpdate.forEach((id) => {
+            const prev = scores.get(id) ?? 0;
+            const next =
+              id === instantHitId
+                ? prev + (1 - prev) * (1 - Math.exp(-dtMs / CARD_SCORE_RISE_MS))
+                : prev * Math.exp(-dtMs / CARD_SCORE_FALL_MS);
+
+            // Drop near-zero entries so the map doesn't grow unbounded over
+            // a long session that visits many different cards over time.
+            if (next < 0.001) {
+              scores.delete(id);
             } else {
-              awayStreakRef.current = { id: instantHitId, since: now_ms };
+              scores.set(id, next);
             }
-          } else {
-            awayStreakRef.current = null;
+          });
+
+          // Find the top two scores across all tracked cards.
+          let leaderId: string | null = null;
+          let leaderScore = 0;
+          let runnerUpScore = 0;
+          scores.forEach((score, id) => {
+            if (score > leaderScore) {
+              runnerUpScore = leaderScore;
+              leaderScore = score;
+              leaderId = id;
+            } else if (score > runnerUpScore) {
+              runnerUpScore = score;
+            }
+          });
+
+          // Decide gazeTargetId with hysteresis: entering a target requires
+          // clearing CARD_ENTER_THRESHOLD with a clear lead (CARD_CONFIDENCE_
+          // MARGIN) over the next-best competitor; a target already held
+          // keeps it merely by staying above the lower CARD_EXIT_THRESHOLD.
+          // This is what keeps gazeTargetId stable despite ordinary micro-
+          // saccade jitter flipping instantHitId frame to frame during real
+          // fixation, while still letting a genuine, sustained move to a
+          // different (possibly adjacent) card take over promptly.
+          const priorTarget = gazeTargetRef.current;
+          const priorScore =
+            priorTarget !== null ? (scores.get(priorTarget) ?? 0) : 0;
+
+          let newTargetId: string | null = priorTarget;
+
+          if (priorTarget === null) {
+            if (
+              leaderId !== null &&
+              leaderScore >= CARD_ENTER_THRESHOLD &&
+              leaderScore - runnerUpScore >= CARD_CONFIDENCE_MARGIN
+            ) {
+              newTargetId = leaderId;
+            }
+          } else if (priorScore < CARD_EXIT_THRESHOLD) {
+            // Current target has decayed out of contention — hand off to a
+            // qualifying leader if there is one, otherwise release to null.
+            newTargetId =
+              leaderId !== null &&
+              leaderId !== priorTarget &&
+              leaderScore >= CARD_ENTER_THRESHOLD
+                ? leaderId
+                : null;
+          } else if (
+            leaderId !== null &&
+            leaderId !== priorTarget &&
+            leaderScore >= CARD_ENTER_THRESHOLD &&
+            leaderScore - priorScore >= CARD_CONFIDENCE_MARGIN
+          ) {
+            // A different card has decisively overtaken the still-active
+            // current target — switch.
+            newTargetId = leaderId;
           }
 
-          buf.push({ id: instantHitId, ts: now_ms });
-
-          // Prune entries older than DWELL_WINDOW_MS
-          const cutoff = now_ms - DWELL_WINDOW_MS;
-          let pruneIdx = 0;
-          while (pruneIdx < buf.length && buf[pruneIdx].ts < cutoff) pruneIdx++;
-          if (pruneIdx > 0) buf.splice(0, pruneIdx);
-
-          // Only vote after the window has accumulated enough data
-          const windowAge = buf.length > 0 ? now_ms - buf[0].ts : 0;
-          if (windowAge >= DWELL_MIN_WINDOW_MS) {
-            // Apply departure tolerance: nulls within 200ms after a non-null
-            // inherit that id (brief glances away are forgiven)
-            const counts: Record<string, number> = {};
-            let lastNonNull: { id: string; ts: number } | null = null;
-            for (const s of buf) {
-              if (s.id !== null) {
-                counts[s.id] = (counts[s.id] ?? 0) + 1;
-                lastNonNull = { id: s.id, ts: s.ts };
-              } else if (
-                lastNonNull &&
-                s.ts - lastNonNull.ts <= DEPARTURE_TOLERANCE_MS
-              ) {
-                counts[lastNonNull.id] = (counts[lastNonNull.id] ?? 0) + 1;
-              }
-            }
-
-            const total = buf.length;
-            const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-            const top = ranked[0];
-            const runnerUpCount = ranked[1]?.[1] ?? 0;
-            const margin = top ? (top[1] - runnerUpCount) / total : 0;
-
-            const newTargetId =
-              top &&
-              top[1] / total >= DWELL_THRESHOLD &&
-              margin >= VOTE_CONFIDENCE_MARGIN
-                ? top[0]
-                : null;
-
-            if (newTargetId !== gazeTargetRef.current) {
-              gazeTargetRef.current = newTargetId;
-              setGazeTargetId(newTargetId);
-            }
+          if (newTargetId !== gazeTargetRef.current) {
+            gazeTargetRef.current = newTargetId;
+            setGazeTargetId(newTargetId);
           }
         }
       }
@@ -1206,7 +921,6 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       wg.clearData?.();
       rawRef.current = null;
       resetGazeFilters();
-      sampleBufRef.current = [];
       setPreparingGaze(false);
 
       // 5c. Show instruction card; launch calibration only when user confirms.
@@ -1268,7 +982,6 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // Reset all prediction data so calibration coords don't bleed into normal use
           rawRef.current = null;
           resetGazeFilters();
-          sampleBufRef.current = [];
           verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
           // Enable gaze so cursor moves during verification
           setGazeEnabled(true);
@@ -1286,7 +999,6 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setCalibrated(false);
     setVerifying(false);
     setCalSuccess(false);
-    sampleBufRef.current = [];
     resetGazeFilters();
     rawRef.current = null;
     window.webgazer?.clearData();
@@ -1435,7 +1147,6 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               onConfirm={() => {
                 estimateAndApplyVerticalBias();
                 verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
-                sampleBufRef.current = [];
                 setCalibrated(true);
                 setVerifying(false);
               }}
@@ -2535,4 +2246,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V1.6.6");
+console.log("ASHWAG TEST V2.0 — Card-Intent Engine");
