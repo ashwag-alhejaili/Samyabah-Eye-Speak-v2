@@ -227,14 +227,20 @@ const OUTLIER_MAX_DT_MS = 150;
 // hit-testing, hover, and dwell voting. All values tunable after testing.
 /** Radius (px), relative to the still-window's anchor sample, that the
  *  corrected gaze must stay within to keep accumulating still time.
- *  Exceeding this discards the current window and restarts collection. */
-const STILL_WINDOW_RADIUS_PX = 6;
+ *  Exceeding this discards the current window and restarts collection.
+ *  v1.6.1: raised from 6px — pixel-tracked evidence from real recordings
+ *  showed the corrected signal routinely moves 35-160px between samples
+ *  even during nominal fixation, so 6px never allowed a window to survive
+ *  long enough to reach STILL_WINDOW_MS. Re-tune after further testing. */
+const STILL_WINDOW_RADIUS_PX = 14;
 /** How long (ms) the gaze must remain within STILL_WINDOW_RADIUS_PX before
  *  the window qualifies and the cursor freezes to its per-axis median. */
 const STILL_WINDOW_MS = 300;
 /** Distance (px) from the frozen locked position that counts as a deviation
- *  candidate. A single frame past this radius does NOT release the lock. */
-const LOCK_RELEASE_RADIUS_PX = 12;
+ *  candidate. A single frame past this radius does NOT release the lock.
+ *  v1.6.1: raised from 12px to preserve the same ~2x hysteresis margin
+ *  over STILL_WINDOW_RADIUS_PX (matches the original 6/12 ratio). */
+const LOCK_RELEASE_RADIUS_PX = 28;
 /** How long (ms) a deviation past LOCK_RELEASE_RADIUS_PX must be sustained,
  *  continuously, before the lock actually releases. */
 const LOCK_RELEASE_SUSTAIN_MS = 150;
