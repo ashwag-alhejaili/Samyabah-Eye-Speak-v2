@@ -59,6 +59,39 @@ const TASKS_VISION_WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vi
 const FACE_LANDMARKER_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
+// ── Performance tuning constants (V3.1 — perf rewrite) ────────────────────────
+// V3.0 called detectForVideo (synchronous, blocking) on every single
+// requestAnimationFrame tick with no cap and no de-duplication against the
+// camera's actual frame rate. On a device where GPU-delegate inference costs
+// 40-80ms/call, that leaves the main thread almost no room to paint, run
+// React's re-render, or service the separate card-scoring rAF loop — which is
+// exactly what "pauses, trails behind, jumps" looks like from the outside.
+/** Target steady-state inference rate once the device's capability is known.
+ *  24Hz is enough for a fixation-driven UI (not a twitch-reflex one) and
+ *  leaves real main-thread headroom between calls. */
+const TARGET_INFERENCE_INTERVAL_MS = 1000 / 24; // ~41.7ms
+/** Adaptive backoff never goes slower than this — below ~8Hz the Card-Intent
+ *  Engine's dwell/hysteresis timers stop feeling responsive regardless of
+ *  smoothing quality. */
+const MIN_INFERENCE_INTERVAL_MS = 1000 / 8; // 125ms
+/** EMA smoothing factor for the rolling per-call latency estimate that
+ *  drives the adaptive backoff/recovery below. */
+const INFERENCE_LATENCY_EMA_ALPHA = 0.2;
+/** If the rolling latency estimate exceeds this fraction of the current
+ *  interval, back off (raise the interval) so calls stop queuing up behind
+ *  each other and starving the rest of the main thread. */
+const INFERENCE_BACKOFF_TRIGGER = 0.85;
+/** If latency drops comfortably below this fraction of the current interval,
+ *  recover back toward TARGET_INFERENCE_INTERVAL_MS. */
+const INFERENCE_RECOVER_TRIGGER = 0.5;
+/** Frames sampled when probing whether GPU or CPU delegate is actually
+ *  faster on this device — see pickFasterDelegate below. */
+const DELEGATE_PROBE_SAMPLES = 5;
+/** A GPU delegate measuring at or below this ms/frame is left alone; only
+ *  slower-than-this triggers a CPU probe (avoids paying for a second model
+ *  instantiation on devices where GPU is already fine). */
+const DELEGATE_PROBE_THRESHOLD_MS = 35;
+
 // Module-level cache so the (fairly heavy) wasm + model download only ever
 // happens once per page load, even across recalibration / remount.
 let tasksVisionModulePromise: Promise<TasksVisionModule> | null = null;
@@ -71,40 +104,137 @@ function loadTasksVisionModule(): Promise<TasksVisionModule> {
   return tasksVisionModulePromise;
 }
 
+// Fileset (wasm runtime) is cached separately from any particular
+// FaceLandmarker instance — probing both delegates (pickFasterDelegate)
+// must never re-download/re-parse the wasm twice.
+let visionFilesetPromise: Promise<unknown> | null = null;
+function loadVisionFileset(): Promise<unknown> {
+  if (!visionFilesetPromise) {
+    visionFilesetPromise = (async () => {
+      const { FilesetResolver } = await loadTasksVisionModule();
+      return FilesetResolver.forVisionTasks(TASKS_VISION_WASM_BASE);
+    })();
+  }
+  return visionFilesetPromise;
+}
+
+async function createLandmarker(
+  delegate: "GPU" | "CPU",
+): Promise<FaceLandmarkerInstance> {
+  const { FaceLandmarker } = await loadTasksVisionModule();
+  const fileset = await loadVisionFileset();
+  console.log(
+    `[Sameyba/Gaze] Creating FaceLandmarker (${delegate} delegate)...`,
+  );
+  return FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: FACE_LANDMARKER_MODEL_URL, delegate },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: true,
+  });
+}
+
 let faceLandmarkerPromise: Promise<FaceLandmarkerInstance> | null = null;
-async function getFaceLandmarker(): Promise<FaceLandmarkerInstance> {
+/** Fast-path loader used before a live video frame exists (permission-probe
+ *  stage). Tries GPU, falls back to CPU only on a hard creation error —
+ *  same behavior V3.0 had. Which delegate is actually *faster* on this
+ *  device is answered empirically once real frames are flowing — see
+ *  pickFasterDelegate, called from requestCamera right after the persistent
+ *  stream attaches. */
+function getFaceLandmarker(): Promise<FaceLandmarkerInstance> {
   if (!faceLandmarkerPromise) {
     faceLandmarkerPromise = (async () => {
-      const { FilesetResolver, FaceLandmarker } = await loadTasksVisionModule();
-      const fileset = await FilesetResolver.forVisionTasks(
-        TASKS_VISION_WASM_BASE,
-      );
-      const commonOptions = {
-        baseOptions: {
-          modelAssetPath: FACE_LANDMARKER_MODEL_URL,
-          delegate: "GPU" as const,
-        },
-        runningMode: "VIDEO" as const,
-        numFaces: 1,
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: true,
-      };
       try {
-        console.log("[Sameyba/Gaze] Creating FaceLandmarker (GPU delegate)...");
-        return await FaceLandmarker.createFromOptions(fileset, commonOptions);
+        return await createLandmarker("GPU");
       } catch (gpuErr) {
         console.warn(
           "[Sameyba/Gaze] GPU delegate failed, retrying with CPU:",
           gpuErr,
         );
-        return await FaceLandmarker.createFromOptions(fileset, {
-          ...commonOptions,
-          baseOptions: { ...commonOptions.baseOptions, delegate: "CPU" },
-        });
+        return await createLandmarker("CPU");
       }
     })();
   }
   return faceLandmarkerPromise;
+}
+
+/** Runs a few throwaway detectForVideo calls, spaced one rAF apart so we're
+ *  timing steady-state calls rather than two calls competing for the same
+ *  GL/CPU resource back-to-back, and returns the median latency in ms.
+ *  Results are discarded — this never feeds a real prediction. */
+async function benchmarkLandmarker(
+  landmarker: FaceLandmarkerInstance,
+  video: HTMLVideoElement,
+  samples: number,
+): Promise<number> {
+  const times: number[] = [];
+  for (let i = 0; i < samples; i++) {
+    const t0 = performance.now();
+    landmarker.detectForVideo(video, performance.now());
+    times.push(performance.now() - t0);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  }
+  times.sort((a, b) => a - b);
+  return times[Math.floor(times.length / 2)];
+}
+
+/** Empirically picks whichever delegate is actually faster on this device,
+ *  using the live camera feed. GPU is usually faster on desktop, but Tasks-
+ *  Vision's GPU delegate has a known texture-readback stall on several
+ *  mobile WebViews/Safari builds that can make it *slower* than the CPU
+ *  (XNNPACK) delegate despite reporting a healthy WebGL2 context — this only
+ *  trusts a measurement, never a static assumption. */
+async function pickFasterDelegate(
+  current: FaceLandmarkerInstance,
+  video: HTMLVideoElement,
+): Promise<{
+  landmarker: FaceLandmarkerInstance;
+  delegate: string;
+  ms: number;
+}> {
+  const gpuMs = await benchmarkLandmarker(
+    current,
+    video,
+    DELEGATE_PROBE_SAMPLES,
+  );
+  console.log(
+    `[Sameyba/Gaze] Delegate benchmark — GPU: ${gpuMs.toFixed(1)}ms/frame (median of ${DELEGATE_PROBE_SAMPLES})`,
+  );
+
+  if (gpuMs <= DELEGATE_PROBE_THRESHOLD_MS) {
+    return { landmarker: current, delegate: "GPU", ms: gpuMs };
+  }
+
+  try {
+    const cpuLandmarker = await createLandmarker("CPU");
+    const cpuMs = await benchmarkLandmarker(
+      cpuLandmarker,
+      video,
+      DELEGATE_PROBE_SAMPLES,
+    );
+    console.log(
+      `[Sameyba/Gaze] Delegate benchmark — CPU: ${cpuMs.toFixed(1)}ms/frame (median of ${DELEGATE_PROBE_SAMPLES})`,
+    );
+
+    if (cpuMs < gpuMs) {
+      current.close();
+      faceLandmarkerPromise = Promise.resolve(cpuLandmarker);
+      console.log(
+        `[Sameyba/Gaze] Switching to CPU delegate (${cpuMs.toFixed(1)}ms vs ${gpuMs.toFixed(1)}ms)`,
+      );
+      return { landmarker: cpuLandmarker, delegate: "CPU", ms: cpuMs };
+    }
+
+    cpuLandmarker.close();
+  } catch (err) {
+    console.warn(
+      "[Sameyba/Gaze] CPU delegate probe failed, staying on GPU:",
+      err,
+    );
+  }
+
+  return { landmarker: current, delegate: "GPU", ms: gpuMs };
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -496,9 +626,38 @@ const CARD_EXIT_THRESHOLD = 0.35;
  *  before it is allowed to take over — prevents a near-tie between two
  *  adjacent cards from flipping the selection on ordinary sample noise. */
 const CARD_CONFIDENCE_MARGIN = 0.12;
+// ── Card-scoring loop perf tuning (V3.1) ──────────────────────────────────────
+/** How often (ms) the [data-gaze-id] bounding-rect cache is refreshed.
+ *  getBoundingClientRect forces a synchronous layout; V3.0 re-queried and
+ *  re-measured every card on every single rAF tick (~60x/sec) even though
+ *  cards don't move at 60Hz. Refreshing on this fixed low-rate timer instead
+ *  (plus immediately on resize) keeps the per-frame cost of the card-scoring
+ *  loop to plain arithmetic over cached rects. */
+const CARD_RECT_REFRESH_MS = 150;
+/** Minimum gap (ms) between setGazePos/setVisualCursorPos React state
+ *  updates. The visible cursor dot itself is moved every processed frame via
+ *  direct DOM style mutation (no re-render); these two setState calls only
+ *  feed React-rendered consumers (CalibrationVerification, context value)
+ *  and firing them at full frame rate was forcing a React re-render —
+ *  including framer-motion's diff — up to 60x/sec for no visible benefit. */
+const REACT_CURSOR_STATE_INTERVAL_MS = 33; // ~30Hz
 // ── Adaptive vertical bias correction tuning (v1.4) ──────────────────────────
+/** Engine-version suffix on the persisted bias keys. V3.0 switched the whole
+ *  estimator from WebGazer's raw-pixel regression to this geometric-feature
+ *  ridge regression — a "vertical bias in px" learned under one model has no
+ *  guaranteed relationship to the other. Versioning the key means a browser
+ *  that still has an old WebGazer-era value sitting in localStorage simply
+ *  never sees it again, instead of silently applying it as a huge (and, per
+ *  the V3.0 console log, exactly this: -53.2px / +21.2px) starting offset. */
+const GAZE_BIAS_ENGINE_VERSION = "flm1";
+/** Old, unversioned keys from the WebGazer-based engine. Purged (not just
+ *  ignored) on load so they can't be mistaken for current data later. */
+const LEGACY_BIAS_STORAGE_KEYS = [
+  "sameyba_gaze_vbias_px",
+  "sameyba_gaze_hbias_px",
+];
 /** localStorage key used to persist the learned vertical bias across sessions. */
-const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
+const VBIAS_STORAGE_KEY = `sameyba_gaze_vbias_px_${GAZE_BIAS_ENGINE_VERSION}`;
 // ── Adaptive horizontal bias correction tuning (V2.1) ────────────────────────
 // V2.0's verification sweep already visits a "left" (10%) and "right" (90%)
 // target — but only ever recorded their Y samples. Every other axis-specific
@@ -506,7 +665,7 @@ const VBIAS_STORAGE_KEY = "sameyba_gaze_vbias_px";
 // valid targets, clamp) is identical to the vertical scheme by design: this
 // is the same estimator, run on the other axis, not a new algorithm.
 /** localStorage key used to persist the learned horizontal bias across sessions. */
-const HBIAS_STORAGE_KEY = "sameyba_gaze_hbias_px";
+const HBIAS_STORAGE_KEY = `sameyba_gaze_hbias_px_${GAZE_BIAS_ENGINE_VERSION}`;
 /** How long each VERIFY_TARGETS entry stays highlighted / active (ms). */
 const VERIFY_DWELL_MS = 1500;
 /** Samples collected within this window (ms) after a target becomes active
@@ -605,6 +764,20 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const gazeTargetRef = useRef<string | null>(null);
   const gazeHoverRef = useRef<string | null>(null);
 
+  /** V3.1 — cache of [data-gaze-id] element bounding rects, refreshed at a
+   *  fixed low rate (CARD_RECT_REFRESH_MS) instead of every rAF tick.
+   *  getBoundingClientRect forces a synchronous layout; doing that for every
+   *  card 60x/sec was pure main-thread cost the scoring logic doesn't need —
+   *  cards don't move at 60Hz. */
+  const cardRectsCacheRef = useRef<{ id: string; rect: DOMRect }[]>([]);
+  const cardRectsCacheTsRef = useRef(0);
+  /** V3.1 — throttle for the setGazePos/setVisualCursorPos React state
+   *  mirrors. The visible cursor dot moves every processed frame via direct
+   *  DOM style mutation (see cursorEl below), independent of React; these
+   *  two setState calls only feed React-rendered consumers and don't need
+   *  to force a re-render at full frame rate. */
+  const lastReactCursorStateTsRef = useRef(0);
+
   // ── V3.0 — MediaPipe FaceLandmarker camera/detection state ─────────────────
   /** Hidden <video> element the FaceLandmarker reads frames from. Created
    *  once and kept for the component's lifetime. */
@@ -627,6 +800,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   /** Count of frames with a confidently-detected face since warm-up started;
    *  used only to gate the "camera + model are actually working" check. */
   const warmupDetectionCountRef = useRef(0);
+  /** V3.1 — adaptive inference cadence. Current minimum gap (ms) enforced
+   *  between detectForVideo calls; starts at TARGET_INFERENCE_INTERVAL_MS
+   *  and is adjusted up/down by the EMA latency check in requestCamera. */
+  const inferenceIntervalMsRef = useRef(TARGET_INFERENCE_INTERVAL_MS);
+  /** Timestamp (ms) of the last inference call actually run. */
+  const lastInferenceTsRef = useRef(0);
+  /** Rolling EMA (ms) of real detectForVideo call latency; null until the
+   *  first benchmark/call. Drives the adaptive backoff above. */
+  const inferenceLatencyEmaRef = useRef<number | null>(null);
   /** Calibration training set — one entry per recorded click. */
   const trainingFeaturesRef = useRef<number[][]>([]);
   const trainingTargetXRef = useRef<number[]>([]);
@@ -709,6 +891,24 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
 
   // Load the previously learned biases when the app opens.
   useEffect(() => {
+    // V3.1 — discard any bias value left over from the old WebGazer-based
+    // engine before reading the (versioned) current keys. See
+    // GAZE_BIAS_ENGINE_VERSION above for why these aren't just "unused" —
+    // if left in place they'd sit there indefinitely as a trap for any
+    // future key-naming change.
+    LEGACY_BIAS_STORAGE_KEYS.forEach((legacyKey) => {
+      try {
+        if (localStorage.getItem(legacyKey) !== null) {
+          console.log(
+            `[Sameyba/Gaze] Discarding stale pre-V3 bias key: ${legacyKey}`,
+          );
+          localStorage.removeItem(legacyKey);
+        }
+      } catch {
+        // localStorage unavailable — nothing to purge.
+      }
+    });
+
     try {
       const stored = localStorage.getItem(VBIAS_STORAGE_KEY);
       const parsed = stored !== null ? parseFloat(stored) : NaN;
@@ -857,6 +1057,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     if (!gazeEnabled) return;
     let running = true;
 
+    // V3.1 — invalidate the card-rect cache immediately on resize/orientation
+    // change rather than waiting up to CARD_RECT_REFRESH_MS for the next
+    // timed refresh; layout can genuinely change at that moment.
+    const invalidateCardRects = () => {
+      cardRectsCacheTsRef.current = 0;
+    };
+    window.addEventListener("resize", invalidateCardRects);
+    window.addEventListener("orientationchange", invalidateCardRects);
+
     function loop() {
       if (!running) return;
 
@@ -959,12 +1168,20 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           }
 
           // Mirror the visual cursor position for React-rendered cursors
-          // (e.g. CalibrationVerification).
-          setVisualCursorPos({ x: cursorX, y: cursorY });
-
-          // Diagnostic / calibration / bias-estimation coordinate — the
-          // direct filtered value, not the cursor's extra visual smoothing.
-          setGazePos({ x: gazeX, y: gazeY });
+          // (e.g. CalibrationVerification) — throttled (V3.1). The dot
+          // itself already moved above via direct DOM mutation; this is
+          // purely so React-rendered consumers stay reasonably in sync
+          // without forcing a re-render on every single processed frame.
+          if (
+            now_ms - lastReactCursorStateTsRef.current >=
+            REACT_CURSOR_STATE_INTERVAL_MS
+          ) {
+            lastReactCursorStateTsRef.current = now_ms;
+            setVisualCursorPos({ x: cursorX, y: cursorY });
+            // Diagnostic / calibration / bias-estimation coordinate — the
+            // direct filtered value, not the cursor's extra visual smoothing.
+            setGazePos({ x: gazeX, y: gazeY });
+          }
 
           // 4. Nearest-card lookup — replaces the padded/gap-aware hit-
           // region containment test. For every [data-gaze-id] element,
@@ -976,17 +1193,29 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // separately-enlarged rects, two adjacent cards can never both
           // claim the same point — the boundary between them is always the
           // true midpoint of the gap, however small that gap is.
-          const gazeCardEls =
-            document.querySelectorAll<HTMLElement>("[data-gaze-id]");
+          //
+          // V3.1 — the rects themselves come from a low-rate cache
+          // (refreshCardRects, called at most every CARD_RECT_REFRESH_MS)
+          // instead of a fresh querySelectorAll + getBoundingClientRect
+          // (forced synchronous layout) on every single processed frame.
+          // Cards don't move at 60Hz; the cache does.
+          if (now_ms - cardRectsCacheTsRef.current >= CARD_RECT_REFRESH_MS) {
+            cardRectsCacheTsRef.current = now_ms;
+            const els =
+              document.querySelectorAll<HTMLElement>("[data-gaze-id]");
+            const next: { id: string; rect: DOMRect }[] = [];
+            els.forEach((el) => {
+              const id = el.dataset.gazeId;
+              if (id) next.push({ id, rect: el.getBoundingClientRect() });
+            });
+            cardRectsCacheRef.current = next;
+          }
+          const cardRects = cardRectsCacheRef.current;
 
           let instantHitId: string | null = null;
           let bestDist = Infinity;
 
-          gazeCardEls.forEach((el) => {
-            const id = el.dataset.gazeId;
-            if (!id) return;
-
-            const rect = el.getBoundingClientRect();
+          for (const { id, rect } of cardRects) {
             const dx = Math.max(rect.left - gazeX, 0, gazeX - rect.right);
             const dy = Math.max(rect.top - gazeY, 0, gazeY - rect.bottom);
             const dist = Math.hypot(dx, dy);
@@ -995,7 +1224,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               bestDist = dist;
               instantHitId = id;
             }
-          });
+          }
 
           if (bestDist > CARD_NEAR_CUTOFF_PX) {
             instantHitId = null;
@@ -1021,10 +1250,9 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // Age every card currently tracked, plus any card visible this
           // frame that isn't in the map yet (starts implicitly at 0).
           const idsToUpdate = new Set<string>(scores.keys());
-          gazeCardEls.forEach((el) => {
-            const id = el.dataset.gazeId;
-            if (id) idsToUpdate.add(id);
-          });
+          for (const { id } of cardRects) {
+            idsToUpdate.add(id);
+          }
 
           idsToUpdate.forEach((id) => {
             const prev = scores.get(id) ?? 0;
@@ -1111,6 +1339,8 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     requestAnimationFrame(loop);
     return () => {
       running = false;
+      window.removeEventListener("resize", invalidateCardRects);
+      window.removeEventListener("orientationchange", invalidateCardRects);
     };
   }, [gazeEnabled]);
 
@@ -1200,6 +1430,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           facingMode: "user",
           width: { ideal: 640 },
           height: { ideal: 480 },
+          // V3.1 — cap the requested capture rate. Front cameras on many
+          // phones default to 60fps; inference only ever runs at a fraction
+          // of that (see TARGET_INFERENCE_INTERVAL_MS), so asking for 60fps
+          // just adds decode overhead with no upside.
+          frameRate: { ideal: 30, max: 30 },
         },
         audio: false,
       });
@@ -1231,44 +1466,158 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       });
       console.log("[Sameyba/Gaze] Camera stream ✓ attached to video element");
 
+      // 4a. V3.1 — with real frames now flowing, empirically check whether
+      // the GPU delegate created above is actually the fast choice on this
+      // specific device, and swap to CPU if not. A working WebGL2 context
+      // (as this device's console log confirms) says nothing about whether
+      // Tasks-Vision's GPU delegate is fast *in this browser* — several
+      // mobile WebViews/Safari builds report a healthy GPU context but pay a
+      // large per-call texture-readback cost that makes CPU (XNNPACK) faster
+      // in practice. A few hundred ms measuring here beats guessing.
+      try {
+        const picked = await pickFasterDelegate(landmarker, video);
+        landmarker = picked.landmarker;
+        faceLandmarkerRef.current = landmarker;
+        inferenceLatencyEmaRef.current = picked.ms;
+        console.log(
+          `[Sameyba/Gaze] Using ${picked.delegate} delegate (${picked.ms.toFixed(1)}ms/frame baseline)`,
+        );
+      } catch (err) {
+        console.warn(
+          "[Sameyba/Gaze] Delegate benchmark failed, continuing with GPU:",
+          err,
+        );
+      }
+
       setPermissionState("granted");
 
-      // 5. Start the continuous detection loop — runs for the whole session
+      // 5. Start the detection loop — runs for the whole session
       //    (independent of gazeEnabled/calibrated), feeding rawRef.current
       //    from the fitted regression once one exists, and latestFeaturesRef
       //    always (used both for warm-up detection and calibration clicks).
+      //
+      // V3.1 replaces V3.0's uncapped per-rAF loop with three changes aimed
+      // at the same root cause — detectForVideo is synchronous and blocks
+      // the main thread for its full duration, and calling it as often as
+      // the display refreshes left no headroom between calls for React,
+      // layout, or paint, which is what produced the trailing/pausing/
+      // jumping cursor on this device:
+      //   a) Gate on requestVideoFrameCallback where available, so a
+      //      genuinely new decoded camera frame — not just a new display
+      //      refresh — is required before inference runs again. On a
+      //      high-refresh-rate phone display with a 30fps camera this alone
+      //      removes a large share of calls that were previously
+      //      reprocessing an unchanged frame for zero benefit.
+      //   b) A minimum-interval throttle (TARGET_INFERENCE_INTERVAL_MS) on
+      //      top of that, decoupling inference rate from camera/display
+      //      rate entirely.
+      //   c) An adaptive backoff: a rolling EMA of each call's real latency
+      //      widens the interval automatically if this device can't keep up
+      //      at the target rate, and recovers toward target if there's
+      //      headroom — so the loop self-tunes per device instead of
+      //      assuming one fixed rate fits all.
       detectionActiveRef.current = true;
-      const detectLoop = () => {
+      inferenceIntervalMsRef.current = TARGET_INFERENCE_INTERVAL_MS;
+      lastInferenceTsRef.current = 0;
+
+      const runInference = (
+        v: HTMLVideoElement,
+        fl: FaceLandmarkerInstance,
+      ) => {
+        const t0 = performance.now();
+        const result = fl.detectForVideo(v, t0);
+        const elapsed = performance.now() - t0;
+
+        // Adaptive interval: EMA of call latency drives the interval up
+        // (back off) when the device is struggling, or back down toward
+        // target when there's headroom. Different trigger fractions for
+        // backoff vs. recovery (hysteresis) keep this from oscillating
+        // frame to frame.
+        const prevEma = inferenceLatencyEmaRef.current;
+        const ema =
+          prevEma === null
+            ? elapsed
+            : prevEma + (elapsed - prevEma) * INFERENCE_LATENCY_EMA_ALPHA;
+        inferenceLatencyEmaRef.current = ema;
+
+        const interval = inferenceIntervalMsRef.current;
+        if (ema > interval * INFERENCE_BACKOFF_TRIGGER) {
+          inferenceIntervalMsRef.current = Math.min(
+            MIN_INFERENCE_INTERVAL_MS,
+            Math.max(interval * 1.25, ema / INFERENCE_BACKOFF_TRIGGER),
+          );
+        } else if (
+          ema < interval * INFERENCE_RECOVER_TRIGGER &&
+          interval > TARGET_INFERENCE_INTERVAL_MS
+        ) {
+          inferenceIntervalMsRef.current = Math.max(
+            TARGET_INFERENCE_INTERVAL_MS,
+            interval * 0.9,
+          );
+        }
+
+        const lm = result.faceLandmarks?.[0] ?? null;
+        const transform =
+          result.facialTransformationMatrixes?.[0]?.data ?? null;
+        const features = lm ? extractGazeFeatures(lm, transform) : null;
+
+        latestFeaturesRef.current = features;
+        if (features) {
+          warmupDetectionCountRef.current++;
+          const buf = recentFeaturesRef.current;
+          buf.push(features);
+          if (buf.length > 6) buf.shift();
+
+          const wx = weightsXRef.current;
+          const wy = weightsYRef.current;
+          if (wx && wy) {
+            // Map back from FaceLandmarker's normalized-image-space
+            // features to screen pixels — the regression was trained
+            // directly against clientX/clientY, so this is just w·features.
+            rawRef.current = { x: dot(wx, features), y: dot(wy, features) };
+          }
+        }
+      };
+
+      const maybeRunInference = () => {
         if (!detectionActiveRef.current) return;
         const v = videoElRef.current;
         const fl = faceLandmarkerRef.current;
         if (v && fl && v.readyState >= 2) {
-          const result = fl.detectForVideo(v, performance.now());
-          const lm = result.faceLandmarks?.[0] ?? null;
-          const transform =
-            result.facialTransformationMatrixes?.[0]?.data ?? null;
-          const features = lm ? extractGazeFeatures(lm, transform) : null;
-
-          latestFeaturesRef.current = features;
-          if (features) {
-            warmupDetectionCountRef.current++;
-            const buf = recentFeaturesRef.current;
-            buf.push(features);
-            if (buf.length > 6) buf.shift();
-
-            const wx = weightsXRef.current;
-            const wy = weightsYRef.current;
-            if (wx && wy) {
-              // Map back from FaceLandmarker's normalized-image-space
-              // features to screen pixels — the regression was trained
-              // directly against clientX/clientY, so this is just w·features.
-              rawRef.current = { x: dot(wx, features), y: dot(wy, features) };
-            }
+          const now = performance.now();
+          if (
+            now - lastInferenceTsRef.current >=
+            inferenceIntervalMsRef.current
+          ) {
+            lastInferenceTsRef.current = now;
+            runInference(v, fl);
           }
         }
-        requestAnimationFrame(detectLoop);
       };
-      requestAnimationFrame(detectLoop);
+
+      type VideoWithFrameCallback = HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+      };
+      const vfcVideo = video as VideoWithFrameCallback;
+
+      if (typeof vfcVideo.requestVideoFrameCallback === "function") {
+        // Only fires once per genuinely new decoded frame — see (a) above.
+        const onVideoFrame = () => {
+          if (!detectionActiveRef.current) return;
+          maybeRunInference();
+          vfcVideo.requestVideoFrameCallback!(onVideoFrame);
+        };
+        vfcVideo.requestVideoFrameCallback(onVideoFrame);
+      } else {
+        // Fallback for browsers without rVFC — still throttled by the same
+        // interval check inside maybeRunInference, just polled via rAF.
+        const detectLoop = () => {
+          if (!detectionActiveRef.current) return;
+          maybeRunInference();
+          requestAnimationFrame(detectLoop);
+        };
+        requestAnimationFrame(detectLoop);
+      }
 
       // 5a. Wait for ≥10 frames with a confidently-detected face before
       //     calibrating — the direct equivalent of WebGazer's old warm-up
@@ -2684,5 +3033,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.0 — MediaPipe FaceLandmarker + custom ridge-regression gaze estimator (Card-Intent Engine unchanged)",
+  "ASHWAG TEST V3.1 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
 );
