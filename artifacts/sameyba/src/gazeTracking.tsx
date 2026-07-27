@@ -306,15 +306,22 @@ const DWELL_THRESHOLD = 0.7;
 const DEPARTURE_TOLERANCE_MS = 200;
 /** Minimum window age (ms) before a vote can fire — avoids false positives */
 const DWELL_MIN_WINDOW_MS = 600;
-// ── Hit-test region padding (Phase 1) ─────────────────────────────────────────
-// Isolation test: replaces exact-pixel elementFromPoint() hit-testing with a
-// padded-rect containment test against every [data-gaze-id] card, so a noisy/
-// imprecise lockOutputX/Y point still resolves to the intended card. Does NOT
-// touch the Unified Stability Lock, the smoothing pipeline feeding it, or the
-// dwell-vote block that consumes the resulting hitId — those are unchanged.
+// ── Hit-test region padding (Phase 2) ─────────────────────────────────────────
+// Enlarged-rect containment test against every [data-gaze-id] card. Phase 2
+// feeds this test with preLockX/preLockY (the responsive, pre-lock median
+// signal) instead of the frozen stability-lock output, so selection tracks
+// the eye directly rather than inheriting whatever position the lock froze
+// on. Value unchanged from Phase 1 — the fix is what feeds the test, not
+// this padding.
 /** Outward padding (px), applied on all four sides of each [data-gaze-id]
  *  element's bounding rect, before testing point containment. */
 const HIT_REGION_PADDING_PX = 28;
+// ── Card-level vote confidence margin (Phase 2) ───────────────────────────────
+/** Minimum lead (as a fraction of window samples) the top card must hold
+ *  over the runner-up card, in addition to clearing DWELL_THRESHOLD, before
+ *  a selection is committed. Prevents a near-tie between two adjacent cards
+ *  from flipping the selection on ordinary sample-to-sample noise. */
+const VOTE_CONFIDENCE_MARGIN = 0.15;
 
 // ── GazeProvider ──────────────────────────────────────────────────────────────
 export function GazeProvider({ children }: { children: React.ReactNode }) {
@@ -412,10 +419,19 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     // v1.6.2 — reset the pre-lock median buffer too, so stale samples from
     // before a recalibration/reset can't bleed into the next session.
     medianPreLockBufRef.current = [];
+    // v1.7 (Phase 2) — reset sustained-departure tracking too.
+    awayStreakRef.current = null;
   }, []);
   // Sample buffer for dwell voting
   type GazeSample = { id: string | null; ts: number };
   const sampleBufRef = useRef<GazeSample[]>([]);
+  /** v1.7 (Phase 2) — tracks how long the instant (unlocked) hit has
+   *  continuously been a different, non-null card than the one currently
+   *  leading the vote. Used to distinguish a brief noisy departure (ignored)
+   *  from a genuine, sustained move to another card (flushes the old card's
+   *  stale samples out of the buffer instead of letting them linger for up
+   *  to the full DWELL_WINDOW_MS). */
+  const awayStreakRef = useRef<{ id: string; since: number } | null>(null);
   // ── Adaptive vertical bias correction (v1.4) ──────────────────────────────
   /** Index (0-4) of the VERIFY_TARGETS entry currently highlighted / being
    * looked at, or null when no verification sweep is in progress. */
@@ -805,16 +821,23 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           // lock. No longer used for hit-testing or dwell (v1.6).
           setGazePos({ x: oneEuroX, y: biasCorrectedY });
 
-          // 4. Hit-test every frame using the unified lock output (v1.6)
-          // Phase 1 (isolation test): padded-rect containment instead of
-          // exact-pixel elementFromPoint(). lockOutputX/Y is UNCHANGED — same
-          // stability-lock output as before; only how it's mapped to a card
-          // id changes. Cards are re-queried every frame (no caching yet —
-          // correctness first, for this isolation test).
+          // 4. Hit-test every frame against enlarged card regions (v1.7 /
+          // Phase 2). Fed by preLockX/preLockY — the responsive, noise-
+          // filtered-but-UNFROZEN signal — instead of lockOutputX/Y. Phase 1
+          // kept using lockOutputX/Y and only widened the containment test;
+          // that didn't help because a bad still window can freeze the lock
+          // onto the wrong spot, and every downstream consumer (hover,
+          // selection) inherited that frozen error until a sustained
+          // deviation released it. Testing against preLockX/Y removes the
+          // lock from that path entirely — hit-testing now tracks the eye
+          // directly, every frame. lockOutputX/Y is UNCHANGED and continues
+          // to drive only the visible cursor above (a responsive approximate
+          // indicator; it no longer feeds selection). Cards are re-queried
+          // every frame (no caching yet — correctness first).
           const gazeCardEls =
             document.querySelectorAll<HTMLElement>("[data-gaze-id]");
 
-          let hitId: string | null = null;
+          let instantHitId: string | null = null;
           let bestCenterDist = Infinity;
 
           gazeCardEls.forEach((el) => {
@@ -828,10 +851,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             const paddedBottom = rect.bottom + HIT_REGION_PADDING_PX;
 
             const inside =
-              lockOutputX >= paddedLeft &&
-              lockOutputX <= paddedRight &&
-              lockOutputY >= paddedTop &&
-              lockOutputY <= paddedBottom;
+              preLockX >= paddedLeft &&
+              preLockX <= paddedRight &&
+              preLockY >= paddedTop &&
+              preLockY <= paddedBottom;
 
             if (!inside) return;
 
@@ -842,27 +865,60 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const centerDist = Math.hypot(
-              lockOutputX - centerX,
-              lockOutputY - centerY,
+              preLockX - centerX,
+              preLockY - centerY,
             );
 
             if (centerDist < bestCenterDist) {
               bestCenterDist = centerDist;
-              hitId = id;
+              instantHitId = id;
             }
           });
 
-          if (hitId !== gazeHoverRef.current) {
-            gazeHoverRef.current = hitId;
-            setGazeHoverId(hitId);
+          if (instantHitId !== gazeHoverRef.current) {
+            gazeHoverRef.current = instantHitId;
+            setGazeHoverId(instantHitId);
           }
 
-          // 5. Sample-based dwell voting
-          //    Rolling 2s window; 70% of samples must be on the same card.
-          //    Gaps < 200ms are forgiven (departure tolerance).
-
+          // 5. Card-level rolling vote (v1.7 / Phase 2)
+          //    Rolling 2s window of instant (unlocked) hits; a card is only
+          //    selected once it holds >= DWELL_THRESHOLD of the window AND
+          //    leads the runner-up by >= VOTE_CONFIDENCE_MARGIN, so a near-
+          //    tie between adjacent cards can't flip the selection on
+          //    ordinary noise. Gaps < DEPARTURE_TOLERANCE_MS are forgiven —
+          //    a null sample inherits the last non-null id.
+          //
+          //    Sustained-departure flush: a brief noisy glance off the
+          //    leading card is tolerated as above, but once the instant hit
+          //    has continuously been a *different*, non-null card for a
+          //    full DEPARTURE_TOLERANCE_MS — a genuine move, not noise —
+          //    every buffered sample belonging to the old card is dropped.
+          //    Without this, stale votes for the previous card would keep
+          //    outvoting the new one for up to the full DWELL_WINDOW_MS
+          //    (2s) after the eye has clearly moved on.
           const buf = sampleBufRef.current;
-          buf.push({ id: hitId, ts: now_ms });
+          const priorTarget = gazeTargetRef.current;
+          const awayStreak = awayStreakRef.current;
+
+          if (instantHitId !== null && instantHitId !== priorTarget) {
+            if (awayStreak && awayStreak.id === instantHitId) {
+              if (now_ms - awayStreak.since >= DEPARTURE_TOLERANCE_MS) {
+                const currentId = instantHitId;
+                for (let i = buf.length - 1; i >= 0; i--) {
+                  if (buf[i].id !== null && buf[i].id !== currentId) {
+                    buf.splice(i, 1);
+                  }
+                }
+                awayStreakRef.current = null;
+              }
+            } else {
+              awayStreakRef.current = { id: instantHitId, since: now_ms };
+            }
+          } else {
+            awayStreakRef.current = null;
+          }
+
+          buf.push({ id: instantHitId, ts: now_ms });
 
           // Prune entries older than DWELL_WINDOW_MS
           const cutoff = now_ms - DWELL_WINDOW_MS;
@@ -890,13 +946,17 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             }
 
             const total = buf.length;
-            let newTargetId: string | null = null;
-            for (const [id, count] of Object.entries(counts)) {
-              if (count / total >= DWELL_THRESHOLD) {
-                newTargetId = id;
-                break;
-              }
-            }
+            const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+            const top = ranked[0];
+            const runnerUpCount = ranked[1]?.[1] ?? 0;
+            const margin = top ? (top[1] - runnerUpCount) / total : 0;
+
+            const newTargetId =
+              top &&
+              top[1] / total >= DWELL_THRESHOLD &&
+              margin >= VOTE_CONFIDENCE_MARGIN
+                ? top[0]
+                : null;
 
             if (newTargetId !== gazeTargetRef.current) {
               gazeTargetRef.current = newTargetId;
@@ -2396,4 +2456,4 @@ function CameraPermissionBanner({
     </AnimatePresence>
   );
 }
-console.log("ASHWAG TEST V1.6.4");
+console.log("ASHWAG TEST V1.6.5");
