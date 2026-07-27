@@ -664,6 +664,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               );
 
               if (driftFromAnchorPx > STILL_WINDOW_RADIUS_PX) {
+                // [DIAG] temporary — still window discarded, distance exceeded radius.
+                console.log(
+                  `[DIAG] still window discarded — distance exceeded radius (drift ${driftFromAnchorPx.toFixed(1)}px > ${STILL_WINDOW_RADIUS_PX}px), had ${stillWindow.samplesX.length} sample(s)`,
+                );
                 // Window broken — discard entirely, restart from this sample.
                 stillWindow.anchor = {
                   x: preLockX,
@@ -675,6 +679,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               } else {
                 stillWindow.samplesX.push(preLockX);
                 stillWindow.samplesY.push(preLockY);
+
+                // [DIAG] temporary — current still window sample count.
+                console.log(
+                  `[DIAG] still window samples: ${stillWindow.samplesX.length}`,
+                );
 
                 if (now_ms - stillWindow.anchor.ts >= STILL_WINDOW_MS) {
                   // Window qualifies — freeze to the per-axis median.
@@ -693,11 +702,18 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                   lockedRef.current = true;
                   releaseCandidateRef.current = null;
 
+                  // [DIAG] temporary — capture sample count before the window is cleared below.
+                  const diagQualifyingSampleCount = stillWindow.samplesX.length;
+
                   // Clear the window — a fresh one only begins after release.
                   stillWindow.anchor = null;
                   stillWindow.samplesX = [];
                   stillWindow.samplesY = [];
 
+                  // [DIAG] temporary — unified stability lock entered LOCKED.
+                  console.log(
+                    `[DIAG] LOCK ENTER — frozen at (${lockedPosRef.current.x.toFixed(1)}, ${lockedPosRef.current.y.toFixed(1)}), window had ${diagQualifyingSampleCount} sample(s)`,
+                  );
                   console.log("STABILITY LOCK");
                 }
               }
@@ -716,6 +732,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                 now_ms - releaseCandidateRef.current.since >=
                 LOCK_RELEASE_SUSTAIN_MS
               ) {
+                // [DIAG] temporary — capture sustain duration before releaseCandidateRef is cleared below.
+                const diagSustainedMs =
+                  now_ms - releaseCandidateRef.current.since;
+
                 // Deviation sustained long enough — release, and start a
                 // completely new still window anchored at the current sample.
                 lockedRef.current = false;
@@ -728,6 +748,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                   samplesY: [preLockY],
                 };
 
+                // [DIAG] temporary — unified stability lock exited LOCKED.
+                console.log(
+                  `[DIAG] LOCK EXIT — deviation ${deviationPx.toFixed(1)}px sustained ${diagSustainedMs.toFixed(0)}ms, new window anchored at (${preLockX.toFixed(1)}, ${preLockY.toFixed(1)})`,
+                );
                 console.log("STABILITY UNLOCK");
               }
             } else {
