@@ -1101,6 +1101,26 @@ const CARD_EXIT_THRESHOLD = 0.35;
  *  before it is allowed to take over — prevents a near-tie between two
  *  adjacent cards from flipping the selection on ordinary sample noise. */
 const CARD_CONFIDENCE_MARGIN = 0.12;
+/** V3.7 — Target-acquisition confirmation gate. A card that newly qualifies
+ *  to become gazeTargetId (whether from null, or by overtaking the current
+ *  target — see CARD_ENTER_THRESHOLD/CARD_EXIT_THRESHOLD/CARD_CONFIDENCE_
+ *  MARGIN above) must hold that exact qualification, uninterrupted, for this
+ *  long before it is actually published as gazeTargetId. This is deliberately
+ *  separate from the score's own rise/fall time constants: CARD_ENTER_
+ *  THRESHOLD is a per-frame snapshot test, so on its own a single noisy frame
+ *  clearing it (a transient estimator spike, a couple of frames' worth of
+ *  instantHitId flicker onto a neighboring card) was enough to switch
+ *  App.tsx's real 2-second dwell ring onto the wrong card — the ring would
+ *  then dutifully run to completion on a target that only ever deserved to
+ *  win one frame. Gating publication behind a short continuous-confirmation
+ *  window (see pendingTargetRef in GazeProvider) turns that into a
+ *  requirement that the challenger keep winning for the full window, which
+ *  ordinary noise essentially cannot do while the user is still genuinely
+ *  fixating the correct card. Does not affect release-to-null (a target
+ *  decaying below CARD_EXIT_THRESHOLD with no qualifying replacement is still
+ *  published immediately, same as before) or the 2-second ring itself, which
+ *  App.tsx owns and this file never touches. */
+const CARD_TARGET_CONFIRM_MS = 400;
 // ── Card-scoring loop perf tuning (V3.1) ──────────────────────────────────────
 /** How often (ms) the [data-gaze-id] bounding-rect cache is refreshed.
  *  getBoundingClientRect forces a synchronous layout; V3.0 re-queried and
@@ -1826,6 +1846,15 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   );
   const gazeTargetRef = useRef<string | null>(null);
   const gazeHoverRef = useRef<string | null>(null);
+  /** V3.7 — Target-acquisition confirmation gate state. Tracks a candidate
+   *  card that currently qualifies to become the new gazeTargetId but hasn't
+   *  held that qualification long enough yet (see CARD_TARGET_CONFIRM_MS).
+   *  Any frame where the qualifying id changes, or stops qualifying, hard-
+   *  resets this to a fresh candidate (or null) — there is no partial credit
+   *  carried over, by design. Never read by App.tsx or anything outside the
+   *  scoring loop below; gazeTargetRef/gazeTargetId (published state) are
+   *  the only things downstream consumers ever see. */
+  const pendingTargetRef = useRef<{ id: string; sinceTs: number } | null>(null);
 
   /** V3.1 — cache of [data-gaze-id] element bounding rects, refreshed at a
    *  fixed low rate (CARD_RECT_REFRESH_MS) instead of every rAF tick.
@@ -1962,6 +1991,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     cursorSmoothRef.current = null;
     gazeTargetRef.current = null;
     gazeHoverRef.current = null;
+    pendingTargetRef.current = null;
     setGazeTargetId(null);
     setGazeHoverId(null);
   }, []);
@@ -2615,9 +2645,46 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             newTargetId = leaderId;
           }
 
-          if (newTargetId !== gazeTargetRef.current) {
-            gazeTargetRef.current = newTargetId;
-            setGazeTargetId(newTargetId);
+          // V3.7 — Target-acquisition confirmation gate. newTargetId above is
+          // unchanged: it's still exactly "who should win this frame" per the
+          // existing hysteresis. What changed is that a DIFFERENT, non-null
+          // candidate no longer gets published the instant it wins one frame
+          // — it must keep winning, uninterrupted, for CARD_TARGET_CONFIRM_MS
+          // before it actually becomes gazeTargetId. Releasing to null (the
+          // target decaying with no qualifying replacement) and "no change
+          // requested" both still take effect immediately, exactly as before.
+          if (newTargetId === gazeTargetRef.current) {
+            // No change requested this frame — nothing pending is relevant.
+            pendingTargetRef.current = null;
+          } else if (newTargetId === null) {
+            // Release to null: unchanged, immediate, same as pre-V3.7.
+            pendingTargetRef.current = null;
+            gazeTargetRef.current = null;
+            setGazeTargetId(null);
+          } else {
+            // newTargetId is a different, non-null candidate than what's
+            // currently published — this is exactly the case that used to
+            // publish on a single qualifying frame.
+            const pending = pendingTargetRef.current;
+            if (pending !== null && pending.id === newTargetId) {
+              // Same candidate still qualifying since we first saw it —
+              // check whether it's now held long enough to publish.
+              if (now_ms - pending.sinceTs >= CARD_TARGET_CONFIRM_MS) {
+                gazeTargetRef.current = newTargetId;
+                setGazeTargetId(newTargetId);
+                pendingTargetRef.current = null;
+              }
+              // else: still within the confirmation window — do not publish
+              // yet, and do not touch gazeTargetRef/setGazeTargetId, so the
+              // currently-published target (and App.tsx's dwell ring) is
+              // fully preserved through this frame's noise.
+            } else {
+              // Either no candidate was pending, or a different candidate
+              // was pending (qualification changed hands) — hard reset:
+              // start a fresh confirmation window for this candidate. No
+              // partial credit carries over from a prior candidate.
+              pendingTargetRef.current = { id: newTargetId, sinceTs: now_ms };
+            }
           }
         }
       }
@@ -4972,5 +5039,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.6 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS calibration repeatability & quality gating: per-click stability gate (bufferIsStable/robustBufferAverage) rejects noisy clicks before they enter the training set, post-fit leave-one-target-out cross-validation gate (evaluateCalibrationFit) rejects a fit that doesn't generalize past its own 9 points, post-verification measured-accuracy gate (evaluateVerificationSweep) rejects a finished model whose real dwell error is too large or too inconsistent to fix with a single bias correction, and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed whenever a new calibration attempt fails either gate or is cancelled instead of being silently overwritten (Card-Intent Engine, MediaPipe pipeline, and card scoring unchanged)",
+  "ASHWAG TEST V3.7 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS calibration repeatability & quality gating: per-click stability gate (bufferIsStable/robustBufferAverage) rejects noisy clicks before they enter the training set, post-fit leave-one-target-out cross-validation gate (evaluateCalibrationFit) rejects a fit that doesn't generalize past its own 9 points, post-verification measured-accuracy gate (evaluateVerificationSweep) rejects a finished model whose real dwell error is too large or too inconsistent to fix with a single bias correction, and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed whenever a new calibration attempt fails either gate or is cancelled instead of being silently overwritten (Card-Intent Engine, MediaPipe pipeline, and card scoring unchanged)",
 );
