@@ -748,6 +748,15 @@ function median(arr: number[]): number {
 //     stability costs — both learned straight from this user's own 9-point
 //     calibration, so it adapts per-session rather than assuming a fixed
 //     compression factor.
+//
+//     [V3.7 update] The paragraph above still correctly describes the
+//     calibration-time affine (fitYAffine, applied when the 9-point
+//     calibration itself completes). A second, verification-time affine
+//     refit was added later (refitVerticalAffineFromVerification) that
+//     re-tightens scale+offset against real dwell data — and it turned out
+//     verticalBiasRef was being fit from the same verification samples on
+//     top of *that*, double-correcting the same error. verticalBiasRef is
+//     now permanently 0; see its own declaration for the full account.
 
 /** Indices into the full 9-element extractGazeFeatures() vector that are
  *  physically relevant to *vertical* gaze: bias, rNormY, lNormY, pitch,
@@ -2041,8 +2050,30 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [verifying]);
 
-  /** Learned vertical bias in pixels.
-   * correctedY = predictedY - verticalBiasRef.current */
+  /** V3.7 — DEPRECATED / permanently zero. Root-caused: this additive
+   *  vertical bias and refitVerticalAffineFromVerification() (see below)
+   *  were both being fit from the exact same verification-sweep Y samples
+   *  (verifyTargetSamplesRef), measuring the *same* systematic vertical
+   *  error twice — once absorbed into yAffineRef's scale+offset (which by
+   *  construction drives the mean residual on those samples to ~0), and
+   *  then a second time as this additive term subtracted on top of the
+   *  already-corrected output. That double-correction is what produced the
+   *  visible cursor drifting/settling below the true fixation point after
+   *  every successful verification, even while card selection stayed ~85%
+   *  correct (card hit-regions are large enough to absorb the extra
+   *  constant offset most of the time; the thin cursor dot is not).
+   *
+   *  Fix: refitVerticalAffineFromVerification() is the more principled of
+   *  the two (a proper per-target-cleaned least-squares scale+offset fit)
+   *  and is kept as the sole source of vertical correction.
+   *  estimateAndApplyBiasCorrections() below no longer estimates or writes
+   *  a vertical term — see its own comment. This ref is left in place
+   *  (rather than deleted) purely so `biasCorrectedY = oneEuroY -
+   *  verticalBiasRef.current` below doesn't need to change shape; it is
+   *  never assigned anything but 0 anymore, so that line is now a no-op
+   *  pass-through. Any vertical bias persisted by a pre-V3.7 build is
+   *  stale (it was fit under the old double-correction logic) and is
+   *  purged from storage on mount below rather than loaded. */
   const verticalBiasRef = useRef<number>(0);
   /** Learned horizontal bias in pixels (V2.1).
    * correctedX = predictedX - horizontalBiasRef.current */
@@ -2068,22 +2099,24 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // V3.7 — the additive vertical bias stage is retired (see
+    // verticalBiasRef's own comment above): it was double-counting the
+    // same error refitVerticalAffineFromVerification() already corrects.
+    // Any value sitting under VBIAS_STORAGE_KEY from a build before this
+    // fix was fit under that old, double-correcting logic and is no
+    // longer valid — it is deliberately never loaded into
+    // verticalBiasRef.current (which stays at its initial 0), and the
+    // stale key is purged here the same way LEGACY_BIAS_STORAGE_KEYS is
+    // above, so it can't linger as a trap for a future change.
     try {
-      const stored = localStorage.getItem(VBIAS_STORAGE_KEY);
-      const parsed = stored !== null ? parseFloat(stored) : NaN;
-
-      if (!Number.isNaN(parsed)) {
-        verticalBiasRef.current = Math.max(
-          -VBIAS_CLAMP_PX,
-          Math.min(VBIAS_CLAMP_PX, parsed),
-        );
-
+      if (localStorage.getItem(VBIAS_STORAGE_KEY) !== null) {
         console.log(
-          `[Sameyba/Gaze] Loaded persisted vertical bias: ${verticalBiasRef.current.toFixed(1)}px`,
+          `[Sameyba/Gaze] Discarding stale pre-V3.7 vertical bias key (superseded by Y-affine verification refit): ${VBIAS_STORAGE_KEY}`,
         );
+        localStorage.removeItem(VBIAS_STORAGE_KEY);
       }
     } catch {
-      // localStorage unavailable — use zero bias.
+      // localStorage unavailable — nothing to purge.
     }
 
     try {
@@ -2182,17 +2215,19 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  /** Runs the vertical estimate (v1.4 behavior, unchanged) followed by the
-   *  new horizontal estimate (V2.1) — both read from the same verification
-   *  sweep, so this always replaces the old vertical-only call site. */
+  /** V3.7 — runs ONLY the horizontal bias estimate now. The vertical call
+   *  that used to sit here was removed: it was fed the exact same
+   *  verifyTargetSamplesRef that refitVerticalAffineFromVerification()
+   *  (called immediately before this, at this function's one call site)
+   *  already uses to fit a proper scale+offset correction against, so the
+   *  two were measuring and correcting the same systematic vertical error
+   *  twice — see verticalBiasRef's comment for the full root-cause and why
+   *  that produced a visible downward cursor drift after verification.
+   *  estimateAxisBias itself is untouched (still shared machinery), and
+   *  the horizontal call below is byte-for-byte the same as before this
+   *  fix — horizontal has no matching affine stage, so no double-count
+   *  exists on that axis and nothing about it needed to change. */
   const estimateAndApplyBiasCorrections = useCallback(() => {
-    estimateAxisBias(
-      verifyTargetSamplesRef.current,
-      (i) => window.innerHeight * VERIFY_TARGETS[i].yFrac,
-      "Vertical",
-      VBIAS_STORAGE_KEY,
-      verticalBiasRef,
-    );
     estimateAxisBias(
       verifyTargetXSamplesRef.current,
       (i) => window.innerWidth * VERIFY_TARGETS[i].xFrac,
@@ -3688,9 +3723,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                     verifyReport.reasons,
                   );
                   // Undo the candidate that was live for this sweep;
-                  // verticalBiasRef/horizontalBiasRef were never touched
-                  // yet (estimateAndApplyBiasCorrections hasn't run), so
-                  // only the weights/affine need restoring.
+                  // horizontalBiasRef was never touched yet
+                  // (estimateAndApplyBiasCorrections hasn't run) and
+                  // verticalBiasRef is permanently 0 (V3.7 — see its own
+                  // comment), so only the weights/affine need restoring.
                   restoreLastGoodModel();
                   verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
                   verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(
@@ -3705,9 +3741,13 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                 }
 
                 // Passed — commit. V3.4: tighten the Y affine against the
-                // actual top/center/bottom verification measurements before
-                // the (small, additive-only) residual bias estimate below
-                // runs on top of it — see refitVerticalAffineFromVerification.
+                // actual top/center/bottom verification measurements — see
+                // refitVerticalAffineFromVerification. V3.7: it is now the
+                // sole vertical correction; estimateAndApplyBiasCorrections
+                // below only estimates the horizontal bias (there is no
+                // matching horizontal affine stage, so no double-count
+                // exists on that axis) — see that function's own comment
+                // for why the vertical branch it used to run was removed.
                 refitVerticalAffineFromVerification();
                 estimateAndApplyBiasCorrections();
                 verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
@@ -5039,5 +5079,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.7 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS calibration repeatability & quality gating: per-click stability gate (bufferIsStable/robustBufferAverage) rejects noisy clicks before they enter the training set, post-fit leave-one-target-out cross-validation gate (evaluateCalibrationFit) rejects a fit that doesn't generalize past its own 9 points, post-verification measured-accuracy gate (evaluateVerificationSweep) rejects a finished model whose real dwell error is too large or too inconsistent to fix with a single bias correction, and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed whenever a new calibration attempt fails either gate or is cancelled instead of being silently overwritten (Card-Intent Engine, MediaPipe pipeline, and card scoring unchanged)",
+  "ASHWAG TEST V3.6 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS calibration repeatability & quality gating: per-click stability gate (bufferIsStable/robustBufferAverage) rejects noisy clicks before they enter the training set, post-fit leave-one-target-out cross-validation gate (evaluateCalibrationFit) rejects a fit that doesn't generalize past its own 9 points, post-verification measured-accuracy gate (evaluateVerificationSweep) rejects a finished model whose real dwell error is too large or too inconsistent to fix with a single bias correction, and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed whenever a new calibration attempt fails either gate or is cancelled instead of being silently overwritten (Card-Intent Engine, MediaPipe pipeline, and card scoring unchanged)",
 );
