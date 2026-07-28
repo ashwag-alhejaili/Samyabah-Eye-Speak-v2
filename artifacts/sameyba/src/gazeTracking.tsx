@@ -1184,6 +1184,16 @@ const VBIAS_MAD_K = 3;
 const VBIAS_MIN_VALID_TARGETS = 3;
 /** Safety clamp on the learned vertical correction. */
 const VBIAS_CLAMP_PX = 160;
+/** V3.9 — a single verification target gets at most this many automatic
+ *  repeats (extra VERIFY_DWELL_MS dwell windows) when its own samples come
+ *  back too sparse or too jittery (see isVerifyTargetGood /
+ *  CAL_MAX_VERIFY_TARGET_JITTER_PX below), before it's accepted anyway so
+ *  one persistently hard target can't deadlock the sweep — the exact same
+ *  "retry this point, then force through" policy CAL_CLICK_MAX_RETRIES_PER_TARGET
+ *  already applies to calibration clicks. Only that one target repeats; the
+ *  other verification targets, and the 9-point calibration that already
+ *  passed, are never touched. */
+const VERIFY_TARGET_MAX_RETRIES = 2;
 // ── Calibration constants ─────────────────────────────────────────────────────
 /** 9-point grid as [col%, row%] fractions of the viewport */
 const CAL_POINTS: [number, number][] = [
@@ -1199,48 +1209,48 @@ const CAL_POINTS: [number, number][] = [
 ];
 const CLICKS_PER_POINT = 2;
 
-// ── Calibration repeatability & quality gating (V3.6) ─────────────────────────
-// Two calibration runs on the exact same build, same device, still diverged
-// sharply — one run tracked smoothly with a roughly-correct center; the next
-// showed visible jitter, a downward drift, and collapsed accuracy overall.
-// Nothing in the pipeline up to this point ever checked whether a given
-// run's *input* samples were actually clean, or whether the *resulting*
-// model generalized past the exact 9 points it was fit from — every fit,
-// however noisy, was written straight into the live model the instant it
-// finished (see the old handleCalClick: wx/wy/yAffine were assigned to
-// weightsXRef/weightsYRef/yAffineRef unconditionally). A single contaminated
-// click — a blink, a saccade still in flight from the previous point, a
-// head twitch — could and apparently did silently produce a materially
-// worse model with no way to tell until the person was already using it.
+// ── Calibration repeatability & per-point retry policy (V3.9) ─────────────────
+// V3.6 (see prior revision of this comment) added two *global* gates on top
+// of per-click stability: a post-fit leave-one-out cross-validation check
+// across all 9 points, and a pooled post-verification accuracy check across
+// all 5 verification targets. Both were "all-points" gates — if the numbers
+// came out bad, the entire 9-point run (or the entire verification sweep)
+// was thrown out and the person had to start over from calibration point 1,
+// even though every individual point had already been confirmed as a
+// stable, accepted fixation at the time it was clicked. That is the wrong
+// unit of retry: a single noisy target shouldn't cost the other eight
+// already-good ones.
 //
-// V3.6 closes that gap with three independent, ordered gates, none of which
-// touch MediaPipe, card scoring, or the dwell/selection engine:
+// V3.9 simplifies this to one deterministic rule, applied at the level of a
+// single point instead of the whole run:
 //   1. Per-click sample stability (bufferIsStable / robustBufferAverage) —
 //      a click only counts if the last several frames of eye-position
 //      features actually agree with each other; otherwise the person is
-//      asked to hold still and click again, instead of a noisy single
-//      frame quietly entering the training set.
-//   2. Post-fit quality scoring (evaluateCalibrationFit) — once all 9
-//      points are in, before the fit ever touches the live model: does the
-//      feature extractor even distinguish the 9 targets from each other,
-//      does the fitted model explain its own training data, and —
-//      critically — does a leave-one-target-out refit still predict the
-//      held-out target well? That last check is what actually catches "the
-//      model overfit one bad target": ridge shrinkage can make in-sample
-//      error look deceptively fine even when one point is a landmine, but
-//      that point's own held-out prediction gives it away.
-//   3. Post-verification measured-accuracy scoring
-//      (evaluateVerificationSweep) — the real top/center/bottom/left/right
-//      dwell samples already collected for the affine refit + bias
-//      correction are reused as a final, independent check: is the
-//      *finished* model's error small AND consistent across the screen (a
-//      single scalar bias can only fix a consistent offset — the reported
-//      "downward drift", for instance — never per-target inconsistency /
-//      jitter)?
-// A run that fails any gate never overwrites the working model — see
-// lastGoodModelRef and restoreLastGoodModel below — and the person is asked
-// to redo calibration with a concrete, stated reason, rather than the app
-// silently getting worse after "successful" recalibration.
+//      asked to hold still and click again, and ONLY that same calibration
+//      point repeats (see handleCalClick / CAL_CLICK_MAX_RETRIES_PER_TARGET).
+//   2. The identical idea applies to the post-calibration verification
+//      sweep: each of the 5 verification targets is checked individually
+//      (sample count + jitter) right after its own dwell window — a poor
+//      target repeats itself (see the per-target retry loop below /
+//      VERIFY_TARGET_MAX_RETRIES), never the whole sweep and never the
+//      9-point calibration that already passed.
+//   3. Once all 9 calibration points have been individually accepted, the
+//      fit is committed — full stop. There is no further global pass/fail
+//      gate re-litigating the already-accepted points. evaluateCalibrationFit
+//      below still computes the same diagnostic metrics (unique feature
+//      vectors, variance ratio, in-sample/LOOCV RMSE) but now only logs them
+//      to the console as warnings; they can no longer reject a completed
+//      9-point run. The one remaining hard stop is a literal fit failure
+//      (wx/wy came back null — there is no model at all to activate), which
+//      is not a quality threshold, just "did the math produce something
+//      usable."
+//   4. Likewise, evaluateVerificationSweep's pooled jitter/residual/bias
+//      checks are now diagnostics-only. Verification exists to *refine* the
+//      model (affine refit + bias correction) — it must never send the
+//      person back to redo calibration once the 9 points already passed.
+// The previously-active model (lastGoodModelRef/restoreLastGoodModel) is
+// still preserved and resumed if a recalibration attempt is cancelled, or in
+// the one remaining hard-failure case above — never silently discarded.
 
 /** Minimum consecutive recent frames required in the click-time feature
  *  buffer (recentFeaturesRef) before a calibration click is accepted at
@@ -1396,10 +1406,20 @@ function robustBufferAverage(buf: number[][], featureCount: number): number[] {
 }
 
 interface CalFitQualityReport {
+  /** V3.9 — true unless the fit literally failed to produce a model at all
+   *  (wx/wy null). No longer driven by the numeric diagnostics below — see
+   *  the "Calibration repeatability & per-point retry policy" section
+   *  comment. Once all 9 points are individually accepted, the run is
+   *  committed regardless of these metrics. */
   passed: boolean;
-  /** Human-readable (Arabic, matches app locale), shown to the person if
-   *  the run is rejected. Empty when passed. */
+  /** Human-readable (Arabic, matches app locale). Only ever non-empty in
+   *  the one remaining hard-failure case (couldn't compute a model at all);
+   *  everything else that used to land here is now a console warning only
+   *  (see warnings). */
   reasons: string[];
+  /** V3.9 — same numeric diagnostics V3.6 used to gate on, now purely
+   *  informational: logged to the console, never blocks acceptance. */
+  warnings: string[];
   metrics: {
     uniqueVectors: number;
     varianceRatio: number;
@@ -1411,13 +1431,18 @@ interface CalFitQualityReport {
   };
 }
 
-/** V3.6 — scores a just-completed 9-point calibration fit BEFORE it's
- *  allowed to touch the live model. See the section comment above for what
- *  each check catches; in short: (1)+(2) catch a tracker that isn't
- *  actually responding to gaze at all, (3) catches a fit that doesn't even
- *  explain its own training clicks, and (4) — leave-one-target-out
- *  cross-validation — catches the "model overfit one bad calibration
- *  target" failure mode specifically, which (3) alone can miss. */
+/** V3.9 — computes diagnostic quality metrics for a just-completed 9-point
+ *  calibration fit and logs (but no longer enforces) them. Each individual
+ *  point was already validated for stability at click time
+ *  (bufferIsStable / handleCalClick) and repeated on its own if unstable —
+ *  see the section comment above. This function used to be a blocking gate
+ *  on the whole 9-point run (V3.6); V3.9 keeps it only for visibility: does
+ *  the feature extractor distinguish the 9 targets from each other, does
+ *  the fit explain its own training data, does a leave-one-target-out
+ *  refit still predict the held-out target well. All of that is now
+ *  reported via `warnings` (and the console), never via `reasons` /
+ *  `passed: false`, except when wx/wy themselves came back null — i.e.
+ *  there is no model, not merely a low-quality one. */
 function evaluateCalibrationFit(params: {
   /** 18 raw per-click feature vectors, in target-major order (see
    *  aggregateByCalibrationTarget's own doc comment for why that ordering
@@ -1451,11 +1476,17 @@ function evaluateCalibrationFit(params: {
     screenH,
   } = params;
   const reasons: string[] = [];
+  const warnings: string[] = [];
 
+  // The one remaining hard stop: the ridge fit produced no model at all
+  // (e.g. degenerate/rank-deficient input). This is not a quality
+  // threshold — there is nothing to activate, so the run cannot be
+  // committed no matter how lenient the gating policy is.
   if (!wx || !wy) {
     return {
       passed: false,
       reasons: ["تعذّر احتساب نموذج المعايرة — عدد العينات الصالحة قليل جدًا"],
+      warnings,
       metrics: {
         uniqueVectors: 0,
         varianceRatio: 0,
@@ -1471,7 +1502,7 @@ function evaluateCalibrationFit(params: {
   // 1. Feature discriminability — the "frozen tracker" gate.
   const uniqueVectors = new Set(rawFeatures.map(diagFeatureKey)).size;
   if (uniqueVectors < CAL_MIN_UNIQUE_FEATURE_VECTORS) {
-    reasons.push(
+    warnings.push(
       `تتبع العين لا يتغير مع نظرك إلى نقاط مختلفة (${uniqueVectors} قراءة مختلفة فقط) — تأكد من الإضاءة ومن ظهور وجهك بوضوح`,
     );
   }
@@ -1511,7 +1542,7 @@ function evaluateCalibrationFit(params: {
   const varianceRatio =
     meanWithin > 1e-9 ? meanBetween / meanWithin : meanBetween > 1e-9 ? 999 : 0;
   if (varianceRatio < CAL_MIN_VARIANCE_RATIO) {
-    reasons.push(
+    warnings.push(
       `الفروق في نظرة العين بين نقاط المعايرة صغيرة جدًا مقارنة بتذبذب النقرات نفسها (نسبة ${varianceRatio.toFixed(2)})`,
     );
   }
@@ -1537,12 +1568,12 @@ function evaluateCalibrationFit(params: {
   const yRmseInFrac = Math.sqrt(ySq / yAggFeatures.length) / screenH;
 
   if (xRmseInFrac > CAL_MAX_IN_SAMPLE_RMSE_FRAC) {
-    reasons.push(
+    warnings.push(
       `خطأ أفقي مرتفع حتى على نقاط المعايرة نفسها (${(xRmseInFrac * 100).toFixed(1)}% من عرض الشاشة)`,
     );
   }
   if (yRmseInFrac > CAL_MAX_IN_SAMPLE_RMSE_FRAC) {
-    reasons.push(
+    warnings.push(
       `خطأ رأسي مرتفع حتى على نقاط المعايرة نفسها (${(yRmseInFrac * 100).toFixed(1)}% من ارتفاع الشاشة)`,
     );
   }
@@ -1607,28 +1638,42 @@ function evaluateCalibrationFit(params: {
       : Math.sqrt(ySq / yAggFeatures.length)) / screenH;
 
   if (xLoocvRmseFrac > CAL_MAX_LOOCV_RMSE_FRAC) {
-    reasons.push(
+    warnings.push(
       `النموذج لا يعمّم أفقيًا عند استبعاد كل نقطة معايرة على حدة (${(xLoocvRmseFrac * 100).toFixed(1)}%) — على الأرجح إحدى النقاط كانت غير دقيقة`,
     );
   }
   if (yLoocvRmseFrac > CAL_MAX_LOOCV_RMSE_FRAC) {
-    reasons.push(
+    warnings.push(
       `النموذج لا يعمّم رأسيًا عند استبعاد كل نقطة معايرة على حدة (${(yLoocvRmseFrac * 100).toFixed(1)}%) — على الأرجح إحدى النقاط كانت غير دقيقة`,
     );
   }
 
-  // 5. Too many forced-through unstable targets — independent of what the
-  //    numeric fit checks above say, this many low-confidence inputs means
-  //    the *data*, not just the fit, can't be trusted this run.
+  // 5. Forced-through unstable targets — informational only. Each of these
+  //    was already retried up to CAL_CLICK_MAX_RETRIES_PER_TARGET times at
+  //    click time (see handleCalClick) before being force-accepted; that
+  //    per-point retry already happened, so this is no longer grounds to
+  //    reject the whole (otherwise-complete) 9-point run.
   if (unstableTargetCount > CAL_MAX_UNSTABLE_TARGETS) {
-    reasons.push(
+    warnings.push(
       `عدد كبير من نقاط المعايرة سُجّل رغم عدم ثبات النظر عليها (${unstableTargetCount} نقاط)`,
     );
   }
 
+  if (warnings.length > 0) {
+    console.warn(
+      "[Sameyba/Gaze] Calibration diagnostics flagged (informational only — run still accepted):",
+      warnings,
+    );
+  }
+
+  // V3.9 — all 9 points already passed their own per-click stability gate;
+  // a model was successfully fit. That's acceptance, full stop — the
+  // metrics above are logged for visibility only and never reject a
+  // completed run (see the section comment above).
   return {
-    passed: reasons.length === 0,
+    passed: true,
     reasons,
+    warnings,
     metrics: {
       uniqueVectors,
       varianceRatio,
@@ -1642,8 +1687,17 @@ function evaluateCalibrationFit(params: {
 }
 
 interface VerifySweepQualityReport {
-  passed: boolean;
+  /** V3.9 — always true. Kept on the type so call sites don't need to
+   *  change shape, but verification no longer has a pass/fail outcome of
+   *  its own: per-target quality is handled during the sweep itself (see
+   *  isVerifyTargetGood / the per-target retry loop in GazeProvider), and
+   *  once the 9-point calibration passed, nothing at the verification
+   *  stage sends the person back to redo it. */
+  passed: true;
   reasons: string[];
+  /** V3.9 — informational only; logged to the console, never blocks
+   *  committing the refined model. */
+  warnings: string[];
   metrics: {
     validYTargets: number;
     validXTargets: number;
@@ -1656,22 +1710,46 @@ interface VerifySweepQualityReport {
   };
 }
 
-/** V3.6 — final, independent quality gate using the real dwell samples
- *  already collected during the verification sweep (the same samples
- *  refitVerticalAffineFromVerification / estimateAxisBias below read from),
- *  evaluated BEFORE either of those is allowed to commit anything. Two
- *  things are checked per axis, per target: how *jittery* the samples were
- *  during a deliberate fixation (catches "visible jitter"), and — after
- *  removing the single best-fit scalar bias — how much the remaining error
- *  still varies target to target (catches "cursor drifted" style problems
- *  that are actually inconsistent across the screen, which a single
- *  constant correction can never fix, as opposed to a uniform offset,
- *  which it can). */
+/** V3.9 — computes diagnostic accuracy metrics from the real dwell samples
+ *  collected during the verification sweep (the same samples
+ *  refitVerticalAffineFromVerification / estimateAxisBias below read from)
+ *  and logs them. This used to be a final blocking gate (V3.6) that could
+ *  reject the whole sweep and send the person back to redo the 9-point
+ *  calibration. It no longer does that: per-target quality is now enforced
+ *  live, during the sweep, by repeating just the poor target (see the
+ *  per-target retry loop in GazeProvider) — by the time this runs, every
+ *  target has already either passed on its own or been force-accepted
+ *  after its retries, the same policy used for calibration clicks. This
+ *  function's numbers are for visibility only. */
+/** V3.9 — per-target check used WHILE the verification sweep is running
+ *  (see the per-target retry loop in GazeProvider), as opposed to
+ *  evaluateVerificationSweep above which only reports after the fact. Mirrors
+ *  bufferIsStable's role for calibration clicks: "was this one point good
+ *  enough", not "was the whole run good enough". A target is good once it
+ *  has enough post-settle samples on both axes and neither axis is jittering
+ *  more than a real fixation should (CAL_MAX_VERIFY_TARGET_JITTER_PX). */
+function isVerifyTargetGood(ySamples: number[], xSamples: number[]): boolean {
+  if (
+    ySamples.length < VBIAS_MIN_SAMPLES_PER_TARGET ||
+    xSamples.length < VBIAS_MIN_SAMPLES_PER_TARGET
+  ) {
+    return false;
+  }
+  const jitterOf = (samples: number[]): number => {
+    const med = median(samples);
+    return median(samples.map((v) => Math.abs(v - med))) * 1.4826;
+  };
+  return (
+    jitterOf(ySamples) <= CAL_MAX_VERIFY_TARGET_JITTER_PX &&
+    jitterOf(xSamples) <= CAL_MAX_VERIFY_TARGET_JITTER_PX
+  );
+}
+
 function evaluateVerificationSweep(
   ySamplesPerTarget: number[][],
   xSamplesPerTarget: number[][],
 ): VerifySweepQualityReport {
-  const reasons: string[] = [];
+  const warnings: string[] = [];
 
   function analyzeAxis(
     samplesPerTarget: number[][],
@@ -1723,45 +1801,56 @@ function evaluateVerificationSweep(
   );
 
   if (!yResult) {
-    reasons.push("عدد العينات الرأسية أثناء التحقق غير كافٍ للحكم على الدقة");
+    warnings.push("عدد العينات الرأسية أثناء التحقق غير كافٍ للحكم على الدقة");
   }
   if (!xResult) {
-    reasons.push("عدد العينات الأفقية أثناء التحقق غير كافٍ للحكم على الدقة");
+    warnings.push("عدد العينات الأفقية أثناء التحقق غير كافٍ للحكم على الدقة");
   }
   if (yResult) {
     if (yResult.jitterPx > CAL_MAX_VERIFY_TARGET_JITTER_PX) {
-      reasons.push(
+      warnings.push(
         `تذبذب رأسي ملحوظ أثناء التحقق (${yResult.jitterPx.toFixed(0)}px) حتى مع تثبيت النظر`,
       );
     }
     if (yResult.residualSpreadPx > CAL_MAX_VERIFY_RESIDUAL_SPREAD_PX) {
-      reasons.push(
+      warnings.push(
         `خطأ رأسي غير متسق بين نقاط التحقق (${yResult.residualSpreadPx.toFixed(0)}px) — تصحيح ثابت واحد لا يكفي لإصلاحه`,
       );
     }
     if (Math.abs(yResult.bias) >= CAL_MAX_LEARNED_BIAS_PX) {
-      reasons.push(`انحراف رأسي كبير جدًا (${yResult.bias.toFixed(0)}px)`);
+      warnings.push(`انحراف رأسي كبير جدًا (${yResult.bias.toFixed(0)}px)`);
     }
   }
   if (xResult) {
     if (xResult.jitterPx > CAL_MAX_VERIFY_TARGET_JITTER_PX) {
-      reasons.push(
+      warnings.push(
         `تذبذب أفقي ملحوظ أثناء التحقق (${xResult.jitterPx.toFixed(0)}px) حتى مع تثبيت النظر`,
       );
     }
     if (xResult.residualSpreadPx > CAL_MAX_VERIFY_RESIDUAL_SPREAD_PX) {
-      reasons.push(
+      warnings.push(
         `خطأ أفقي غير متسق بين نقاط التحقق (${xResult.residualSpreadPx.toFixed(0)}px) — تصحيح ثابت واحد لا يكفي لإصلاحه`,
       );
     }
     if (Math.abs(xResult.bias) >= CAL_MAX_LEARNED_BIAS_PX) {
-      reasons.push(`انحراف أفقي كبير جدًا (${xResult.bias.toFixed(0)}px)`);
+      warnings.push(`انحراف أفقي كبير جدًا (${xResult.bias.toFixed(0)}px)`);
     }
   }
 
+  if (warnings.length > 0) {
+    console.warn(
+      "[Sameyba/Gaze] Verification diagnostics flagged (informational only — refinement still applied):",
+      warnings,
+    );
+  }
+
+  // V3.9 — always passes. Per-target quality was already enforced live
+  // during the sweep (see the per-target retry loop in GazeProvider); this
+  // is a final visibility report, not a second gate.
   return {
-    passed: reasons.length === 0,
-    reasons,
+    passed: true,
+    reasons: [],
+    warnings,
     metrics: {
       validYTargets: yResult?.validCount ?? 0,
       validXTargets: xResult?.validCount ?? 0,
@@ -2009,10 +2098,13 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
    * looked at, or null when no verification sweep is in progress. */
   const [verifyStep, setVerifyStep] = useState<number | null>(null);
 
-  /** Mirrors verifyStep inside the rAF loop. */
+  /** Mirrors verifyStep inside the rAF loop. Set directly (not only via the
+   *  effect below) by the per-target retry loop so a *repeated* dwell on
+   *  the same target index still resets the settle-window clock — see
+   *  runVerifyStep. */
   const verifyStepRef = useRef<number | null>(null);
 
-  /** Timestamp of when the current verifyStep began. */
+  /** Timestamp of when the current verifyStep's dwell window began. */
   const verifyStepStartTsRef = useRef<number>(0);
 
   useEffect(() => {
@@ -2029,25 +2121,102 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const verifyTargetXSamplesRef = useRef<number[][]>(
     VERIFY_TARGETS.map(() => []),
   );
-  // Drive the sequential sweep across VERIFY_TARGETS while verification is open.
+  /** V3.9 — number of extra dwell windows already used for each
+   *  verification target index (0 until it's had to repeat once). Reset at
+   *  the start of every sweep. Capped at VERIFY_TARGET_MAX_RETRIES so one
+   *  hard target can't deadlock the sweep — same policy as
+   *  CAL_CLICK_MAX_RETRIES_PER_TARGET for calibration clicks. */
+  const verifyTargetRetriesRef = useRef<number[]>(VERIFY_TARGETS.map(() => 0));
+  /** V3.9 — brief "hold steady, checking this point again" notice shown
+   *  while a single verification target is repeating. Purely informational
+   *  — mirrors calClickWarning's role during calibration clicks. */
+  const [verifyTargetNotice, setVerifyTargetNotice] = useState<string | null>(
+    null,
+  );
+
+  // ── Per-target verification retry loop (V3.9) ─────────────────────────────
+  /** Drives the sweep across VERIFY_TARGETS one target at a time. Each
+   *  target gets one VERIFY_DWELL_MS dwell window; right after it, that
+   *  target's own collected samples (verifyTargetSamplesRef/
+   *  verifyTargetXSamplesRef) are checked with isVerifyTargetGood. If
+   *  they're not good enough AND this target hasn't exhausted its retries,
+   *  ONLY this same target repeats — its buffers are cleared and it gets
+   *  another dwell window. Otherwise (good, or retries exhausted so it's
+   *  force-accepted) the sweep moves to the next target. This replaces the
+   *  V3.6/V3.8 blind timer that advanced through all 5 targets regardless
+   *  of sample quality and only judged everything pooled, after the fact,
+   *  at Confirm — see the section comment near
+   *  CAL_CLICK_MIN_BUFFERED_FRAMES for the full policy this now matches. */
   useEffect(() => {
     if (!verifying) {
       setVerifyStep(null);
+      setVerifyTargetNotice(null);
       return;
     }
 
-    setVerifyStep(0);
+    let cancelled = false;
+    verifyTargetRetriesRef.current = VERIFY_TARGETS.map(() => 0);
 
-    const interval = setInterval(() => {
-      setVerifyStep((prev) => {
-        if (prev === null) return prev;
+    function runVerifyStep(i: number) {
+      if (cancelled) return;
 
-        const next = prev + 1;
-        return next < VERIFY_TARGETS.length ? next : null;
-      });
-    }, VERIFY_DWELL_MS);
+      // Set the refs directly (not only via the [verifyStep] effect above)
+      // so a *repeat* of the same index — where setVerifyStep(i) is a
+      // no-op re-render since the value didn't change — still resets the
+      // settle-window clock for this fresh attempt.
+      verifyStepRef.current = i;
+      verifyStepStartTsRef.current = performance.now();
+      setVerifyStep(i);
+      setVerifyTargetNotice(null);
 
-    return () => clearInterval(interval);
+      window.setTimeout(() => {
+        if (cancelled) return;
+
+        const ySamples = verifyTargetSamplesRef.current[i];
+        const xSamples = verifyTargetXSamplesRef.current[i];
+        const good = isVerifyTargetGood(ySamples, xSamples);
+        const retries = verifyTargetRetriesRef.current[i];
+
+        if (!good && retries < VERIFY_TARGET_MAX_RETRIES) {
+          // Repeat ONLY this target — clear its samples and dwell again.
+          // The other targets, and the 9-point calibration already
+          // accepted before this sweep began, are untouched.
+          verifyTargetRetriesRef.current[i] = retries + 1;
+          verifyTargetSamplesRef.current[i] = [];
+          verifyTargetXSamplesRef.current[i] = [];
+          console.log(
+            `[Sameyba/Gaze] Verify target ${i + 1}/${VERIFY_TARGETS.length} repeating` +
+              ` (retry ${retries + 1}/${VERIFY_TARGET_MAX_RETRIES}) — samples too sparse or jittery`,
+          );
+          setVerifyTargetNotice("ثبّت نظرك على هذه النقطة قليلاً بعد");
+          runVerifyStep(i);
+          return;
+        }
+
+        if (!good) {
+          // Retries exhausted — force-accept so the sweep can't deadlock
+          // on one persistently hard target, mirroring the calibration
+          // click policy (CAL_CLICK_MAX_RETRIES_PER_TARGET).
+          console.log(
+            `[Sameyba/Gaze] Verify target ${i + 1}/${VERIFY_TARGETS.length} accepted after ${VERIFY_TARGET_MAX_RETRIES} retries (low-confidence)`,
+          );
+        }
+
+        const next = i + 1;
+        if (next < VERIFY_TARGETS.length) {
+          runVerifyStep(next);
+        } else {
+          setVerifyStep(null);
+          setVerifyTargetNotice(null);
+        }
+      }, VERIFY_DWELL_MS);
+    }
+
+    runVerifyStep(0);
+
+    return () => {
+      cancelled = true;
+    };
   }, [verifying]);
 
   /** V3.7 — DEPRECATED / permanently zero. Root-caused: this additive
@@ -3247,7 +3416,12 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    // V3.6 — score BEFORE this candidate ever touches the active model.
+    // V3.9 — all 9 points already passed their own per-click stability
+    // gate (see handleCalClick), so this run is diagnostics-only: log the
+    // same metrics V3.6 used to gate on, but only reject if the fit
+    // literally produced no model (wx/wy null) — see evaluateCalibrationFit
+    // and the "Calibration repeatability & per-point retry policy" section
+    // comment above.
     const fitReport = evaluateCalibrationFit({
       rawFeatures: trainingFeaturesRef.current,
       rawTargetX: trainingTargetXRef.current,
@@ -3262,13 +3436,16 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       screenH: window.innerHeight,
     });
     console.log(
-      "[Sameyba/Gaze][DIAG] Calibration quality gate (pre-verification):",
+      "[Sameyba/Gaze][DIAG] Calibration diagnostics (informational only):",
       fitReport,
     );
 
     if (!fitReport.passed) {
+      // Only reachable when wx/wy came back null — there's no model to
+      // activate, not a quality judgement call. Every other case, no
+      // matter how the diagnostics above look, is accepted below.
       console.warn(
-        "[Sameyba/Gaze] Calibration REJECTED before verification — keeping previous model (if any)",
+        "[Sameyba/Gaze] Calibration fit failed — no model produced; keeping previous model (if any)",
         fitReport.reasons,
       );
       restoreLastGoodModel();
@@ -3277,9 +3454,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Passed — this candidate becomes the active model, used live during
+    // All 9 points passed individually and the fit succeeded — accepted,
+    // full stop. This candidate becomes the active model, used live during
     // the upcoming verification sweep so the person sees its real accuracy
-    // before it's asked to be their final model.
+    // before it's asked to confirm it as their final model.
     weightsXRef.current = wx;
     weightsYRef.current = wy;
     yAffineRef.current = yAffineDraft;
@@ -3332,6 +3510,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setCalClickWarning(null);
     setCalRejection(null);
     setVerifying(false);
+    setVerifyTargetNotice(null);
     setCalibrating(true);
     console.log("[Sameyba/Gaze] Calibration attempt retried");
   }, []);
@@ -3449,6 +3628,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setGazeEnabled(false);
     setCalibrated(false);
     setVerifying(false);
+    setVerifyTargetNotice(null);
     setCalSuccess(false);
     setCalRejection(null);
     setCalClickWarning(null);
@@ -3476,6 +3656,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const cancelCalibration = useCallback(() => {
     setCalibrating(false);
     setVerifying(false);
+    setVerifyTargetNotice(null);
     setCalSuccess(false);
     setCalStep(0);
     setCalClicks(0);
@@ -3654,6 +3835,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               gazePos={gazePos}
               visualPos={visualCursorPos}
               verifyStep={verifyStep}
+              retryNotice={verifyTargetNotice}
               onConfirm={() => {
                 // ── DIAGNOSTICS (V3.1 instrumentation) — evaluate the raw
                 // (pre-filter, pre-bias-correction) verification-sweep
@@ -3699,49 +3881,24 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                   console.groupEnd();
                 }
 
-                // V3.6 — final, independent quality gate using the actual
-                // real dwell samples from this sweep, BEFORE either the
-                // affine refit or the bias correction is allowed to commit
-                // anything. This is what catches a candidate that passed
-                // the pre-verification fit checks (evaluateCalibrationFit)
-                // but still measures badly once dwelt on for real — e.g.
-                // exactly the kind of run-to-run instability described:
-                // one calibration attempt tracking smoothly, the next
-                // showing jitter or a systematic drift under the same code.
+                // V3.9 — diagnostics only. Per-target quality was already
+                // enforced live during the sweep (a poor target repeated
+                // itself — see the per-target retry loop below); there is
+                // no longer a pooled pass/fail check here that could send
+                // the person back to redo the 9-point calibration that
+                // already passed. Verification's only remaining job is to
+                // *refine* the already-accepted model.
                 const verifyReport = evaluateVerificationSweep(
                   verifyTargetSamplesRef.current,
                   verifyTargetXSamplesRef.current,
                 );
                 console.log(
-                  "[Sameyba/Gaze][DIAG] Calibration quality gate (post-verification):",
+                  "[Sameyba/Gaze][DIAG] Verification diagnostics (informational only):",
                   verifyReport,
                 );
 
-                if (!verifyReport.passed) {
-                  console.warn(
-                    "[Sameyba/Gaze] Calibration REJECTED after verification — keeping previous model (if any)",
-                    verifyReport.reasons,
-                  );
-                  // Undo the candidate that was live for this sweep;
-                  // horizontalBiasRef was never touched yet
-                  // (estimateAndApplyBiasCorrections hasn't run) and
-                  // verticalBiasRef is permanently 0 (V3.7 — see its own
-                  // comment), so only the weights/affine need restoring.
-                  restoreLastGoodModel();
-                  verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
-                  verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(
-                    () => [],
-                  );
-                  setVerifying(false);
-                  setCalRejection({
-                    stage: "verify",
-                    reasons: verifyReport.reasons,
-                  });
-                  return;
-                }
-
-                // Passed — commit. V3.4: tighten the Y affine against the
-                // actual top/center/bottom verification measurements — see
+                // Commit. V3.4: tighten the Y affine against the actual
+                // top/center/bottom verification measurements — see
                 // refitVerticalAffineFromVerification. V3.7: it is now the
                 // sole vertical correction; estimateAndApplyBiasCorrections
                 // below only estimates the horizontal bias (there is no
@@ -3989,14 +4146,22 @@ function CalibrationInstructionCard({
   );
 }
 
-// ── CalibrationRejectedCard (V3.6) ────────────────────────────────────────────
-/** Shown when a completed calibration attempt fails either quality gate
- *  (evaluateCalibrationFit right after the 9 points, or
- *  evaluateVerificationSweep after the dwell sweep). Explains — in plain
- *  terms, not raw metric names — why the run was rejected, and offers to
- *  retry (redo the 9-point sequence) or cancel back (which, if a previous
- *  working model exists, resumes it — see cancelCalibration /
- *  restoreLastGoodModel in GazeProvider). */
+// ── CalibrationRejectedCard (V3.6, narrowed in V3.9) ──────────────────────────
+/** V3.9 — with the global quality gates removed (see the "Calibration
+ *  repeatability & per-point retry policy" section comment near
+ *  CAL_CLICK_MIN_BUFFERED_FRAMES), this card is only ever shown for the
+ *  `stage: "fit"` case, and only in the one remaining hard-failure
+ *  scenario: the ridge fit came back with no model at all (wx/wy null) —
+ *  there's nothing to activate, not a quality judgement call. The
+ *  `stage: "verify"` case is unreachable — verification no longer rejects
+ *  and redoes the whole calibration; a poor verification target repeats
+ *  itself instead (see the per-target retry loop in GazeProvider /
+ *  isVerifyTargetGood). The `stage` field and its "verify" branch are kept
+ *  on the type only so this component's shape doesn't need to change.
+ *  Explains — in plain terms, not raw metric names — why the run couldn't
+ *  be completed, and offers to retry (redo the 9-point sequence) or cancel
+ *  back (which, if a previous working model exists, resumes it — see
+ *  cancelCalibration / restoreLastGoodModel in GazeProvider). */
 function CalibrationRejectedCard({
   stage,
   reasons,
@@ -4608,6 +4773,7 @@ function CalibrationVerification({
   gazePos,
   visualPos,
   verifyStep,
+  retryNotice,
   onConfirm,
   onRecalibrate,
   onCancel,
@@ -4615,6 +4781,10 @@ function CalibrationVerification({
   gazePos: { x: number; y: number } | null;
   visualPos: { x: number; y: number } | null;
   verifyStep: number | null;
+  /** V3.9 — brief "hold steady" notice shown while the current verification
+   *  target is repeating its dwell window (see isVerifyTargetGood /
+   *  VERIFY_TARGET_MAX_RETRIES). Null the rest of the time. */
+  retryNotice?: string | null;
   onConfirm: () => void;
   onRecalibrate: () => void;
   onCancel?: () => void;
@@ -4665,6 +4835,18 @@ function CalibrationVerification({
         >
           انظر إلى كل نقطة — هل يتابعها المؤشر الأخضر؟
         </p>
+        {retryNotice && (
+          <p
+            style={{
+              fontSize: "0.85rem",
+              fontWeight: 700,
+              color: "#E8B34C",
+              margin: "10px 0 0",
+            }}
+          >
+            {retryNotice}
+          </p>
+        )}
       </div>
 
       {/* Test targets */}
@@ -5079,5 +5261,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.6 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS calibration repeatability & quality gating: per-click stability gate (bufferIsStable/robustBufferAverage) rejects noisy clicks before they enter the training set, post-fit leave-one-target-out cross-validation gate (evaluateCalibrationFit) rejects a fit that doesn't generalize past its own 9 points, post-verification measured-accuracy gate (evaluateVerificationSweep) rejects a finished model whose real dwell error is too large or too inconsistent to fix with a single bias correction, and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed whenever a new calibration attempt fails either gate or is cancelled instead of being silently overwritten (Card-Intent Engine, MediaPipe pipeline, and card scoring unchanged)",
+  "ASHWAG TEST V3.9 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS deterministic per-point calibration retry policy: per-click stability gate (bufferIsStable/robustBufferAverage) repeats ONLY the current calibration point until it's stable (or force-accepts after CAL_CLICK_MAX_RETRIES_PER_TARGET), the matching per-target check (isVerifyTargetGood) repeats ONLY the current verification target the same way, once all 9 calibration points pass the fit is accepted unconditionally (evaluateCalibrationFit/evaluateVerificationSweep are now diagnostics-only, logged as warnings, never reject a completed run), and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed only if a recalibration attempt is cancelled or the fit itself literally fails to produce a model (Card-Intent Engine, MediaPipe pipeline, Y-affine logic, 400ms target confirmation, and card scoring unchanged)",
 );
