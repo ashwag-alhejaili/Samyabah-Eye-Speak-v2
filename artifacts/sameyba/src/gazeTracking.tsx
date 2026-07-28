@@ -1194,6 +1194,51 @@ const VBIAS_CLAMP_PX = 160;
  *  other verification targets, and the 9-point calibration that already
  *  passed, are never touched. */
 const VERIFY_TARGET_MAX_RETRIES = 2;
+
+// ── Passive online vertical drift correction (V4.0) ────────────────────────
+// refitVerticalAffineFromVerification() (above) fits yAffineRef exactly once,
+// right after calibration, from the verification sweep's clean dwell samples.
+// That is the *only* place yAffineRef is ever touched again during the
+// session — real usage afterward never re-samples it. A slow within-session
+// vertical drift (head or seating position settling, fatigue, the camera
+// angle changing slightly) has no way to be seen or corrected by a fit taken
+// once at t=0, no matter how good that one fit was.
+//
+// The card-scoring pipeline already produces the same kind of trustworthy
+// signal the verification sweep does, continuously, during ordinary use: by
+// the time gazeTargetId is published (CARD_ENTER_THRESHOLD /
+// CARD_CONFIDENCE_MARGIN / CARD_TARGET_CONFIRM_MS above), it is already a
+// confirmed, hysteresis-protected sustained fixation on one specific card.
+// If it stays on that same card for a full ordinary App.tsx dwell period,
+// that is, for all practical purposes, an in-the-wild repeat of a
+// verification target — the "true" position (that card's center) is known,
+// and the filtered gaze samples collected during the hold are the same
+// quality of evidence refitVerticalAffineFromVerification() already trusts.
+// This block only ever nudges yAffineRef's offset (via the existing
+// composeAffine, the same mechanism the verification refit already uses) —
+// it does not touch calibration, the card-scoring/hysteresis logic above,
+// or App.tsx's dwell ring itself.
+/** Assumed duration (ms) of App.tsx's real dwell-to-select ring. Kept
+ *  slightly under it (that ring is documented elsewhere in this file as
+ *  "the real 2-second dwell ring") so the hold is almost certainly still a
+ *  genuine, settled fixation — not a selection already mid-transition — by
+ *  the time a sample is taken. */
+const PASSIVE_DRIFT_ASSUMED_DWELL_MS = 1800;
+/** Minimum number of per-frame samples a single hold needs before its
+ *  median is trusted at all (mirrors VBIAS_MIN_SAMPLES_PER_TARGET's role). */
+const PASSIVE_DRIFT_MIN_SAMPLES_PER_HOLD = 6;
+/** A single hold's residual larger than this (px) is almost certainly a
+ *  mis-scored or transitioning hold, not real drift — discarded rather than
+ *  allowed to pull the correction around. */
+const PASSIVE_DRIFT_MAX_RESIDUAL_PX = VBIAS_CLAMP_PX;
+/** Number of confirmed holds pooled (median) before applying one small
+ *  nudge — a single hold is never enough on its own to move the model. */
+const PASSIVE_DRIFT_MIN_HOLDS_BEFORE_NUDGE = 3;
+/** How much of the pooled median residual is actually applied per nudge.
+ *  Deliberately slow: several confirmed selections are required to fully
+ *  absorb a given amount of drift, so one atypical hold can't swing the
+ *  model on its own. */
+const PASSIVE_DRIFT_NUDGE_RATE = 0.2;
 // ── Calibration constants ─────────────────────────────────────────────────────
 /** 9-point grid as [col%, row%] fractions of the viewport */
 const CAL_POINTS: [number, number][] = [
@@ -2092,7 +2137,33 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     pendingTargetRef.current = null;
     setGazeTargetId(null);
     setGazeHoverId(null);
+
+    // V4.0 — a recalibration/reset invalidates whatever hold was in
+    // progress and any pooled residuals collected under the old model.
+    passiveHoldTargetIdRef.current = null;
+    passiveHoldStartTsRef.current = null;
+    passiveHoldSamplesRef.current = { x: [], y: [] };
+    passiveHoldAppliedRef.current = false;
+    passiveDriftResidualBufferRef.current = [];
   }, []);
+  // ── Passive online vertical drift correction (V4.0) — see the tuning
+  // constants' own comment above for the full rationale. State for the
+  // hold currently being tracked (at most one at a time — the card
+  // gazeTargetId is presently locked onto, if any). */
+  const passiveHoldTargetIdRef = useRef<string | null>(null);
+  const passiveHoldStartTsRef = useRef<number | null>(null);
+  const passiveHoldSamplesRef = useRef<{ x: number[]; y: number[] }>({
+    x: [],
+    y: [],
+  });
+  /** True once this hold has already contributed (or been discarded from)
+   *  the residual pool — ensures at most one sample per hold, so a person
+   *  staring at the same card well past the dwell duration can't feed the
+   *  pool repeatedly from what is really one single fixation. */
+  const passiveHoldAppliedRef = useRef<boolean>(false);
+  /** Rolling pool of per-hold median residuals (px), consumed and cleared
+   *  every time a nudge is applied. */
+  const passiveDriftResidualBufferRef = useRef<number[]>([]);
   // ── Adaptive vertical bias correction (v1.4) ──────────────────────────────
   /** Index (0-4) of the VERIFY_TARGETS entry currently highlighted / being
    * looked at, or null when no verification sweep is in progress. */
@@ -2888,6 +2959,83 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               // start a fresh confirmation window for this candidate. No
               // partial credit carries over from a prior candidate.
               pendingTargetRef.current = { id: newTargetId, sinceTs: now_ms };
+            }
+          }
+
+          // ── V4.0 — passive online vertical drift correction. Runs after
+          // gazeTargetRef.current above has already been finalized for this
+          // frame, so `heldId` below is exactly "the card gazeTargetId is
+          // published as right now, if any" — the same value App.tsx's own
+          // dwell ring is driven by. See the PASSIVE_DRIFT_* constants'
+          // comment for the full rationale; this block only ever composes a
+          // small offset onto yAffineRef, the same value
+          // refitVerticalAffineFromVerification() already owns. ───────────
+          {
+            const heldId = gazeTargetRef.current;
+
+            if (heldId !== passiveHoldTargetIdRef.current) {
+              // Target changed (including to/from null, or one card handing
+              // off to another) — whatever was being accumulated belonged
+              // to the previous hold and is no longer valid. Start fresh.
+              passiveHoldTargetIdRef.current = heldId;
+              passiveHoldStartTsRef.current = heldId !== null ? now_ms : null;
+              passiveHoldSamplesRef.current = { x: [], y: [] };
+              passiveHoldAppliedRef.current = false;
+            } else if (heldId !== null && !passiveHoldAppliedRef.current) {
+              passiveHoldSamplesRef.current.y.push(gazeY);
+              passiveHoldSamplesRef.current.x.push(gazeX);
+
+              const holdStart = passiveHoldStartTsRef.current;
+              if (
+                holdStart !== null &&
+                now_ms - holdStart >= PASSIVE_DRIFT_ASSUMED_DWELL_MS
+              ) {
+                // At most one contribution per hold, whether or not it ends
+                // up passing the checks below — a person who keeps staring
+                // at the same card well past the dwell duration is still
+                // only one fixation's worth of evidence.
+                passiveHoldAppliedRef.current = true;
+
+                const ySamples = passiveHoldSamplesRef.current.y;
+                if (ySamples.length >= PASSIVE_DRIFT_MIN_SAMPLES_PER_HOLD) {
+                  const targetRect = cardRectsCacheRef.current.find(
+                    (r) => r.id === heldId,
+                  )?.rect;
+
+                  if (targetRect) {
+                    const trueCenterY =
+                      (targetRect.top + targetRect.bottom) / 2;
+                    const observedY = median(ySamples);
+                    const residual = observedY - trueCenterY;
+
+                    // Implausibly large residual — almost certainly a
+                    // mis-scored or transitioning hold (e.g. the layout
+                    // changed mid-hold), not real drift. Drop it rather
+                    // than let it pull the pooled correction around.
+                    if (Math.abs(residual) <= PASSIVE_DRIFT_MAX_RESIDUAL_PX) {
+                      const buf = passiveDriftResidualBufferRef.current;
+                      buf.push(residual);
+
+                      if (buf.length >= PASSIVE_DRIFT_MIN_HOLDS_BEFORE_NUDGE) {
+                        const pooledResidual = median(buf);
+                        const nudge = pooledResidual * PASSIVE_DRIFT_NUDGE_RATE;
+
+                        yAffineRef.current = composeAffine(yAffineRef.current, {
+                          scale: 1,
+                          offset: -nudge,
+                        });
+
+                        console.log(
+                          `[Sameyba/Gaze] Passive drift correction — offset nudged by ${(-nudge).toFixed(1)}px ` +
+                            `(pooled median residual ${pooledResidual.toFixed(1)}px over ${buf.length} confirmed holds)`,
+                        );
+
+                        buf.length = 0;
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
