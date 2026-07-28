@@ -656,6 +656,19 @@ function dot(w: number[], x: number[]): number {
   return s;
 }
 
+/** Module-level median — hoisted out of GazeProvider (V3.6) so the new
+ *  calibration-quality-gating functions below (which are plain module
+ *  functions, not hooks, so they can be unit-reasoned-about independently
+ *  of React) can share exactly the same implementation the verification-
+ *  sweep bias estimator already used. */
+function median(arr: number[]): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 // ── Dedicated vertical (Y) gaze model (V3.2) ──────────────────────────────────
 // ── ROOT CAUSE OF "cursor dragged downward, Y range compressed" (V3.2) ──
 // The V3.1.1 standardization fix made X and Y share one 9-feature ridge
@@ -1157,6 +1170,582 @@ const CAL_POINTS: [number, number][] = [
 ];
 const CLICKS_PER_POINT = 2;
 
+// ── Calibration repeatability & quality gating (V3.6) ─────────────────────────
+// Two calibration runs on the exact same build, same device, still diverged
+// sharply — one run tracked smoothly with a roughly-correct center; the next
+// showed visible jitter, a downward drift, and collapsed accuracy overall.
+// Nothing in the pipeline up to this point ever checked whether a given
+// run's *input* samples were actually clean, or whether the *resulting*
+// model generalized past the exact 9 points it was fit from — every fit,
+// however noisy, was written straight into the live model the instant it
+// finished (see the old handleCalClick: wx/wy/yAffine were assigned to
+// weightsXRef/weightsYRef/yAffineRef unconditionally). A single contaminated
+// click — a blink, a saccade still in flight from the previous point, a
+// head twitch — could and apparently did silently produce a materially
+// worse model with no way to tell until the person was already using it.
+//
+// V3.6 closes that gap with three independent, ordered gates, none of which
+// touch MediaPipe, card scoring, or the dwell/selection engine:
+//   1. Per-click sample stability (bufferIsStable / robustBufferAverage) —
+//      a click only counts if the last several frames of eye-position
+//      features actually agree with each other; otherwise the person is
+//      asked to hold still and click again, instead of a noisy single
+//      frame quietly entering the training set.
+//   2. Post-fit quality scoring (evaluateCalibrationFit) — once all 9
+//      points are in, before the fit ever touches the live model: does the
+//      feature extractor even distinguish the 9 targets from each other,
+//      does the fitted model explain its own training data, and —
+//      critically — does a leave-one-target-out refit still predict the
+//      held-out target well? That last check is what actually catches "the
+//      model overfit one bad target": ridge shrinkage can make in-sample
+//      error look deceptively fine even when one point is a landmine, but
+//      that point's own held-out prediction gives it away.
+//   3. Post-verification measured-accuracy scoring
+//      (evaluateVerificationSweep) — the real top/center/bottom/left/right
+//      dwell samples already collected for the affine refit + bias
+//      correction are reused as a final, independent check: is the
+//      *finished* model's error small AND consistent across the screen (a
+//      single scalar bias can only fix a consistent offset — the reported
+//      "downward drift", for instance — never per-target inconsistency /
+//      jitter)?
+// A run that fails any gate never overwrites the working model — see
+// lastGoodModelRef and restoreLastGoodModel below — and the person is asked
+// to redo calibration with a concrete, stated reason, rather than the app
+// silently getting worse after "successful" recalibration.
+
+/** Minimum consecutive recent frames required in the click-time feature
+ *  buffer (recentFeaturesRef) before a calibration click is accepted at
+ *  all. Below this there simply isn't enough evidence that the recorded
+ *  vector reflects a steady fixation rather than one (possibly blinking or
+ *  transitional) frame. recentFeaturesRef caps at 6 frames; requiring 4
+ *  means a click needs ~2/3 of that window filled at ~24Hz inference (~165ms
+ *  of real history) before it's trusted. */
+const CAL_CLICK_MIN_BUFFERED_FRAMES = 4;
+
+/** Per-feature max spread (max−min) allowed across the click-time buffer,
+ *  checked only on the iris-position features (rNormX/rNormY/lNormX/
+ *  lNormY — see bufferFeatureSpread) since those are what actually encode
+ *  "where is the eye looking" as opposed to head-pose features that
+ *  legitimately vary more moment to moment. These features live in a
+ *  roughly 0..1 normalized range per eye-box, so this is a fraction of
+ *  that box, not px. Loose enough that ordinary micro-jitter during a
+ *  genuine fixation passes; tight enough to catch a saccade still in
+ *  flight from the previous calibration point, or a blink-adjacent frame,
+ *  mixed into the buffer. */
+const CAL_CLICK_MAX_FEATURE_SPREAD = 0.09;
+
+/** A single physical calibration target gets at most this many "hold still
+ *  and click again" rejections before its click is accepted anyway (using
+ *  the buffer's own robust/median-filtered average — see
+ *  robustBufferAverage) so one persistently noisy point (poor lighting,
+ *  a person who can't easily hold a fixation) can't deadlock the whole
+ *  flow. The target is flagged low-confidence either way — see
+ *  unstableCalTargetsRef — and that flag feeds the post-fit quality gate. */
+const CAL_CLICK_MAX_RETRIES_PER_TARGET = 3;
+
+/** Below this many *unique* feature vectors across all 18 clicks, the
+ *  feature extractor isn't distinguishing calibration targets from each
+ *  other at all — this is the "frozen tracker" failure mode (previously
+ *  only a logged warning; V3.6 makes it a hard gate). */
+const CAL_MIN_UNIQUE_FEATURE_VECTORS = 6;
+
+/** Between-target variance must be at least this many times the mean
+ *  within-target (click-to-click) variance, averaged over the non-bias
+ *  features, for the 9 targets to be considered actually distinguishable
+ *  rather than lost in per-click noise. */
+const CAL_MIN_VARIANCE_RATIO = 1.5;
+
+/** In-sample RMSE ceiling (as a fraction of the relevant screen dimension)
+ *  for the fitted model evaluated on its own 9 (target-aggregated) training
+ *  points. Deliberately generous — ridge regularization means in-sample
+ *  error alone rarely catches a genuinely bad fit; this is mainly a sanity
+ *  floor ahead of the much stricter leave-one-out check below. */
+const CAL_MAX_IN_SAMPLE_RMSE_FRAC = 0.12;
+
+/** Leave-one-target-out cross-validation RMSE ceiling (fraction of the
+ *  relevant screen dimension). This is the primary "did the model overfit
+ *  one bad calibration target" check: a single contaminated target
+ *  inflates its own *held-out* prediction error far more than it inflates
+ *  in-sample error, which ridge shrinkage can otherwise mask. */
+const CAL_MAX_LOOCV_RMSE_FRAC = 0.22;
+
+/** More than this many calibration targets forced through after exhausting
+ *  their stability retries (see CAL_CLICK_MAX_RETRIES_PER_TARGET) is treated
+ *  as an outright fail regardless of what the numeric fit checks say — that
+ *  many low-confidence targets means the *inputs* were bad, independent of
+ *  how well the regression happened to fit them. */
+const CAL_MAX_UNSTABLE_TARGETS = 2;
+
+/** Per-verification-target jitter ceiling (px) — the robust spread (MAD ×
+ *  1.4826) of the One-Euro-filtered samples collected while the person
+ *  held a steady gaze on one verification target. High jitter here means
+ *  the *finished* model is noisy even during a deliberate fixation — the
+ *  literal symptom reported ("visible jitter appeared"). */
+const CAL_MAX_VERIFY_TARGET_JITTER_PX = 90;
+
+/** Ceiling (px) on how much the per-target residual-from-expected is
+ *  allowed to vary across verification targets, after removing the single
+ *  best-fit scalar bias. A constant offset (e.g. "cursor drifted downward")
+ *  is exactly what the bias correction fixes; residual error that's
+ *  *inconsistent* target-to-target is not fixable by that one scalar and
+ *  means the underlying model itself is unreliable. */
+const CAL_MAX_VERIFY_RESIDUAL_SPREAD_PX = 90;
+
+/** If the bias this run would need is at/near VBIAS_CLAMP_PX, the true
+ *  required correction may be even larger than what the clamp allows to be
+ *  applied — a red flag on its own even though the (clamped) correction is
+ *  technically "applied". */
+const CAL_MAX_LEARNED_BIAS_PX = 150;
+
+/** Fitted model + Y-affine to fall back to if a new calibration attempt
+ *  fails quality gating, or is cancelled before it passes. Populated by
+ *  recalibrate() (see below) right before it clears the active model for a
+ *  fresh attempt, so there's always a snapshot of "whatever was working
+ *  before this attempt started" to restore from. Null before the very
+ *  first calibration ever completes — there's nothing to fall back to yet,
+ *  so a failed first attempt has no choice but to ask the person to retry. */
+interface GoodModelSnapshot {
+  wx: number[];
+  wy: number[];
+  yAffine: AffineParams;
+}
+
+/** Per-feature spread (max−min) across a buffer of recent feature vectors,
+ *  restricted to the iris-position features (indices 1..4 — rNormX,
+ *  rNormY, lNormX, lNormY). Used to gate an individual calibration click —
+ *  see CAL_CLICK_MAX_FEATURE_SPREAD / bufferIsStable. */
+function bufferFeatureSpread(buf: number[][]): number[] {
+  const idx = [1, 2, 3, 4];
+  return idx.map((a) => {
+    let lo = Infinity,
+      hi = -Infinity;
+    for (const f of buf) {
+      if (f[a] < lo) lo = f[a];
+      if (f[a] > hi) hi = f[a];
+    }
+    return hi - lo;
+  });
+}
+
+/** A calibration click's underlying buffer counts as "stable" — safe to
+ *  record as a training sample — only if it has enough recent frames AND
+ *  those frames agree with each other on iris position within
+ *  CAL_CLICK_MAX_FEATURE_SPREAD. See CAL_CLICK_MIN_BUFFERED_FRAMES. */
+function bufferIsStable(buf: number[][]): boolean {
+  if (buf.length < CAL_CLICK_MIN_BUFFERED_FRAMES) return false;
+  return bufferFeatureSpread(buf).every(
+    (s) => s <= CAL_CLICK_MAX_FEATURE_SPREAD,
+  );
+}
+
+/** Median-filtered per-feature average of a click-time buffer — the same
+ *  idea as the plain mean already used at click time, but first drops, per
+ *  feature independently, any buffered frame further than ~2 robust
+ *  standard deviations (median absolute deviation × 1.4826) from that
+ *  feature's own median across the buffer. With a buffer this small (≤6
+ *  frames) a single contaminated frame — a blink caught mid-buffer, a
+ *  brief mis-detection — can otherwise pull a plain mean noticeably off
+ *  even when bufferIsStable's coarser spread check passes it. This is the
+ *  same MAD-cleaning approach already used for the verification-sweep bias
+ *  estimate (see estimateAxisBias below), applied here to the raw
+ *  calibration-click buffer itself rather than to a whole target's worth
+ *  of dwell samples. */
+function robustBufferAverage(buf: number[][], featureCount: number): number[] {
+  const avg = new Array(featureCount).fill(0);
+  avg[0] = 1; // bias term stays exact
+  for (let a = 1; a < featureCount; a++) {
+    const vals = buf.map((f) => f[a]).sort((x, y) => x - y);
+    const med = vals[Math.floor(vals.length / 2)];
+    const absDevs = vals.map((v) => Math.abs(v - med)).sort((x, y) => x - y);
+    const mad = absDevs[Math.floor(absDevs.length / 2)] * 1.4826;
+    const cleaned =
+      mad === 0 ? vals : vals.filter((v) => Math.abs(v - med) <= 2 * mad);
+    const source = cleaned.length > 0 ? cleaned : vals;
+    avg[a] = source.reduce((s, v) => s + v, 0) / source.length;
+  }
+  return avg;
+}
+
+interface CalFitQualityReport {
+  passed: boolean;
+  /** Human-readable (Arabic, matches app locale), shown to the person if
+   *  the run is rejected. Empty when passed. */
+  reasons: string[];
+  metrics: {
+    uniqueVectors: number;
+    varianceRatio: number;
+    xRmseInFrac: number;
+    yRmseInFrac: number;
+    xLoocvRmseFrac: number;
+    yLoocvRmseFrac: number;
+    unstableTargetCount: number;
+  };
+}
+
+/** V3.6 — scores a just-completed 9-point calibration fit BEFORE it's
+ *  allowed to touch the live model. See the section comment above for what
+ *  each check catches; in short: (1)+(2) catch a tracker that isn't
+ *  actually responding to gaze at all, (3) catches a fit that doesn't even
+ *  explain its own training clicks, and (4) — leave-one-target-out
+ *  cross-validation — catches the "model overfit one bad calibration
+ *  target" failure mode specifically, which (3) alone can miss. */
+function evaluateCalibrationFit(params: {
+  /** 18 raw per-click feature vectors, in target-major order (see
+   *  aggregateByCalibrationTarget's own doc comment for why that ordering
+   *  is guaranteed). */
+  rawFeatures: number[][];
+  rawTargetX: number[];
+  rawTargetY: number[];
+  wx: number[] | null;
+  wy: number[] | null;
+  yAffine: AffineParams;
+  /** 9 calibration-target-aggregated Y-subfeature vectors + targets — the
+   *  same aggregation the live Y fit itself uses (see
+   *  aggregateByCalibrationTarget). */
+  yAggFeatures: number[][];
+  yAggTargets: number[];
+  unstableTargetCount: number;
+  screenW: number;
+  screenH: number;
+}): CalFitQualityReport {
+  const {
+    rawFeatures,
+    rawTargetX,
+    rawTargetY,
+    wx,
+    wy,
+    yAffine,
+    yAggFeatures,
+    yAggTargets,
+    unstableTargetCount,
+    screenW,
+    screenH,
+  } = params;
+  const reasons: string[] = [];
+
+  if (!wx || !wy) {
+    return {
+      passed: false,
+      reasons: ["تعذّر احتساب نموذج المعايرة — عدد العينات الصالحة قليل جدًا"],
+      metrics: {
+        uniqueVectors: 0,
+        varianceRatio: 0,
+        xRmseInFrac: 1,
+        yRmseInFrac: 1,
+        xLoocvRmseFrac: 1,
+        yLoocvRmseFrac: 1,
+        unstableTargetCount,
+      },
+    };
+  }
+
+  // 1. Feature discriminability — the "frozen tracker" gate.
+  const uniqueVectors = new Set(rawFeatures.map(diagFeatureKey)).size;
+  if (uniqueVectors < CAL_MIN_UNIQUE_FEATURE_VECTORS) {
+    reasons.push(
+      `تتبع العين لا يتغير مع نظرك إلى نقاط مختلفة (${uniqueVectors} قراءة مختلفة فقط) — تأكد من الإضاءة ومن ظهور وجهك بوضوح`,
+    );
+  }
+
+  // 2. Between-target vs. within-target variance ratio.
+  const nTargets = CAL_POINTS.length;
+  const perTargetMeans: number[][] = [];
+  let withinSum = 0,
+    withinCount = 0;
+  for (let p = 0; p < nTargets; p++) {
+    const group = rawFeatures.slice(
+      p * CLICKS_PER_POINT,
+      p * CLICKS_PER_POINT + CLICKS_PER_POINT,
+    );
+    if (group.length === 0) continue;
+    const variance = diagFeatureVariance(group);
+    const mean = new Array(GAZE_FEATURE_COUNT).fill(0);
+    group.forEach((f) => {
+      for (let i = 0; i < GAZE_FEATURE_COUNT; i++)
+        mean[i] += f[i] / group.length;
+    });
+    perTargetMeans.push(mean);
+    for (let i = 1; i < GAZE_FEATURE_COUNT; i++) {
+      withinSum += variance[i];
+      withinCount++;
+    }
+  }
+  const meanWithin = withinCount > 0 ? withinSum / withinCount : 0;
+  const betweenVar = diagFeatureVariance(perTargetMeans);
+  let betweenSum = 0,
+    betweenCount = 0;
+  for (let i = 1; i < GAZE_FEATURE_COUNT; i++) {
+    betweenSum += betweenVar[i];
+    betweenCount++;
+  }
+  const meanBetween = betweenCount > 0 ? betweenSum / betweenCount : 0;
+  const varianceRatio =
+    meanWithin > 1e-9 ? meanBetween / meanWithin : meanBetween > 1e-9 ? 999 : 0;
+  if (varianceRatio < CAL_MIN_VARIANCE_RATIO) {
+    reasons.push(
+      `الفروق في نظرة العين بين نقاط المعايرة صغيرة جدًا مقارنة بتذبذب النقرات نفسها (نسبة ${varianceRatio.toFixed(2)})`,
+    );
+  }
+
+  // 3. In-sample RMSE — X against the raw 18 clicks, Y against the 9
+  //    aggregated targets with the just-fitted affine applied (comparing
+  //    pre-affine ridge output directly to px targets would always look
+  //    bad by design — the affine's whole job is restoring range the ridge
+  //    fit deliberately shrank; see fitYAffine's own doc comment).
+  let xSq = 0;
+  for (let i = 0; i < rawFeatures.length; i++) {
+    const pred = dot(wx, rawFeatures[i]);
+    xSq += (pred - rawTargetX[i]) ** 2;
+  }
+  const xRmseInFrac = Math.sqrt(xSq / rawFeatures.length) / screenW;
+
+  let ySq = 0;
+  for (let i = 0; i < yAggFeatures.length; i++) {
+    const rawY = dot(wy, yAggFeatures[i]);
+    const corrected = rawY * yAffine.scale + yAffine.offset;
+    ySq += (corrected - yAggTargets[i]) ** 2;
+  }
+  const yRmseInFrac = Math.sqrt(ySq / yAggFeatures.length) / screenH;
+
+  if (xRmseInFrac > CAL_MAX_IN_SAMPLE_RMSE_FRAC) {
+    reasons.push(
+      `خطأ أفقي مرتفع حتى على نقاط المعايرة نفسها (${(xRmseInFrac * 100).toFixed(1)}% من عرض الشاشة)`,
+    );
+  }
+  if (yRmseInFrac > CAL_MAX_IN_SAMPLE_RMSE_FRAC) {
+    reasons.push(
+      `خطأ رأسي مرتفع حتى على نقاط المعايرة نفسها (${(yRmseInFrac * 100).toFixed(1)}% من ارتفاع الشاشة)`,
+    );
+  }
+
+  // 4. Leave-one-target-out cross-validation — refit excluding each target
+  //    in turn, predict that held-out target, and score the pooled error.
+  //    This is what actually catches "the model overfit one bad target":
+  //    that target's own held-out error blows up even when in-sample error
+  //    (above) looks fine, because ridge shrinkage can hide exactly this.
+  let xLoocvSq = 0,
+    xLoocvN = 0;
+  for (let p = 0; p < nTargets; p++) {
+    const startIdx = p * CLICKS_PER_POINT;
+    const endIdx = startIdx + CLICKS_PER_POINT;
+    if (endIdx > rawFeatures.length) continue;
+    const trainF = [
+      ...rawFeatures.slice(0, startIdx),
+      ...rawFeatures.slice(endIdx),
+    ];
+    const trainT = [
+      ...rawTargetX.slice(0, startIdx),
+      ...rawTargetX.slice(endIdx),
+    ];
+    const wFold = fitRidgeRegression(trainF, trainT);
+    if (!wFold) continue;
+    const testF = rawFeatures.slice(startIdx, endIdx);
+    const testT = rawTargetX.slice(startIdx, endIdx);
+    testF.forEach((f, i) => {
+      const pred = dot(wFold, f);
+      xLoocvSq += (pred - testT[i]) ** 2;
+      xLoocvN++;
+    });
+  }
+  const xLoocvRmseFrac =
+    (xLoocvN > 0
+      ? Math.sqrt(xLoocvSq / xLoocvN)
+      : Math.sqrt(xSq / rawFeatures.length)) / screenW;
+
+  let yLoocvSq = 0,
+    yLoocvN = 0;
+  for (let p = 0; p < yAggFeatures.length; p++) {
+    const trainF = [...yAggFeatures.slice(0, p), ...yAggFeatures.slice(p + 1)];
+    const trainT = [...yAggTargets.slice(0, p), ...yAggTargets.slice(p + 1)];
+    const wFold = fitRidgeRegression(
+      trainF,
+      trainT,
+      GAZE_FEATURE_COUNT_Y,
+      RIDGE_LAMBDA_Y,
+      Y_FEATURE_STD_FLOORS,
+    );
+    if (!wFold) continue;
+    const rawFoldPred = trainF.map((f) => dot(wFold, f));
+    const affineFold = fitYAffine(rawFoldPred, trainT);
+    const testRaw = dot(wFold, yAggFeatures[p]);
+    const testPred = testRaw * affineFold.scale + affineFold.offset;
+    yLoocvSq += (testPred - yAggTargets[p]) ** 2;
+    yLoocvN++;
+  }
+  const yLoocvRmseFrac =
+    (yLoocvN > 0
+      ? Math.sqrt(yLoocvSq / yLoocvN)
+      : Math.sqrt(ySq / yAggFeatures.length)) / screenH;
+
+  if (xLoocvRmseFrac > CAL_MAX_LOOCV_RMSE_FRAC) {
+    reasons.push(
+      `النموذج لا يعمّم أفقيًا عند استبعاد كل نقطة معايرة على حدة (${(xLoocvRmseFrac * 100).toFixed(1)}%) — على الأرجح إحدى النقاط كانت غير دقيقة`,
+    );
+  }
+  if (yLoocvRmseFrac > CAL_MAX_LOOCV_RMSE_FRAC) {
+    reasons.push(
+      `النموذج لا يعمّم رأسيًا عند استبعاد كل نقطة معايرة على حدة (${(yLoocvRmseFrac * 100).toFixed(1)}%) — على الأرجح إحدى النقاط كانت غير دقيقة`,
+    );
+  }
+
+  // 5. Too many forced-through unstable targets — independent of what the
+  //    numeric fit checks above say, this many low-confidence inputs means
+  //    the *data*, not just the fit, can't be trusted this run.
+  if (unstableTargetCount > CAL_MAX_UNSTABLE_TARGETS) {
+    reasons.push(
+      `عدد كبير من نقاط المعايرة سُجّل رغم عدم ثبات النظر عليها (${unstableTargetCount} نقاط)`,
+    );
+  }
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    metrics: {
+      uniqueVectors,
+      varianceRatio,
+      xRmseInFrac,
+      yRmseInFrac,
+      xLoocvRmseFrac,
+      yLoocvRmseFrac,
+      unstableTargetCount,
+    },
+  };
+}
+
+interface VerifySweepQualityReport {
+  passed: boolean;
+  reasons: string[];
+  metrics: {
+    validYTargets: number;
+    validXTargets: number;
+    yJitterPx: number;
+    xJitterPx: number;
+    yResidualSpreadPx: number;
+    xResidualSpreadPx: number;
+    proposedVBias: number;
+    proposedHBias: number;
+  };
+}
+
+/** V3.6 — final, independent quality gate using the real dwell samples
+ *  already collected during the verification sweep (the same samples
+ *  refitVerticalAffineFromVerification / estimateAxisBias below read from),
+ *  evaluated BEFORE either of those is allowed to commit anything. Two
+ *  things are checked per axis, per target: how *jittery* the samples were
+ *  during a deliberate fixation (catches "visible jitter"), and — after
+ *  removing the single best-fit scalar bias — how much the remaining error
+ *  still varies target to target (catches "cursor drifted" style problems
+ *  that are actually inconsistent across the screen, which a single
+ *  constant correction can never fix, as opposed to a uniform offset,
+ *  which it can). */
+function evaluateVerificationSweep(
+  ySamplesPerTarget: number[][],
+  xSamplesPerTarget: number[][],
+): VerifySweepQualityReport {
+  const reasons: string[] = [];
+
+  function analyzeAxis(
+    samplesPerTarget: number[][],
+    expectedOf: (i: number) => number,
+  ): {
+    validCount: number;
+    jitterPx: number;
+    residualSpreadPx: number;
+    bias: number;
+  } | null {
+    const perTargetMedian: number[] = [];
+    const perTargetJitter: number[] = [];
+    const validIdx: number[] = [];
+
+    VERIFY_TARGETS.forEach((_t, i) => {
+      const samples = samplesPerTarget[i];
+      if (samples.length < VBIAS_MIN_SAMPLES_PER_TARGET) return;
+      const med = median(samples);
+      const absDevs = samples.map((v) => Math.abs(v - med));
+      const mad = median(absDevs) * 1.4826;
+      const cleaned =
+        mad === 0
+          ? samples
+          : samples.filter((v) => Math.abs(v - med) <= VBIAS_MAD_K * mad);
+      if (cleaned.length < VBIAS_MIN_SAMPLES_PER_TARGET) return;
+      perTargetMedian[i] = median(cleaned);
+      perTargetJitter.push(mad);
+      validIdx.push(i);
+    });
+
+    if (validIdx.length < VBIAS_MIN_VALID_TARGETS) return null;
+
+    const residuals = validIdx.map((i) => perTargetMedian[i] - expectedOf(i));
+    const bias = median(residuals);
+    const residualSpreadPx =
+      median(residuals.map((r) => Math.abs(r - bias))) * 1.4826;
+    const jitterPx = median(perTargetJitter);
+
+    return { validCount: validIdx.length, jitterPx, residualSpreadPx, bias };
+  }
+
+  const yResult = analyzeAxis(
+    ySamplesPerTarget,
+    (i) => window.innerHeight * VERIFY_TARGETS[i].yFrac,
+  );
+  const xResult = analyzeAxis(
+    xSamplesPerTarget,
+    (i) => window.innerWidth * VERIFY_TARGETS[i].xFrac,
+  );
+
+  if (!yResult) {
+    reasons.push("عدد العينات الرأسية أثناء التحقق غير كافٍ للحكم على الدقة");
+  }
+  if (!xResult) {
+    reasons.push("عدد العينات الأفقية أثناء التحقق غير كافٍ للحكم على الدقة");
+  }
+  if (yResult) {
+    if (yResult.jitterPx > CAL_MAX_VERIFY_TARGET_JITTER_PX) {
+      reasons.push(
+        `تذبذب رأسي ملحوظ أثناء التحقق (${yResult.jitterPx.toFixed(0)}px) حتى مع تثبيت النظر`,
+      );
+    }
+    if (yResult.residualSpreadPx > CAL_MAX_VERIFY_RESIDUAL_SPREAD_PX) {
+      reasons.push(
+        `خطأ رأسي غير متسق بين نقاط التحقق (${yResult.residualSpreadPx.toFixed(0)}px) — تصحيح ثابت واحد لا يكفي لإصلاحه`,
+      );
+    }
+    if (Math.abs(yResult.bias) >= CAL_MAX_LEARNED_BIAS_PX) {
+      reasons.push(`انحراف رأسي كبير جدًا (${yResult.bias.toFixed(0)}px)`);
+    }
+  }
+  if (xResult) {
+    if (xResult.jitterPx > CAL_MAX_VERIFY_TARGET_JITTER_PX) {
+      reasons.push(
+        `تذبذب أفقي ملحوظ أثناء التحقق (${xResult.jitterPx.toFixed(0)}px) حتى مع تثبيت النظر`,
+      );
+    }
+    if (xResult.residualSpreadPx > CAL_MAX_VERIFY_RESIDUAL_SPREAD_PX) {
+      reasons.push(
+        `خطأ أفقي غير متسق بين نقاط التحقق (${xResult.residualSpreadPx.toFixed(0)}px) — تصحيح ثابت واحد لا يكفي لإصلاحه`,
+      );
+    }
+    if (Math.abs(xResult.bias) >= CAL_MAX_LEARNED_BIAS_PX) {
+      reasons.push(`انحراف أفقي كبير جدًا (${xResult.bias.toFixed(0)}px)`);
+    }
+  }
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    metrics: {
+      validYTargets: yResult?.validCount ?? 0,
+      validXTargets: xResult?.validCount ?? 0,
+      yJitterPx: yResult?.jitterPx ?? -1,
+      xJitterPx: xResult?.jitterPx ?? -1,
+      yResidualSpreadPx: yResult?.residualSpreadPx ?? -1,
+      xResidualSpreadPx: xResult?.residualSpreadPx ?? -1,
+      proposedVBias: yResult?.bias ?? 0,
+      proposedHBias: xResult?.bias ?? 0,
+    },
+  };
+}
+
 // ── GazeProvider ──────────────────────────────────────────────────────────────
 export function GazeProvider({ children }: { children: React.ReactNode }) {
   // Permission / lifecycle
@@ -1182,6 +1771,18 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const [calSuccess, setCalSuccess] = useState(false);
   const [preparingGaze, setPreparingGaze] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  /** V3.6 — set when a completed calibration attempt (pre- or
+   *  post-verification) fails quality gating; drives CalibrationRejectedCard.
+   *  Null the rest of the time. */
+  const [calRejection, setCalRejection] = useState<{
+    stage: "fit" | "verify";
+    reasons: string[];
+  } | null>(null);
+  /** V3.6 — transient "hold still and click again" / "no face detected"
+   *  message shown on the active calibration point when a click is
+   *  rejected by the per-click stability gate (see bufferIsStable). Cleared
+   *  the moment a click is accepted. */
+  const [calClickWarning, setCalClickWarning] = useState<string | null>(null);
 
   // Refs — used inside rAF to avoid stale closures
   const rawRef = useRef<{ x: number; y: number } | null>(null);
@@ -1286,6 +1887,21 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
    *  range/offset — see fitYAffine above for why this is a scale+offset
    *  fit, not just an offset. Identity (no-op) until calibration completes. */
   const yAffineRef = useRef<AffineParams>(IDENTITY_AFFINE);
+  /** V3.6 — snapshot of the last model that actually passed both quality
+   *  gates, taken by recalibrate() right before it clears the active model
+   *  for a fresh attempt. Restored by restoreLastGoodModel() if the new
+   *  attempt fails gating or is cancelled — see the "Calibration
+   *  repeatability & quality gating" section above for the full picture. */
+  const lastGoodModelRef = useRef<GoodModelSnapshot | null>(null);
+  /** V3.6 — consecutive "hold still and click again" rejections for the
+   *  *current* calibration target (see bufferIsStable). Reset whenever a
+   *  click is accepted or a new target begins. */
+  const calClickRejectionsRef = useRef(0);
+  /** V3.6 — indices (0-8) of calibration targets whose click was accepted
+   *  only after exhausting CAL_CLICK_MAX_RETRIES_PER_TARGET — i.e. recorded
+   *  despite instability. Fed into evaluateCalibrationFit's
+   *  unstableTargetCount check. Reset at the start of every attempt. */
+  const unstableCalTargetsRef = useRef<Set<number>>(new Set());
 
   // ── DIAGNOSTICS-ONLY refs (V3.1 instrumentation) ────────────────────────────
   /** Tracks rawRef.current frame-to-frame to answer "does the prediction
@@ -1458,15 +2074,6 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       // localStorage unavailable — use zero bias.
     }
   }, []);
-
-  const median = (arr: number[]): number => {
-    const sorted = [...arr].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-
-    return sorted.length % 2 !== 0
-      ? sorted[mid]
-      : (sorted[mid - 1] + sorted[mid]) / 2;
-  };
 
   /** Shared per-axis bias estimator (V2.1). Both the vertical estimate (v1.4,
    *  unchanged in behavior) and the new horizontal estimate run this exact
@@ -2377,35 +2984,322 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const [instructing, setInstructing] = useState(false);
   const pendingCalibrationRef = useRef<(() => void) | null>(null);
 
-  // ── Calibration click handler ──────────────────────du�──────────────────────────
+  // ── restoreLastGoodModel (V3.6) ────────────────────────────────────────────────
+  /** Writes the last known-good model (if one exists) back into the active
+   *  weightsXRef/weightsYRef/yAffineRef. Called whenever a new calibration
+   *  attempt fails quality gating or is cancelled, so the active model
+   *  never ends up worse than it was before the attempt started. Returns
+   *  whether a snapshot actually existed to restore (false before the very
+   *  first calibration ever passes). */
+  const restoreLastGoodModel = useCallback((): boolean => {
+    const backup = lastGoodModelRef.current;
+    if (!backup) return false;
+    weightsXRef.current = backup.wx;
+    weightsYRef.current = backup.wy;
+    yAffineRef.current = backup.yAffine;
+    console.log(
+      "[Sameyba/Gaze] Restored previous known-good calibration model (new attempt rejected or cancelled)",
+    );
+    return true;
+  }, []);
+
+  // ── finishCalibrationCollection (V3.6) ─────────────────────────────────────────
+  /** Runs once the 9th calibration target's clicks are both in. Fits wx/wy/
+   *  the draft Y-affine exactly as before, but now scores the result with
+   *  evaluateCalibrationFit BEFORE it's allowed to overwrite the active
+   *  model — see the "Calibration repeatability & quality gating" section
+   *  comment near CAL_CLICK_MIN_BUFFERED_FRAMES for the full rationale. */
+  const finishCalibrationCollection = useCallback(() => {
+    // ── DIAGNOSTICS (V3.1 instrumentation) — run BEFORE fitting, purely
+    // observational, changes nothing about the fit itself. ─────────────
+    {
+      const allFeatures = trainingFeaturesRef.current;
+      console.group("[Sameyba/Gaze][DIAG] Calibration feature diagnostics");
+
+      // 1. Feature-vector variance for each calibration target (the
+      //    CLICKS_PER_POINT samples recorded at that point).
+      const perTargetMeans: number[][] = [];
+      CAL_POINTS.forEach((pt, p) => {
+        const group = allFeatures.slice(
+          p * CLICKS_PER_POINT,
+          p * CLICKS_PER_POINT + CLICKS_PER_POINT,
+        );
+        const variance = diagFeatureVariance(group);
+        const d = GAZE_FEATURE_COUNT;
+        const mean = new Array(d).fill(0);
+        group.forEach((v: number[]) => {
+          for (let i = 0; i < d; i++) mean[i] += v[i] / (group.length || 1);
+        });
+        perTargetMeans.push(mean);
+        console.log(
+          `  target ${p} @ [${pt[0]}, ${pt[1]}] — ${group.length} samples, variance:`,
+          diagLabelVector(variance),
+        );
+      });
+
+      // Between-target variance of the per-target means — the feature
+      // extractor is "working" only if this is large relative to the
+      // within-target (above) variance. If between ≈ within, the
+      // features aren't distinguishing calibration targets at all.
+      const betweenTargetVariance = diagFeatureVariance(perTargetMeans);
+      console.log(
+        "  between-target variance (of per-target means):",
+        diagLabelVector(betweenTargetVariance),
+      );
+
+      // 2. Number of unique calibration feature vectors (rounded 6dp)
+      //    out of the total collected — catches a frozen/stale feature
+      //    extractor even before looking at variance magnitudes. V3.6 turns
+      //    this from a logged-only warning into an actual gate — see
+      //    evaluateCalibrationFit below.
+      const uniqueKeys = new Set(allFeatures.map(diagFeatureKey));
+      console.log(
+        `  unique feature vectors: ${uniqueKeys.size} / ${allFeatures.length} total samples`,
+      );
+      console.groupEnd();
+    }
+
+    const wx = fitRidgeRegression(
+      trainingFeaturesRef.current,
+      trainingTargetXRef.current,
+    );
+    // V3.2 — Y gets its own dedicated model: the vertical-only feature
+    // subset (see Y_FEATURE_INDICES) and its own ridge lambda
+    // (RIDGE_LAMBDA_Y), instead of reusing the full 9-feature X-tuned
+    // fit. See the "Dedicated vertical (Y) gaze model" note above for
+    // why this run's own diagnostics (wy's large lNormX weight) point
+    // straight at this as the fix.
+    //
+    // V3.4 — two more changes on top of V3.2, neither of which touches
+    // X: (1) fit from 9 calibration-target-aggregated samples instead
+    // of 18 individual clicks (see aggregateByCalibrationTarget), and
+    // (2) pass Y_FEATURE_STD_FLOORS so a feature that barely moved
+    // during calibration (headCenterY, sometimes pitch) gets its
+    // standardization std floored instead of blown up into a huge
+    // raw-space weight — see the Y_FEATURE_STD_FLOORS note above for
+    // why that, not the feature subset itself, was the actual source
+    // of the wild/off-screen raw predictions.
+    const yTrainingFeaturesPerClick =
+      trainingFeaturesRef.current.map(extractYSubFeatures);
+    const { features: yAggFeatures, targets: yAggTargets } =
+      aggregateByCalibrationTarget(
+        yTrainingFeaturesPerClick,
+        trainingTargetYRef.current,
+        CLICKS_PER_POINT,
+      );
+    const wy = fitRidgeRegression(
+      yAggFeatures,
+      yAggTargets,
+      GAZE_FEATURE_COUNT_Y,
+      RIDGE_LAMBDA_Y,
+      Y_FEATURE_STD_FLOORS,
+    );
+
+    // V3.2 — fit the Y affine (scale+offset) recalibration directly
+    // against this calibration set: rawModelY[i] = wy·yFeatures[i],
+    // regressed onto the true clicked/target screen-Y. See fitYAffine
+    // above for why this — not another additive-only correction — is
+    // what actually fixes a compressed range. Falls back to identity
+    // (no-op) if wy failed to fit. This is deliberately still just the
+    // *first-draft* affine: it has to exist before the verification
+    // screen can show a moving cursor at all, but it's fit from the
+    // same (now target-aggregated, but still just 9-point) calibration
+    // clicks as wy itself. It gets refined again, using the actual
+    // top/center/bottom verification measurements, once verification
+    // completes — see refitVerticalAffineFromVerification below.
+    let yAffineDraft: AffineParams = IDENTITY_AFFINE;
+    if (wy) {
+      const rawModelYOnTrainingSet = yAggFeatures.map((f) => dot(wy, f));
+      yAffineDraft = fitYAffine(rawModelYOnTrainingSet, yAggTargets);
+    }
+
+    console.log(
+      `[Sameyba/Gaze] Calibration fit computed from ${trainingFeaturesRef.current.length} samples` +
+        (wx && wy
+          ? " — running quality gate…"
+          : " (fit failed — too few valid samples)"),
+    );
+    console.log(
+      "[Sameyba/Gaze][DIAG] Fitted weights — wx:",
+      wx ? diagLabelVector(wx, (n) => n.toFixed(4)) : null,
+    );
+    console.log(
+      "[Sameyba/Gaze][DIAG] Fitted weights — wy (dedicated Y model):",
+      wy
+        ? Object.fromEntries(
+            Y_FEATURE_NAMES.map((name, i) => [name, wy[i].toFixed(4)]),
+          )
+        : null,
+    );
+    console.log(
+      `[Sameyba/Gaze][DIAG] Y affine (draft) — scale=${yAffineDraft.scale.toFixed(3)}, offset=${yAffineDraft.offset.toFixed(1)}px` +
+        (yAffineDraft.scale === 1 && yAffineDraft.offset === 0
+          ? " (identity — fit skipped or degenerate)"
+          : ""),
+    );
+    if (wx && wy) {
+      const nonBiasMagX = Math.hypot(...wx.slice(1));
+      const nonBiasMagY = Math.hypot(...wy.slice(1));
+      console.log(
+        `[Sameyba/Gaze][DIAG] non-bias weight magnitude — |wx[1:]|=${nonBiasMagX.toFixed(4)}, |wy[1:]|=${nonBiasMagY.toFixed(4)} (near-zero ⇒ regression is ~ignoring eye-geometry features and just predicting the mean click position)`,
+      );
+    }
+
+    // V3.6 — score BEFORE this candidate ever touches the active model.
+    const fitReport = evaluateCalibrationFit({
+      rawFeatures: trainingFeaturesRef.current,
+      rawTargetX: trainingTargetXRef.current,
+      rawTargetY: trainingTargetYRef.current,
+      wx,
+      wy,
+      yAffine: yAffineDraft,
+      yAggFeatures,
+      yAggTargets,
+      unstableTargetCount: unstableCalTargetsRef.current.size,
+      screenW: window.innerWidth,
+      screenH: window.innerHeight,
+    });
+    console.log(
+      "[Sameyba/Gaze][DIAG] Calibration quality gate (pre-verification):",
+      fitReport,
+    );
+
+    if (!fitReport.passed) {
+      console.warn(
+        "[Sameyba/Gaze] Calibration REJECTED before verification — keeping previous model (if any)",
+        fitReport.reasons,
+      );
+      restoreLastGoodModel();
+      setCalibrating(false);
+      setCalRejection({ stage: "fit", reasons: fitReport.reasons });
+      return;
+    }
+
+    // Passed — this candidate becomes the active model, used live during
+    // the upcoming verification sweep so the person sees its real accuracy
+    // before it's asked to be their final model.
+    weightsXRef.current = wx;
+    weightsYRef.current = wy;
+    yAffineRef.current = yAffineDraft;
+
+    console.log(
+      "[Sameyba/Gaze] Calibration ACCEPTED ✓ — proceeding to verification",
+    );
+
+    setCalSuccess(true);
+    setTimeout(() => {
+      setCalibrating(false);
+      // Reset all prediction data so calibration coords don't bleed into normal use
+      rawRef.current = null;
+      resetGazeFilters();
+      verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
+      verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
+      // DIAGNOSTICS — fresh raw-sample buckets + min/max for this sweep.
+      diagVerifyRawXSamplesRef.current = VERIFY_TARGETS.map(() => []);
+      diagVerifyRawYSamplesRef.current = VERIFY_TARGETS.map(() => []);
+      diagVerifyMinMaxRef.current = {
+        minX: Infinity,
+        maxX: -Infinity,
+        minY: Infinity,
+        maxY: -Infinity,
+      };
+      // Enable gaze so cursor moves during verification
+      setGazeEnabled(true);
+      setVerifying(true);
+    }, 1800);
+  }, [restoreLastGoodModel]);
+
+  // ── retryCalibrationAttempt (V3.6) ─────────────────────────────────────────────
+  /** Restarts just the 9-point click sequence after a rejected attempt —
+   *  used by CalibrationRejectedCard's "retry" action. Deliberately does
+   *  NOT touch lastGoodModelRef (already holds whatever was active before
+   *  this whole recalibration began) or gazeEnabled/calibrated (already
+   *  left in a consistent state by the rejection branch that led here). */
+  const retryCalibrationAttempt = useCallback(() => {
+    trainingFeaturesRef.current = [];
+    trainingTargetXRef.current = [];
+    trainingTargetYRef.current = [];
+    weightsXRef.current = null;
+    weightsYRef.current = null;
+    yAffineRef.current = IDENTITY_AFFINE;
+    unstableCalTargetsRef.current = new Set();
+    calClickRejectionsRef.current = 0;
+    setCalStep(0);
+    setCalClicks(0);
+    setCalSuccess(false);
+    setCalClickWarning(null);
+    setCalRejection(null);
+    setVerifying(false);
+    setCalibrating(true);
+    console.log("[Sameyba/Gaze] Calibration attempt retried");
+  }, []);
+
+  // ── Calibration click handler ───────────────────────────────────────────────────
   const handleCalClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
 
       // Record the ACTUAL pixel the user clicked — not a recomputed centre —
-      // against the averaged feature vector from the last few frames (V3.0:
+      // against a *stability-gated* average of the last few frames (V3.0:
       // replaces webgazer.recordScreenPosition; see GazeEstimator above).
+      //
+      // V3.6 — this used to average whatever was in the buffer unconditionally,
+      // which is exactly how a click made mid-saccade (still arriving from the
+      // previous target) or during a blink could enter the training set as if
+      // it were a clean fixation. Now a click only counts once the buffer is
+      // both long enough and internally consistent (see bufferIsStable) — if
+      // it isn't, the click is rejected and the person is asked to hold their
+      // gaze steady and click again, up to CAL_CLICK_MAX_RETRIES_PER_TARGET
+      // times, after which it's accepted anyway (robust-averaged) but the
+      // target is flagged low-confidence for the post-fit quality gate.
       const buf = recentFeaturesRef.current;
-      if (buf.length > 0) {
-        const d = GAZE_FEATURE_COUNT;
-        const avg = new Array(d).fill(0);
-        buf.forEach((f) => {
-          for (let i = 0; i < d; i++) avg[i] += f[i] / buf.length;
-        });
-        avg[0] = 1; // keep the bias term exact
-        trainingFeaturesRef.current.push(avg);
-        trainingTargetXRef.current.push(e.clientX);
-        trainingTargetYRef.current.push(e.clientY);
-        console.log(
-          `[Sameyba/Gaze] Cal ${calStep + 1}/9 click ${calClicks + 1}/${CLICKS_PER_POINT}` +
-            ` at (${e.clientX}, ${e.clientY})`,
-        );
-      } else {
+
+      if (buf.length === 0) {
         console.warn(
           `[Sameyba/Gaze] Cal ${calStep + 1}/9 click ${calClicks + 1}/${CLICKS_PER_POINT}` +
-            ` — no face detected this frame, sample skipped`,
+            ` — no face detected this frame, click ignored`,
+        );
+        setCalClickWarning("لم يتم رصد وجهك — تأكد من الإضاءة وحاول مرة أخرى");
+        return;
+      }
+
+      const stable = bufferIsStable(buf);
+
+      if (
+        !stable &&
+        calClickRejectionsRef.current < CAL_CLICK_MAX_RETRIES_PER_TARGET
+      ) {
+        calClickRejectionsRef.current += 1;
+        console.warn(
+          `[Sameyba/Gaze] Cal ${calStep + 1}/9 click rejected — gaze not steady yet` +
+            ` (retry ${calClickRejectionsRef.current}/${CAL_CLICK_MAX_RETRIES_PER_TARGET})`,
+        );
+        setCalClickWarning("ثبّت نظرك على النقطة ثم انقر مرة أخرى");
+        return; // do not record, do not advance — same target, click again
+      }
+
+      if (!stable) {
+        // Exhausted retries on this target — accept the (robust-averaged)
+        // sample anyway so the flow can't deadlock, but flag the target as
+        // low-confidence for evaluateCalibrationFit's unstableTargetCount
+        // check.
+        unstableCalTargetsRef.current.add(calStep);
+        console.warn(
+          `[Sameyba/Gaze] Cal ${calStep + 1}/9 — accepting unstable sample after ${CAL_CLICK_MAX_RETRIES_PER_TARGET} retries; target flagged low-confidence`,
         );
       }
+
+      calClickRejectionsRef.current = 0;
+      setCalClickWarning(null);
+
+      const avg = robustBufferAverage(buf, GAZE_FEATURE_COUNT);
+      trainingFeaturesRef.current.push(avg);
+      trainingTargetXRef.current.push(e.clientX);
+      trainingTargetYRef.current.push(e.clientY);
+      console.log(
+        `[Sameyba/Gaze] Cal ${calStep + 1}/9 click ${calClicks + 1}/${CLICKS_PER_POINT}` +
+          ` at (${e.clientX}, ${e.clientY})`,
+      );
 
       const nextClicks = calClicks + 1;
       if (nextClicks < CLICKS_PER_POINT) {
@@ -2413,195 +3307,49 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Point complete
+      // Point complete — reset the per-target rejection counter before
+      // moving on (or finishing).
+      calClickRejectionsRef.current = 0;
+
       const nextStep = calStep + 1;
       if (nextStep < CAL_POINTS.length) {
         setCalStep(nextStep);
         setCalClicks(0);
       } else {
-        // All 9 points done — fit the regression from the 18 collected
-        // samples, show success, then open verification screen.
-
-        // ── DIAGNOSTICS (V3.1 instrumentation) — run BEFORE fitting, purely
-        // observational, changes nothing about the fit itself. ─────────────
-        {
-          const allFeatures = trainingFeaturesRef.current;
-          console.group("[Sameyba/Gaze][DIAG] Calibration feature diagnostics");
-
-          // 1. Feature-vector variance for each calibration target (the
-          //    CLICKS_PER_POINT samples recorded at that point).
-          const perTargetMeans: number[][] = [];
-          CAL_POINTS.forEach((pt, p) => {
-            const group = allFeatures.slice(
-              p * CLICKS_PER_POINT,
-              p * CLICKS_PER_POINT + CLICKS_PER_POINT,
-            );
-            const variance = diagFeatureVariance(group);
-            const d = GAZE_FEATURE_COUNT;
-            const mean = new Array(d).fill(0);
-            group.forEach((v: number[]) => {
-              for (let i = 0; i < d; i++) mean[i] += v[i] / (group.length || 1);
-            });
-            perTargetMeans.push(mean);
-            console.log(
-              `  target ${p} @ [${pt[0]}, ${pt[1]}] — ${group.length} samples, variance:`,
-              diagLabelVector(variance),
-            );
-          });
-
-          // Between-target variance of the per-target means — the feature
-          // extractor is "working" only if this is large relative to the
-          // within-target (above) variance. If between ≈ within, the
-          // features aren't distinguishing calibration targets at all.
-          const betweenTargetVariance = diagFeatureVariance(perTargetMeans);
-          console.log(
-            "  between-target variance (of per-target means):",
-            diagLabelVector(betweenTargetVariance),
-          );
-
-          // 2. Number of unique calibration feature vectors (rounded 6dp)
-          //    out of the total collected — catches a frozen/stale feature
-          //    extractor even before looking at variance magnitudes.
-          const uniqueKeys = new Set(allFeatures.map(diagFeatureKey));
-          console.log(
-            `  unique feature vectors: ${uniqueKeys.size} / ${allFeatures.length} total samples`,
-          );
-          if (uniqueKeys.size <= CAL_POINTS.length) {
-            console.warn(
-              `  ⚠ only ${uniqueKeys.size} unique feature vector(s) across ${allFeatures.length} clicks spanning ${CAL_POINTS.length} distinct screen targets — the feature extractor is producing near-identical (or literally identical) output regardless of where the user looked. This alone would explain a regression that predicts close to a single fixed point.`,
-            );
-          }
-          console.groupEnd();
-        }
-
-        const wx = fitRidgeRegression(
-          trainingFeaturesRef.current,
-          trainingTargetXRef.current,
-        );
-        // V3.2 — Y gets its own dedicated model: the vertical-only feature
-        // subset (see Y_FEATURE_INDICES) and its own ridge lambda
-        // (RIDGE_LAMBDA_Y), instead of reusing the full 9-feature X-tuned
-        // fit. See the "Dedicated vertical (Y) gaze model" note above for
-        // why this run's own diagnostics (wy's large lNormX weight) point
-        // straight at this as the fix.
-        //
-        // V3.4 — two more changes on top of V3.2, neither of which touches
-        // X: (1) fit from 9 calibration-target-aggregated samples instead
-        // of 18 individual clicks (see aggregateByCalibrationTarget), and
-        // (2) pass Y_FEATURE_STD_FLOORS so a feature that barely moved
-        // during calibration (headCenterY, sometimes pitch) gets its
-        // standardization std floored instead of blown up into a huge
-        // raw-space weight — see the Y_FEATURE_STD_FLOORS note above for
-        // why that, not the feature subset itself, was the actual source
-        // of the wild/off-screen raw predictions.
-        const yTrainingFeaturesPerClick =
-          trainingFeaturesRef.current.map(extractYSubFeatures);
-        const { features: yAggFeatures, targets: yAggTargets } =
-          aggregateByCalibrationTarget(
-            yTrainingFeaturesPerClick,
-            trainingTargetYRef.current,
-            CLICKS_PER_POINT,
-          );
-        const wy = fitRidgeRegression(
-          yAggFeatures,
-          yAggTargets,
-          GAZE_FEATURE_COUNT_Y,
-          RIDGE_LAMBDA_Y,
-          Y_FEATURE_STD_FLOORS,
-        );
-        weightsXRef.current = wx;
-        weightsYRef.current = wy;
-
-        // V3.2 — fit the Y affine (scale+offset) recalibration directly
-        // against this calibration set: rawModelY[i] = wy·yFeatures[i],
-        // regressed onto the true clicked/target screen-Y. See fitYAffine
-        // above for why this — not another additive-only correction — is
-        // what actually fixes a compressed range. Falls back to identity
-        // (no-op) if wy failed to fit. This is deliberately still just the
-        // *first-draft* affine: it has to exist before the verification
-        // screen can show a moving cursor at all, but it's fit from the
-        // same (now target-aggregated, but still just 9-point) calibration
-        // clicks as wy itself. It gets refined again, using the actual
-        // top/center/bottom verification measurements, once verification
-        // completes — see refitVerticalAffineFromVerification below.
-        if (wy) {
-          const rawModelYOnTrainingSet = yAggFeatures.map((f) => dot(wy, f));
-          yAffineRef.current = fitYAffine(rawModelYOnTrainingSet, yAggTargets);
-        } else {
-          yAffineRef.current = IDENTITY_AFFINE;
-        }
-
-        console.log(
-          `[Sameyba/Gaze] Calibration complete ✓ — regression fit from ${trainingFeaturesRef.current.length} samples`,
-          wx && wy ? "" : "(fit failed — too few valid samples)",
-        );
-
-        // 3. The fitted X and Y ridge-regression weights themselves. wy is
-        // now the dedicated 5-feature vertical model — labeled with
-        // Y_FEATURE_NAMES, not the full 9-feature GAZE_FEATURE_NAMES.
-        console.log(
-          "[Sameyba/Gaze][DIAG] Fitted weights — wx:",
-          wx ? diagLabelVector(wx, (n) => n.toFixed(4)) : null,
-        );
-        console.log(
-          "[Sameyba/Gaze][DIAG] Fitted weights — wy (dedicated Y model):",
-          wy
-            ? Object.fromEntries(
-                Y_FEATURE_NAMES.map((name, i) => [name, wy[i].toFixed(4)]),
-              )
-            : null,
-        );
-        console.log(
-          `[Sameyba/Gaze][DIAG] Y affine recalibration — scale=${yAffineRef.current.scale.toFixed(3)}, offset=${yAffineRef.current.offset.toFixed(1)}px` +
-            (yAffineRef.current.scale === 1 && yAffineRef.current.offset === 0
-              ? " (identity — fit skipped or degenerate)"
-              : ""),
-        );
-        if (wx && wy) {
-          // A weight vector that's ~all-zero outside the bias term means
-          // the regression learned to ignore the eye-geometry features
-          // entirely and just predict (roughly) the mean click position —
-          // exactly "fixed near screen center" behavior.
-          const nonBiasMagX = Math.hypot(...wx.slice(1));
-          const nonBiasMagY = Math.hypot(...wy.slice(1));
-          console.log(
-            `[Sameyba/Gaze][DIAG] non-bias weight magnitude — |wx[1:]|=${nonBiasMagX.toFixed(4)}, |wy[1:]|=${nonBiasMagY.toFixed(4)} (near-zero ⇒ regression is ~ignoring eye-geometry features and just predicting the mean click position)`,
-          );
-        }
-
-        setCalSuccess(true);
-        setTimeout(() => {
-          setCalibrating(false);
-          // Reset all prediction data so calibration coords don't bleed into normal use
-          rawRef.current = null;
-          resetGazeFilters();
-          verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
-          verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
-          // DIAGNOSTICS — fresh raw-sample buckets + min/max for this sweep.
-          diagVerifyRawXSamplesRef.current = VERIFY_TARGETS.map(() => []);
-          diagVerifyRawYSamplesRef.current = VERIFY_TARGETS.map(() => []);
-          diagVerifyMinMaxRef.current = {
-            minX: Infinity,
-            maxX: -Infinity,
-            minY: Infinity,
-            maxY: -Infinity,
-          };
-          // Enable gaze so cursor moves during verification
-          setGazeEnabled(true);
-          setVerifying(true);
-        }, 1800);
+        // All 9 points done — fit + quality-gate (see finishCalibrationCollection).
+        finishCalibrationCollection();
       }
     },
-    [calStep, calClicks],
+    [calStep, calClicks, finishCalibrationCollection],
   );
 
   // ── recalibrate ───────────────────────────────────────────────────────────────
   const recalibrate = useCallback(() => {
     if (permissionState !== "granted") return;
+
+    // V3.6 — snapshot the currently-active model (if any) BEFORE touching
+    // anything, so this attempt — if it fails either quality gate, or is
+    // cancelled before finishing — can fall back to it instead of leaving
+    // the app with no working model, or worse, a bad one, silently active.
+    // See restoreLastGoodModel / evaluateCalibrationFit /
+    // evaluateVerificationSweep.
+    if (weightsXRef.current && weightsYRef.current) {
+      lastGoodModelRef.current = {
+        wx: weightsXRef.current,
+        wy: weightsYRef.current,
+        yAffine: yAffineRef.current,
+      };
+      console.log(
+        "[Sameyba/Gaze] Snapshotted current model as fallback before recalibrating",
+      );
+    }
+
     setGazeEnabled(false);
     setCalibrated(false);
     setVerifying(false);
     setCalSuccess(false);
+    setCalRejection(null);
+    setCalClickWarning(null);
     resetGazeFilters();
     rawRef.current = null;
     trainingFeaturesRef.current = [];
@@ -2610,6 +3358,8 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     weightsXRef.current = null;
     weightsYRef.current = null;
     yAffineRef.current = IDENTITY_AFFINE;
+    unstableCalTargetsRef.current = new Set();
+    calClickRejectionsRef.current = 0;
     setCalStep(0);
     setCalClicks(0);
     // Show instruction card; actual calibration starts on confirmation.
@@ -2628,8 +3378,23 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     setCalStep(0);
     setCalClicks(0);
     setInstructing(false);
+    setCalRejection(null);
+    setCalClickWarning(null);
     pendingCalibrationRef.current = null;
-  }, []);
+    calClickRejectionsRef.current = 0;
+
+    // V3.6 — if a previous good model exists (this was a recalibration, not
+    // a first-time setup), resume it instead of leaving the app with
+    // whatever partial/candidate state the cancelled attempt left behind.
+    const restored = restoreLastGoodModel();
+    if (restored) {
+      setCalibrated(true);
+      setGazeEnabled(true);
+      console.log(
+        "[Sameyba/Gaze] Calibration cancelled — resumed previous model",
+      );
+    }
+  }, [restoreLastGoodModel]);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
   // Stops the camera stream and detection loop on unmount. Deliberately NOT
@@ -2732,8 +3497,13 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                 pendingCalibrationRef.current = null;
               }}
               onCancel={() => {
-                setInstructing(false);
-                pendingCalibrationRef.current = null;
+                // V3.6 — routed through cancelCalibration (rather than
+                // inlining setInstructing(false) here) so a cancelled
+                // recalibration attempt also restores the previous
+                // known-good model via restoreLastGoodModel — otherwise
+                // recalibrate()'s earlier reset would leave the app with
+                // no working model at all until a full new attempt passes.
+                cancelCalibration();
               }}
             />
           )}
@@ -2749,7 +3519,24 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
               step={calStep}
               clicks={calClicks}
               success={calSuccess}
+              warning={calClickWarning}
               onPointClick={handleCalClick}
+              onCancel={cancelCalibration}
+            />
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+
+      {/* Calibration rejected — quality gate failed (V3.6) */}
+      {createPortal(
+        <AnimatePresence>
+          {calRejection && (
+            <CalibrationRejectedCard
+              stage={calRejection.stage}
+              reasons={calRejection.reasons}
+              hasFallbackModel={lastGoodModelRef.current !== null}
+              onRetry={retryCalibrationAttempt}
               onCancel={cancelCalibration}
             />
           )}
@@ -2810,16 +3597,59 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                   console.groupEnd();
                 }
 
-                // V3.4 — tighten the Y affine against the actual
-                // top/center/bottom verification measurements before the
-                // (small, additive-only) residual bias estimate below runs
-                // on top of it — see refitVerticalAffineFromVerification.
+                // V3.6 — final, independent quality gate using the actual
+                // real dwell samples from this sweep, BEFORE either the
+                // affine refit or the bias correction is allowed to commit
+                // anything. This is what catches a candidate that passed
+                // the pre-verification fit checks (evaluateCalibrationFit)
+                // but still measures badly once dwelt on for real — e.g.
+                // exactly the kind of run-to-run instability described:
+                // one calibration attempt tracking smoothly, the next
+                // showing jitter or a systematic drift under the same code.
+                const verifyReport = evaluateVerificationSweep(
+                  verifyTargetSamplesRef.current,
+                  verifyTargetXSamplesRef.current,
+                );
+                console.log(
+                  "[Sameyba/Gaze][DIAG] Calibration quality gate (post-verification):",
+                  verifyReport,
+                );
+
+                if (!verifyReport.passed) {
+                  console.warn(
+                    "[Sameyba/Gaze] Calibration REJECTED after verification — keeping previous model (if any)",
+                    verifyReport.reasons,
+                  );
+                  // Undo the candidate that was live for this sweep;
+                  // verticalBiasRef/horizontalBiasRef were never touched
+                  // yet (estimateAndApplyBiasCorrections hasn't run), so
+                  // only the weights/affine need restoring.
+                  restoreLastGoodModel();
+                  verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
+                  verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(
+                    () => [],
+                  );
+                  setVerifying(false);
+                  setCalRejection({
+                    stage: "verify",
+                    reasons: verifyReport.reasons,
+                  });
+                  return;
+                }
+
+                // Passed — commit. V3.4: tighten the Y affine against the
+                // actual top/center/bottom verification measurements before
+                // the (small, additive-only) residual bias estimate below
+                // runs on top of it — see refitVerticalAffineFromVerification.
                 refitVerticalAffineFromVerification();
                 estimateAndApplyBiasCorrections();
                 verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
                 verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
                 setCalibrated(true);
                 setVerifying(false);
+                console.log(
+                  "[Sameyba/Gaze] Calibration ACCEPTED ✓ — now active",
+                );
               }}
               onRecalibrate={recalibrate}
               onCancel={cancelCalibration}
@@ -3052,17 +3882,216 @@ function CalibrationInstructionCard({
   );
 }
 
+// ── CalibrationRejectedCard (V3.6) ────────────────────────────────────────────
+/** Shown when a completed calibration attempt fails either quality gate
+ *  (evaluateCalibrationFit right after the 9 points, or
+ *  evaluateVerificationSweep after the dwell sweep). Explains — in plain
+ *  terms, not raw metric names — why the run was rejected, and offers to
+ *  retry (redo the 9-point sequence) or cancel back (which, if a previous
+ *  working model exists, resumes it — see cancelCalibration /
+ *  restoreLastGoodModel in GazeProvider). */
+function CalibrationRejectedCard({
+  stage,
+  reasons,
+  hasFallbackModel,
+  onRetry,
+  onCancel,
+}: {
+  stage: "fit" | "verify";
+  reasons: string[];
+  hasFallbackModel: boolean;
+  onRetry: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <motion.div
+      key="cal-rejected"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35 }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000000,
+        background: "rgba(5, 5, 20, 0.94)",
+        backdropFilter: "blur(10px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+        direction: "rtl",
+        padding: "24px",
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0, y: 28 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 8 }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          background: "rgba(255,255,255,0.055)",
+          border: "1px solid rgba(245,110,90,0.28)",
+          borderRadius: 28,
+          padding: "44px 40px 36px",
+          maxWidth: 460,
+          width: "100%",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: "50%",
+            margin: "0 auto 24px",
+            background: "rgba(245,110,90,0.14)",
+            border: "3px solid rgba(245,110,90,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "2.2rem",
+          }}
+        >
+          ⚠️
+        </div>
+
+        <h2
+          style={{
+            fontSize: "1.3rem",
+            fontWeight: 800,
+            color: "#fff",
+            margin: "0 0 10px",
+            letterSpacing: "-0.02em",
+            lineHeight: 1.3,
+          }}
+        >
+          لم تحقق المعايرة الدقة المطلوبة
+        </h2>
+        <p
+          style={{
+            fontSize: "0.85rem",
+            color: "rgba(255,255,255,0.55)",
+            margin: "0 0 22px",
+            lineHeight: 1.6,
+          }}
+        >
+          {stage === "verify"
+            ? "بدت النتائج مختلفة أثناء الاختبار الفعلي عمّا توقعناه أثناء المعايرة."
+            : "لم تكن قراءات المعايرة متسقة بما يكفي لبناء نموذج موثوق."}{" "}
+          {hasFallbackModel
+            ? "سيتم الإبقاء على المعايرة السابقة العاملة حتى تنجح معايرة جديدة."
+            : "يرجى إعادة المحاولة في إضاءة أفضل مع تثبيت رأسك قدر الإمكان."}
+        </p>
+
+        {reasons.length > 0 && (
+          <div
+            style={{
+              background: "rgba(245,110,90,0.07)",
+              border: "1px solid rgba(245,110,90,0.20)",
+              borderRadius: 16,
+              padding: "18px 20px",
+              textAlign: "right",
+              marginBottom: 28,
+            }}
+          >
+            {reasons.map((reason, i, arr) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  marginBottom: i < arr.length - 1 ? 10 : 0,
+                }}
+              >
+                <span
+                  style={{
+                    color: "#F08070",
+                    fontSize: "0.55rem",
+                    marginTop: 5,
+                    flexShrink: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ●
+                </span>
+                <span
+                  style={{
+                    fontSize: "0.83rem",
+                    color: "rgba(255,255,255,0.62)",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {reason}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <motion.button
+          onClick={onRetry}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 340, damping: 22 }}
+          style={{
+            width: "100%",
+            padding: "17px 0",
+            borderRadius: 999,
+            background: "linear-gradient(135deg, #5E7E35 0%, #7BA043 100%)",
+            border: "none",
+            color: "#fff",
+            fontSize: "1.05rem",
+            fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+            letterSpacing: "-0.015em",
+            boxShadow: "0 6px 24px rgba(94,126,53,0.45)",
+            marginBottom: 12,
+          }}
+        >
+          🔄 إعادة المحاولة
+        </motion.button>
+
+        <button
+          onClick={onCancel}
+          style={{
+            width: "100%",
+            padding: "13px 0",
+            borderRadius: 999,
+            background: "transparent",
+            border: "1px solid rgba(255,255,255,0.12)",
+            color: "rgba(255,255,255,0.42)",
+            fontSize: "0.90rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "'IBM Plex Sans Arabic', sans-serif",
+          }}
+        >
+          {hasFallbackModel ? "إلغاء والعودة للمعايرة السابقة" : "إلغاء"}
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── CalibrationOverlay ────────────────────────────────────────────────────────
 function CalibrationOverlay({
   step,
   clicks,
   success,
+  warning,
   onPointClick,
   onCancel,
 }: {
   step: number;
   clicks: number;
   success: boolean;
+  /** V3.6 — transient "hold still and click again" / "no face detected"
+   *  message from the per-click stability gate (see bufferIsStable in
+   *  GazeProvider). Null when there's nothing to show. */
+  warning?: string | null;
   onPointClick: (e: React.MouseEvent) => void;
   onCancel?: () => void;
 }) {
@@ -3220,6 +4249,31 @@ function CalibrationOverlay({
               >
                 {pct}% مكتمل
               </p>
+
+              {/* V3.6 — per-click stability warning */}
+              <AnimatePresence>
+                {warning && (
+                  <motion.p
+                    key={warning}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      fontSize: "0.82rem",
+                      fontWeight: 700,
+                      color: "#F5B84B",
+                      background: "rgba(245,184,75,0.12)",
+                      border: "1px solid rgba(245,184,75,0.30)",
+                      borderRadius: 999,
+                      padding: "6px 16px",
+                      margin: "12px 0 0",
+                    }}
+                  >
+                    ⚠ {warning}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Calibration dots */}
@@ -3918,5 +4972,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.5 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization (fixes headCenterY/pitch weight blow-up), 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
+  "ASHWAG TEST V3.6 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization, 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate — PLUS calibration repeatability & quality gating: per-click stability gate (bufferIsStable/robustBufferAverage) rejects noisy clicks before they enter the training set, post-fit leave-one-target-out cross-validation gate (evaluateCalibrationFit) rejects a fit that doesn't generalize past its own 9 points, post-verification measured-accuracy gate (evaluateVerificationSweep) rejects a finished model whose real dwell error is too large or too inconsistent to fix with a single bias correction, and the previously-active model (lastGoodModelRef/restoreLastGoodModel) is preserved and resumed whenever a new calibration attempt fails either gate or is cancelled instead of being silently overwritten (Card-Intent Engine, MediaPipe pipeline, and card scoring unchanged)",
 );
