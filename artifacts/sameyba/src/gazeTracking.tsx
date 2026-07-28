@@ -560,6 +560,7 @@ function fitRidgeRegression(
   targets: number[],
   featureCount: number = GAZE_FEATURE_COUNT,
   ridgeLambda: number = RIDGE_LAMBDA,
+  stdFloors?: number[],
 ): number[] | null {
   const n = samples.length;
   if (n < 6) return null;
@@ -571,6 +572,20 @@ function fitRidgeRegression(
   //    is left unscaled (std treated as 1) rather than dividing by ~0; its
   //    fitted weight will simply solve out near 0 on its own, which is the
   //    correct outcome for a feature that carries no information.
+  //
+  //    `stdFloors` (V3.4, Y model only — see Y_FEATURE_STD_FLOORS below and the Y fit at calibration-completion time) is
+  //    a stricter version of that same idea. Falling back to std=1 only
+  //    protects against a column that is *exactly* constant; a column with
+  //    a small but nonzero std (e.g. headCenterY moving a tiny amount as
+  //    the user's head drifts slightly during calibration, even though
+  //    they never rotated it) still gets divided by that small real std,
+  //    which is exactly what was blowing its unstandardized weight up to
+  //    tens of thousands (see the V3.4 note). When the caller supplies a
+  //    floor per non-bias feature, the std used for standardization is
+  //    never allowed below it — capping how large the corresponding
+  //    unstandardized weight can possibly come out, without touching any
+  //    feature whose real std already clears the floor. X never passes
+  //    this argument, so its fit is unchanged.
   const means = new Array(d).fill(0);
   const stds = new Array(d).fill(1);
   for (let a = 1; a < d; a++) {
@@ -582,7 +597,12 @@ function fitRidgeRegression(
     variance /= n;
     const s = Math.sqrt(variance);
     means[a] = m;
-    stds[a] = s > 1e-8 ? s : 1;
+    if (stdFloors) {
+      const floor = stdFloors[a - 1] ?? 1e-8;
+      stds[a] = Math.max(s, floor);
+    } else {
+      stds[a] = s > 1e-8 ? s : 1;
+    }
   }
 
   const standardized: number[][] = samples.map((row) => {
@@ -750,6 +770,56 @@ function extractYSubFeatures(fullFeatures: number[]): number[] {
  *  anyway. Diagnostics-only. */
 const Y_FEATURE_NAMES = ["bias", "rNormY", "lNormY", "pitch", "headCenterY"];
 
+/** V3.4 — per-feature standardization std floors for the dedicated Y model
+ *  (aligned to Y_FEATURE_NAMES.slice(1), i.e. one entry per non-bias Y
+ *  feature: rNormY, lNormY, pitch, headCenterY). See the V3.4 note above
+ *  the Y fit at calibration-completion time for the full diagnosis; the short version: this
+ *  run's own fitted-weight log shows wy's headCenterY weight came out to
+ *  67641.7 — twenty times larger than rNormY's own weight (3427.1) — even
+ *  though headCenterY has, at best, a weak physical link to vertical gaze.
+ *  That happened because headCenterY barely moved across the 9 calibration
+ *  targets (the user was moving their eyes, not their head), so its
+ *  standardization std was tiny; dividing by that tiny std to get back to
+ *  raw-feature-space is what turned an unremarkable standardized weight
+ *  into a huge one, which then amplified ordinary frame-to-frame head
+ *  jitter at inference time into wild, often off-screen predictions —
+ *  exactly what this run's raw=(-2433.5, -1361.9) / (1128.3, -99.8) style
+ *  diagnostic lines show, and exactly why the verify-sweep cursor looked
+ *  "compressed near center": those wild predictions were mostly landing
+ *  outside the viewport and getting silently dropped by the raw-sample
+ *  gate (see the V3.4 note in the RAF loop below), starving the One Euro
+ *  filter of real signal and leaving it stuck on stale, roughly-central
+ *  values.
+ *
+ *  Flooring each feature's std at a physically-motivated minimum bounds how
+ *  large its raw-space weight can come out, without touching a feature
+ *  whose real calibration-time variation already clears the floor. rNormY/
+ *  lNormY get a low floor (0.015) because they're the actual iris-position
+ *  signal and a real vertical eye movement easily produces more spread
+ *  than that (this run's own between-target variance for rNormY was
+ *  3.354e-3, i.e. std ≈ 0.058 — well clear of 0.015, so the floor is a
+ *  no-op for a calibration that's actually working). pitch and headCenterY
+ *  get a deliberately higher floor (0.05) — per the explicit "feature
+ *  selection so pitch/headCenterY cannot overpower iris-Y" requirement —
+ *  because they are exactly the two features with, at best, a secondary/
+ *  compensatory role for vertical gaze, and are the two known to have
+ *  produced near-constant (hence dangerous-to-standardize) calibration
+ *  columns for a user who kept their head reasonably still. */
+const Y_FEATURE_STD_FLOORS = [0.015, 0.015, 0.05, 0.05];
+
+/** Safety clamp on a single fitted Y-affine scale — see fitYAffine below. */
+const Y_AFFINE_MIN_SCALE = 0.5;
+const Y_AFFINE_MAX_SCALE = 6;
+/** Safety clamp on a *composed* Y-affine scale (calibration-fit stage
+ *  composed with the verification refit — see composeAffine and
+ *  refitVerticalAffineFromVerification below). Wider than the single-stage
+ *  bound above since two legitimate corrections chained together can
+ *  reasonably multiply out to a bit more than either alone, but still
+ *  bounded so a degenerate verification sweep can't produce a runaway
+ *  multiplier on top of an already-corrected model. */
+const Y_AFFINE_COMPOSED_MIN_SCALE = 0.3;
+const Y_AFFINE_COMPOSED_MAX_SCALE = 10;
+
 /** scale/offset applied as: correctedY = rawModelY * scale + offset. */
 interface AffineParams {
   scale: number;
@@ -797,8 +867,6 @@ function fitYAffine(rawModelY: number[], trueY: number[]): AffineParams {
   // fit compressed (scale > 1 is expected and normal here), not to let a
   // pathological 9-point calibration produce an unbounded multiplier that
   // would amplify ordinary per-frame jitter into huge cursor swings.
-  const Y_AFFINE_MIN_SCALE = 0.5;
-  const Y_AFFINE_MAX_SCALE = 6;
   scale = Math.max(Y_AFFINE_MIN_SCALE, Math.min(Y_AFFINE_MAX_SCALE, scale));
 
   const offset = meanTrue - scale * meanRaw;
@@ -808,6 +876,82 @@ function fitYAffine(rawModelY: number[], trueY: number[]): AffineParams {
   }
 
   return { scale, offset };
+}
+
+/** V3.4 — composes two affine corrections applied in sequence:
+ *  result(raw) = outer.scale * (inner.scale * raw + inner.offset) + outer.offset.
+ *  Needed because the verification-sweep refit (see
+ *  refitVerticalAffineFromVerification below) is fit against samples that
+ *  already passed through the *existing* (calibration-click-based) affine
+ *  once — so the freshly-fit scale/offset has to be layered on top of it,
+ *  not swap in for it, or the composition would silently undo the first
+ *  correction instead of refining it. Clamped to
+ *  Y_AFFINE_COMPOSED_MIN/MAX_SCALE for the same reason fitYAffine clamps
+ *  its own single-stage output. */
+function composeAffine(inner: AffineParams, outer: AffineParams): AffineParams {
+  let scale = outer.scale * inner.scale;
+  let offset = outer.scale * inner.offset + outer.offset;
+
+  if (!Number.isFinite(scale) || !Number.isFinite(offset)) {
+    return inner;
+  }
+
+  scale = Math.max(
+    Y_AFFINE_COMPOSED_MIN_SCALE,
+    Math.min(Y_AFFINE_COMPOSED_MAX_SCALE, scale),
+  );
+
+  return { scale, offset };
+}
+
+/** V3.4 — groups per-click calibration training arrays into one averaged
+ *  sample per physical calibration target, instead of fitting from all
+ *  CAL_POINTS.length × clicksPerPoint clicks independently. Clicks are
+ *  recorded in target-major order (see handleCalClick below: every click
+ *  for target p is pushed before target p+1's first click), so this is a
+ *  straightforward chunked average — exactly the "calibration-target
+ *  aggregation rather than treating all 18 clicks independently"
+ *  requested for the Y fix. Averaging the (typically 2) noisy single-
+ *  fixation clicks recorded for the same on-screen target before fitting
+ *  gives the regression 9 largely-independent points instead of 18 samples
+ *  that arrive in noisy, highly-correlated pairs, which is exactly the
+ *  kind of small-sample noise a ridge fit is most likely to overfit to
+ *  (see the wy lNormX cross-talk this file's own earlier diagnostics
+ *  already caught). Falls back to the raw per-click arrays unchanged if
+ *  the click count doesn't evenly divide by clicksPerPoint (e.g. a click
+ *  was skipped mid-calibration because no face was detected that frame —
+ *  see the "no face detected this frame, sample skipped" warning in
+ *  handleCalClick) rather than silently mis-grouping clicks across target
+ *  boundaries. */
+function aggregateByCalibrationTarget(
+  features: number[][],
+  targetsY: number[],
+  clicksPerPoint: number,
+): { features: number[][]; targets: number[] } {
+  const n = features.length;
+  if (clicksPerPoint <= 1 || n === 0 || n % clicksPerPoint !== 0) {
+    return { features, targets: targetsY };
+  }
+
+  const d = features[0].length;
+  const aggFeatures: number[][] = [];
+  const aggTargets: number[] = [];
+
+  for (let start = 0; start < n; start += clicksPerPoint) {
+    const group = features.slice(start, start + clicksPerPoint);
+    const mean = new Array(d).fill(0);
+    group.forEach((f) => {
+      for (let i = 0; i < d; i++) mean[i] += f[i] / group.length;
+    });
+    mean[0] = 1; // bias term stays exact, not averaged noise
+    aggFeatures.push(mean);
+    // The true clicked position is identical, by construction, for every
+    // click recorded at the same physical target — any one of them is the
+    // group's target value.
+    aggTargets.push(targetsY[start]);
+  }
+
+  return { features: aggFeatures, targets: aggTargets };
 }
 
 // ── DIAGNOSTICS (V3.1 instrumentation) ────────────────────────────────────────
@@ -866,10 +1010,22 @@ function diagLabelVector(
   );
 }
 
-// ── Outlier rejection tuning constants (v1.2, unchanged) ─────────────────────
-/** A raw WebGazer sample jumping more than this (px) from the last accepted
- *  sample, within OUTLIER_MAX_DT_MS, is rejected as noise. */
-const OUTLIER_MAX_JUMP_PX = 200;
+// ── Outlier rejection tuning constants (v1.2) ─────────────────────────────────
+/** A sample jumping more than this (px) from the last accepted sample,
+ *  within OUTLIER_MAX_DT_MS, is rejected as noise.
+ *
+ *  V3.4 — raised from 200 to 500. At ~24Hz steady-state inference
+ *  (TARGET_INFERENCE_INTERVAL_MS ≈ 42ms/frame), a genuine saccade between
+ *  two verification targets — top-to-bottom is ~570px vertically on a
+ *  typical viewport — can easily land within OUTLIER_MAX_DT_MS of the
+ *  previous accepted sample. 200px was rejecting exactly the large,
+ *  legitimate jumps a working vertical model needs to make to actually
+ *  reach the top/bottom targets, on top of the Y-model weight-blowup bug
+ *  (see Y_FEATURE_STD_FLOORS) that this rejection was quietly masking the
+ *  worst symptoms of. 500px still rejects a genuinely nonsensical single-
+ *  frame jump (most of a screen diagonal) while allowing real full-range
+ *  eye movement through. */
+const OUTLIER_MAX_JUMP_PX = 500;
 /** Outlier check only applies within this time window (ms) since the last
  *  accepted sample — prevents rejecting legitimate slow drift over time. */
 const OUTLIER_MAX_DT_MS = 150;
@@ -1409,6 +1565,76 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     );
   }, [estimateAxisBias]);
 
+  /** V3.4 — refits the Y affine (scale+offset) a second time, directly
+   *  against the actual top/center/bottom verification measurements, as
+   *  explicitly requested: "a post-regression affine calibration for Y
+   *  using scale + offset, derived from top/center/bottom verification
+   *  data." The affine set when calibration finished (see the fitYAffine
+   *  call above) is only ever a first draft — it has to exist before the
+   *  verification screen can show a moving cursor at all, but it's fit
+   *  from noisy single-fixation clicks. This refit uses the much cleaner
+   *  signal already collected while the user held a steady gaze on each of
+   *  VERIFY_TARGETS' center/top/bottom entries for VERIFY_DWELL_MS each
+   *  (verifyTargetSamplesRef — the same One-Euro-filtered samples
+   *  estimateAxisBias above reads from the same sweep, so this never
+   *  requires a second/separate verification pass).
+   *
+   *  verifyTargetSamplesRef already reflects the *current* yAffineRef
+   *  having been applied once (it's collected downstream of runInference's
+   *  `rawModelY * scale + offset`), so the freshly-fit scale/offset here is
+   *  layered on top of the existing affine via composeAffine rather than
+   *  replacing it outright — see composeAffine's own doc comment for why
+   *  that composition is what keeps this mathematically correct relative
+   *  to the underlying (unaffine'd) ridge output. */
+  const refitVerticalAffineFromVerification = useCallback(() => {
+    // center=0, top=1, bottom=2 — see VERIFY_TARGETS below. left/right
+    // (3, 4) are horizontal-only and irrelevant to the Y affine.
+    const VERTICAL_VERIFY_TARGET_INDICES = [0, 1, 2];
+    const pooledRawY: number[] = [];
+    const pooledTrueY: number[] = [];
+
+    VERTICAL_VERIFY_TARGET_INDICES.forEach((i) => {
+      const samples = verifyTargetSamplesRef.current[i];
+      if (samples.length < VBIAS_MIN_SAMPLES_PER_TARGET) return;
+
+      // Same median + MAD outlier cleaning estimateAxisBias uses, so a
+      // stray blink or a saccade-in-flight frame can't skew the fit.
+      const targetMedian = median(samples);
+      const absDevs = samples.map((v) => Math.abs(v - targetMedian));
+      const mad = median(absDevs);
+      const scaledMad = mad * 1.4826;
+      const cleaned =
+        scaledMad === 0
+          ? samples
+          : samples.filter(
+              (v) => Math.abs(v - targetMedian) <= VBIAS_MAD_K * scaledMad,
+            );
+      if (cleaned.length < VBIAS_MIN_SAMPLES_PER_TARGET) return;
+
+      const expected = window.innerHeight * VERIFY_TARGETS[i].yFrac;
+      cleaned.forEach((v) => {
+        pooledRawY.push(v);
+        pooledTrueY.push(expected);
+      });
+    });
+
+    if (pooledRawY.length < VBIAS_MIN_SAMPLES_PER_TARGET) {
+      console.log(
+        "[Sameyba/Gaze] Y-affine verification refit skipped — not enough clean center/top/bottom samples",
+      );
+      return;
+    }
+
+    const refit = fitYAffine(pooledRawY, pooledTrueY);
+    const composed = composeAffine(yAffineRef.current, refit);
+    yAffineRef.current = composed;
+
+    console.log(
+      `[Sameyba/Gaze] Y-affine refit from verification — scale=${composed.scale.toFixed(3)}, offset=${composed.offset.toFixed(1)}px` +
+        ` (from ${pooledRawY.length} pooled center/top/bottom samples)`,
+    );
+  }, []);
+
   // ── RAF loop ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!gazeEnabled) return;
@@ -1463,31 +1689,65 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (raw != null) {
-        // 1. Validate: reject NaN or off-screen coords
+        // 1. Validate: reject NaN/non-finite, but CLAMP (don't drop) an
+        //    out-of-viewport prediction.
+        //
+        //    V3.4 — this used to hard-reject the entire frame whenever
+        //    raw.x/raw.y fell outside [0,vw]/[0,vh], which sounds like
+        //    harmless input validation but was actually a major
+        //    contributor to "cursor moves the right direction but never
+        //    reaches the target": once the Y-model weight blow-up (see the
+        //    V3.4 notes around Y_FEATURE_STD_FLOORS and
+        //    the Y-model weight blow-up) is fixed, a real look at a near-edge
+        //    target (the top or bottom verify point especially) can still
+        //    legitimately land a fraction of a pixel past 0 or vh before
+        //    the One Euro filter finishes settling — and rejecting that
+        //    frame outright doesn't just ignore one sample, it means
+        //    filterXRef/filterYRef never even see it, so the filter stays
+        //    stuck on whatever stale, closer-to-center value it last
+        //    accepted. That reads exactly like "compressed vertical range"
+        //    from the outside, even after the underlying model is healthy.
+        //    Clamping into a generously padded viewport box keeps a
+        //    genuinely nonsensical (e.g. off-by-a-screen-width) prediction
+        //    from ever reaching the filter, while letting real near-edge
+        //    gaze through as the *edge* value instead of nothing at all.
         const vw = window.innerWidth,
           vh = window.innerHeight;
+        const CLAMP_MARGIN_PX = 150;
         if (
           !isNaN(raw.x) &&
           !isNaN(raw.y) &&
-          raw.x >= 0 &&
-          raw.x <= vw &&
-          raw.y >= 0 &&
-          raw.y <= vh
+          Number.isFinite(raw.x) &&
+          Number.isFinite(raw.y)
         ) {
+          const clampedX = Math.min(
+            vw + CLAMP_MARGIN_PX,
+            Math.max(-CLAMP_MARGIN_PX, raw.x),
+          );
+          const clampedY = Math.min(
+            vh + CLAMP_MARGIN_PX,
+            Math.max(-CLAMP_MARGIN_PX, raw.y),
+          );
+
           // 2. Exponential moving average (0.70 old + 0.30 raw — responsive)
           // 2. One Euro Filter — replaces EMA smoothing
           const now_ms = performance.now();
-          // 2a. Outlier rejection (v1.2) — ignore a raw WebGazer sample that
-          //     jumps further than OUTLIER_MAX_JUMP_PX within OUTLIER_MAX_DT_MS
-          //     of the last accepted raw sample.
+          // 2a. Outlier rejection (v1.2) — ignore a sample that jumps
+          //     further than OUTLIER_MAX_JUMP_PX within OUTLIER_MAX_DT_MS of
+          //     the last accepted sample. V3.4 — checked against the
+          //     *clamped* point (a real saccade between verification
+          //     targets can legitimately cover several hundred px within a
+          //     couple of ~42ms inference frames; see OUTLIER_MAX_JUMP_PX's
+          //     own updated comment for why that threshold was raised
+          //     alongside this).
           const lastAcceptedRaw = lastAcceptedRawRef.current;
 
           if (lastAcceptedRaw !== null) {
             const dtMs = now_ms - lastAcceptedRaw.ts;
 
             const jumpPx = Math.hypot(
-              raw.x - lastAcceptedRaw.x,
-              raw.y - lastAcceptedRaw.y,
+              clampedX - lastAcceptedRaw.x,
+              clampedY - lastAcceptedRaw.y,
             );
 
             if (dtMs <= OUTLIER_MAX_DT_MS && jumpPx > OUTLIER_MAX_JUMP_PX) {
@@ -1497,13 +1757,13 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           }
 
           lastAcceptedRawRef.current = {
-            x: raw.x,
-            y: raw.y,
+            x: clampedX,
+            y: clampedY,
             ts: now_ms,
           };
 
-          const oneEuroX = filterXRef.current.filter(raw.x, now_ms);
-          const oneEuroY = filterYRef.current.filter(raw.y, now_ms);
+          const oneEuroX = filterXRef.current.filter(clampedX, now_ms);
+          const oneEuroY = filterYRef.current.filter(clampedY, now_ms);
 
           // 2b. Adaptive vertical bias correction (v1.4)
           const biasCorrectedY = oneEuroY - verticalBiasRef.current;
@@ -2166,9 +2426,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         // observational, changes nothing about the fit itself. ─────────────
         {
           const allFeatures = trainingFeaturesRef.current;
-          console.group(
-            "[Sameyba/Gaze][DIAG] Calibration feature diagnostics",
-          );
+          console.group("[Sameyba/Gaze][DIAG] Calibration feature diagnostics");
 
           // 1. Feature-vector variance for each calibration target (the
           //    CLICKS_PER_POINT samples recorded at that point).
@@ -2226,31 +2484,49 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
         // fit. See the "Dedicated vertical (Y) gaze model" note above for
         // why this run's own diagnostics (wy's large lNormX weight) point
         // straight at this as the fix.
-        const yTrainingFeatures =
+        //
+        // V3.4 — two more changes on top of V3.2, neither of which touches
+        // X: (1) fit from 9 calibration-target-aggregated samples instead
+        // of 18 individual clicks (see aggregateByCalibrationTarget), and
+        // (2) pass Y_FEATURE_STD_FLOORS so a feature that barely moved
+        // during calibration (headCenterY, sometimes pitch) gets its
+        // standardization std floored instead of blown up into a huge
+        // raw-space weight — see the Y_FEATURE_STD_FLOORS note above for
+        // why that, not the feature subset itself, was the actual source
+        // of the wild/off-screen raw predictions.
+        const yTrainingFeaturesPerClick =
           trainingFeaturesRef.current.map(extractYSubFeatures);
+        const { features: yAggFeatures, targets: yAggTargets } =
+          aggregateByCalibrationTarget(
+            yTrainingFeaturesPerClick,
+            trainingTargetYRef.current,
+            CLICKS_PER_POINT,
+          );
         const wy = fitRidgeRegression(
-          yTrainingFeatures,
-          trainingTargetYRef.current,
+          yAggFeatures,
+          yAggTargets,
           GAZE_FEATURE_COUNT_Y,
           RIDGE_LAMBDA_Y,
+          Y_FEATURE_STD_FLOORS,
         );
         weightsXRef.current = wx;
         weightsYRef.current = wy;
 
         // V3.2 — fit the Y affine (scale+offset) recalibration directly
-        // against this calibration set: rawModelY[i] = wy·yFeatures[i] for
-        // each of the 18 recorded clicks, regressed onto their true clicked
-        // screen-Y. See fitYAffine above for why this — not another
-        // additive-only correction — is what actually fixes a compressed
-        // range. Falls back to identity (no-op) if wy failed to fit.
+        // against this calibration set: rawModelY[i] = wy·yFeatures[i],
+        // regressed onto the true clicked/target screen-Y. See fitYAffine
+        // above for why this — not another additive-only correction — is
+        // what actually fixes a compressed range. Falls back to identity
+        // (no-op) if wy failed to fit. This is deliberately still just the
+        // *first-draft* affine: it has to exist before the verification
+        // screen can show a moving cursor at all, but it's fit from the
+        // same (now target-aggregated, but still just 9-point) calibration
+        // clicks as wy itself. It gets refined again, using the actual
+        // top/center/bottom verification measurements, once verification
+        // completes — see refitVerticalAffineFromVerification below.
         if (wy) {
-          const rawModelYOnTrainingSet = yTrainingFeatures.map((f) =>
-            dot(wy, f),
-          );
-          yAffineRef.current = fitYAffine(
-            rawModelYOnTrainingSet,
-            trainingTargetYRef.current,
-          );
+          const rawModelYOnTrainingSet = yAggFeatures.map((f) => dot(wy, f));
+          yAffineRef.current = fitYAffine(rawModelYOnTrainingSet, yAggTargets);
         } else {
           yAffineRef.current = IDENTITY_AFFINE;
         }
@@ -2534,6 +2810,11 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
                   console.groupEnd();
                 }
 
+                // V3.4 — tighten the Y affine against the actual
+                // top/center/bottom verification measurements before the
+                // (small, additive-only) residual bias estimate below runs
+                // on top of it — see refitVerticalAffineFromVerification.
+                refitVerticalAffineFromVerification();
                 estimateAndApplyBiasCorrections();
                 verifyTargetSamplesRef.current = VERIFY_TARGETS.map(() => []);
                 verifyTargetXSamplesRef.current = VERIFY_TARGETS.map(() => []);
@@ -3637,5 +3918,5 @@ function CameraPermissionBanner({
   );
 }
 console.log(
-  "ASHWAG TEST V3.3 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator with a dedicated vertical (Y) model + affine recalibration (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
+  "ASHWAG TEST V3.5 — MediaPipe FaceLandmarker (rVFC-gated, adaptive-cadence, benchmarked delegate) + custom ridge-regression gaze estimator: dedicated Y model with per-feature std-floor regularization (fixes headCenterY/pitch weight blow-up), 9-point calibration-target-aggregated fit, two-stage Y affine (calibration draft + verification-measured refit), clamped (not dropped) out-of-viewport raw samples, widened jump-outlier gate (Card-Intent Engine unchanged, DOM rect cache + throttled React state)",
 );
