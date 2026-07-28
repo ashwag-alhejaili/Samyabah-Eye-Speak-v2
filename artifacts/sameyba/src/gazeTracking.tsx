@@ -492,6 +492,73 @@ function extractGazeFeatures(
   ];
 }
 
+// ── Raw feature-space smoothing (V4.1) ────────────────────────────────────────
+// ── ROOT CAUSE OF residual micro-jitter during steady fixation ──
+// Every stage downstream of this file's per-frame feature extraction — One
+// Euro (filterXRef/filterYRef), the cursor's own visual EMA, passive drift
+// correction, card scoring, calibration — was already ruled out for the
+// jitter that remained after those were tuned. What's left is upstream of
+// all of them: extractGazeFeatures() above runs on a *single frame's*
+// landmarks with no temporal smoothing at all, and MediaPipe's iris
+// landmarks carry real per-frame model/quantization noise even during a
+// dead-still fixation (this is normal FaceLandmarker behavior, not a bug in
+// this file). That noisy single-frame feature vector is what
+// rawRef.current is computed from every frame (see runInference below):
+// dot(wx, features) for X, dot(wy, extractYSubFeatures(features)) for Y.
+//
+// Critically, the Y axis then multiplies that same per-frame noise by
+// yAffineRef.current.scale — deliberately allowed up to Y_AFFINE_MAX_SCALE
+// (6x single-stage) or Y_AFFINE_COMPOSED_MAX_SCALE (10x composed with the
+// verification refit) in order to restore the dynamic range ridge
+// regression compresses (see fitYAffine's own comment). That scale stage is
+// correct and necessary for accuracy, but it amplifies whatever noise is
+// already present in rNormY/lNormY by the same factor as the signal, before
+// One Euro ever sees it — which is exactly why residual jitter reads as
+// worse vertically than horizontally (the X model has no such post-hoc
+// scale stage at all).
+//
+// The fix is a short EMA on the *feature vector itself*, applied only to
+// the copy fed into the live per-frame regression (rawRef.current) — never
+// to latestFeaturesRef (still the exact single-frame value calibration
+// clicks read) and never to recentFeaturesRef (still the exact per-frame
+// history the calibration-click stability gate reads). This reduces the
+// noise the Y-affine stage amplifies at its source, rather than asking One
+// Euro to keep suppressing an already-amplified signal, so none of One
+// Euro's constants, the cursor's visual EMA, drift correction, card
+// scoring, or calibration fitting need to change.
+/** EMA weight given to the newest frame's feature vector; (1-alpha) is
+ *  carried over from the previous smoothed vector. Deliberately light — at
+ *  the ~24Hz steady-state inference rate (TARGET_INFERENCE_INTERVAL_MS),
+ *  this is roughly a 1-2 frame (≈40-80ms) time constant, enough to knock
+ *  down single-frame landmark noise without adding perceptible lag ahead of
+ *  One Euro's own (larger, adaptive) smoothing. */
+const RAW_FEATURE_SMOOTHING_ALPHA = 0.45;
+/** A gap since the last smoothed sample longer than this (ms) — a blink, a
+ *  dropped detection, a backoff-widened inference interval — means the
+ *  previous smoothed vector is stale enough that blending it into a fresh
+ *  post-gap frame would stitch pre-gap and post-gap eye geometry together.
+ *  Past this gap the smoother just resets to the new frame's raw features
+ *  instead of blending, the same "no history to blend against" behavior
+ *  OneEuroFilter.filter already falls back to on its own first sample. */
+const RAW_FEATURE_SMOOTHING_MAX_GAP_MS = 250;
+
+/** Blends `next` into `prev` feature-by-feature (EMA), keeping the bias
+ *  term exactly 1 rather than averaging it — mirrors how
+ *  aggregateByCalibrationTarget treats the bias column above. Both vectors
+ *  must be the full 9-element extractGazeFeatures() shape. */
+function blendFeatures(
+  prev: number[],
+  next: number[],
+  alpha: number,
+): number[] {
+  const out = new Array(next.length);
+  for (let i = 0; i < next.length; i++) {
+    out[i] = prev[i] + (next[i] - prev[i]) * alpha;
+  }
+  out[0] = 1; // bias term stays exact
+  return out;
+}
+
 /** Solves (A + λI)w = b for w via Gauss-Jordan elimination with partial
  *  pivoting. `a` is mutated in place; small, fixed-size (≤9×9) systems only —
  *  no external linear-algebra dependency needed. */
@@ -2032,6 +2099,20 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
    *  geometric-feature analogue of what WebGazer's own click-time sampling
    *  did implicitly. */
   const recentFeaturesRef = useRef<number[][]>([]);
+  /** V4.1 — EMA-smoothed feature vector feeding the *live* per-frame
+   *  regression only (see RAW_FEATURE_SMOOTHING_ALPHA above). Deliberately
+   *  separate from latestFeaturesRef (calibration clicks) and
+   *  recentFeaturesRef (calibration-click stability gate) — neither of
+   *  those reads this, and this never reads either of those, so the
+   *  calibration flow's per-frame semantics are unchanged. Null whenever
+   *  there's no prior smoothed sample to blend against (session start,
+   *  post-recalibration reset, or after a detection gap — see
+   *  smoothedFeaturesTsRef). */
+  const smoothedFeaturesRef = useRef<number[] | null>(null);
+  /** Timestamp (ms) smoothedFeaturesRef was last updated — used to detect a
+   *  gap (blink, dropped detection) long enough that blending against it
+   *  would stitch pre-gap and post-gap eye geometry together. */
+  const smoothedFeaturesTsRef = useRef<number>(0);
   /** Count of frames with a confidently-detected face since warm-up started;
    *  used only to gate the "camera + model are actually working" check. */
   const warmupDetectionCountRef = useRef(0);
@@ -2121,6 +2202,13 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
   const resetGazeFilters = useCallback(() => {
     filterXRef.current.reset();
     filterYRef.current.reset();
+
+    // V4.1 — clear the raw feature-space EMA too, so a recalibration/reset
+    // doesn't blend features from before the reset into the first frames
+    // after it (see the "Raw feature-space smoothing" note above
+    // extractGazeFeatures).
+    smoothedFeaturesRef.current = null;
+    smoothedFeaturesTsRef.current = 0;
 
     lastAcceptedRawRef.current = null;
     // Card-Intent Engine (V2) — clear all accumulated card confidence and
@@ -3276,6 +3364,26 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
           buf.push(features);
           if (buf.length > 6) buf.shift();
 
+          // V4.1 — see the "Raw feature-space smoothing" note above
+          // extractGazeFeatures for the full root-cause account. Blend this
+          // frame's features into a short EMA *before* the regression, so
+          // the Y-affine stage amplifies less single-frame landmark noise.
+          // Only rawRef.current's computation below reads the blended
+          // vector; latestFeaturesRef/recentFeaturesRef above already
+          // captured the exact single-frame `features` for calibration.
+          const gapMs = t0 - smoothedFeaturesTsRef.current;
+          const prevSmoothed = smoothedFeaturesRef.current;
+          const smoothedFeatures =
+            prevSmoothed && gapMs <= RAW_FEATURE_SMOOTHING_MAX_GAP_MS
+              ? blendFeatures(
+                  prevSmoothed,
+                  features,
+                  RAW_FEATURE_SMOOTHING_ALPHA,
+                )
+              : features;
+          smoothedFeaturesRef.current = smoothedFeatures;
+          smoothedFeaturesTsRef.current = t0;
+
           const wx = weightsXRef.current;
           const wy = weightsYRef.current;
           if (wx && wy) {
@@ -3286,10 +3394,10 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
             // model (see GAZE_FEATURE_COUNT_Y above) followed by the
             // learned affine (scale+offset) recalibration — see fitYAffine
             // above for why an affine stage, not just an offset, is needed.
-            const rawModelY = dot(wy, extractYSubFeatures(features));
+            const rawModelY = dot(wy, extractYSubFeatures(smoothedFeatures));
             const { scale, offset } = yAffineRef.current;
             rawRef.current = {
-              x: dot(wx, features),
+              x: dot(wx, smoothedFeatures),
               y: rawModelY * scale + offset,
             };
           }
@@ -3399,7 +3507,7 @@ export function GazeProvider({ children }: { children: React.ReactNode }) {
     console.groupEnd();
   }, [permissionState]);
 
-  // ── Instruction card state ────────────────────────────────────────────────────
+  // ── Instruction card state ─────────────────�ـ──────────────────────────────────
   const [instructing, setInstructing] = useState(false);
   const pendingCalibrationRef = useRef<(() => void) | null>(null);
 
@@ -4207,7 +4315,7 @@ function CalibrationInstructionCard({
             للحصول على أفضل دقة:
           </p>
           {[
-            "انظر مباشرة إلى كل نقطة.",
+            "ا=�ظر مباشرة إلى كل نقطة.",
             "اضغط على النقطة مع الاستمرار في النظر إليها.",
             "حافظ على ثبات رأسك قدر الإمكان.",
             "تأكد من وجود إضاءة جيدة على وجهك.",
